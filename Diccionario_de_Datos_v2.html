@@ -1,0 +1,1359 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Diccionario de Datos - Cadena de Negocios</title><style>
+body{font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#111;margin:24px}
+h1{font-size:18pt;margin:0 0 4px}h2{font-size:14pt;border-bottom:2px solid #333;margin-top:28px;padding-bottom:3px}
+h3{font-size:11.5pt;margin:20px 0 4px;page-break-after:avoid}
+table{border-collapse:collapse;width:100%;margin:6px 0 10px;page-break-inside:auto}
+th,td{border:1px solid #999;padding:3px 6px;vertical-align:top;text-align:left}th{background:#e6e6e6}
+tr{page-break-inside:avoid}code{font-family:Consolas,monospace;font-size:9pt}.m{color:#444}
+</style></head><body>
+<h1>Diccionario de Datos</h1><p class="m">Universidad Nacional - Sede Regional Brunca - Administraci&oacute;n de Bases de Datos, II Ciclo 2026<br>Proyecto: base de datos para una cadena de negocios - Entregable #1 - Estudiante: Keylor Pineda Alvarez<br>Esquema: <code>CADENA_NEG</code> - Oracle 21c - 49 tablas, 49 secuencias, 6 vistas, 91 llaves for&aacute;neas, 140 restricciones CHECK.</p>
+<h2>Convenciones de nombres</h2><table><tr><th>Objeto</th><th>Convenci&oacute;n</th><th>Ejemplo</th></tr>
+<tr><td>Tabla</td><td>Prefijo de m&oacute;dulo + nombre en singular</td><td><code>VEN_FACTURA</code></td></tr>
+<tr><td>Columna propia</td><td>Nombre + abreviatura de la tabla como sufijo</td><td><code>NOMBRE_PROD</code></td></tr>
+<tr><td>Llave primaria</td><td><code>ID_</code> + entidad. El nombre es &uacute;nico en todo el esquema</td><td><code>ID_FACTURA_VENTA</code></td></tr>
+<tr><td>Llave for&aacute;nea</td><td>Exactamente el nombre de la PK referenciada; se agrega un sufijo de rol cuando hay m&aacute;s de una FK al mismo padre</td><td><code>ID_PRODUCTO</code>, <code>ID_BODEGA_ORIGEN</code></td></tr>
+<tr><td>Restricciones</td><td><code>PK_</code>, <code>FK_</code>, <code>UK_</code>, <code>CK_</code> + abreviatura de la tabla + descriptor</td><td><code>FK_PROD_FAMI</code></td></tr>
+<tr><td>&Iacute;ndices</td><td><code>IX_</code> (secundario), <code>UX_</code> (&uacute;nico por expresi&oacute;n)</td><td><code>IX_FAVE_CLI_FECHA</code></td></tr>
+<tr><td>Secuencia</td><td><code>SEQ_</code> + nombre de la tabla</td><td><code>SEQ_VEN_FACTURA</code></td></tr>
+<tr><td>Vista</td><td><code>V_</code> + nombre</td><td><code>V_PRECIO_VENTA</code></td></tr></table>
+<h2>Tablespaces</h2><table><tr><th>Tablespace</th><th>Contenido</th></tr><tr><td><code>TBS_DATOS</code></td><td>Todas las tablas operativas</td></tr><tr><td><code>TBS_INDICES</code></td><td>Todos los &iacute;ndices (primarios, &uacute;nicos y secundarios)</td></tr><tr><td><code>TBS_AUDITORIA</code></td><td>Tablas de bit&aacute;cora: <code>PRO_PRECIO_HIST</code>, <code>AUD_BITACORA</code></td></tr></table>
+<h2>Resumen de tablas</h2><table><tr><th>M&oacute;dulo</th><th>Tabla</th><th>Abrev.</th><th>Descripci&oacute;n</th></tr>
+<tr><td>CAT</td><td><code>CAT_PAIS</code></td><td>PAIS</td><td>Catalogo de paises. Se usa para nacionalidad, residencia y ubicacion geografica.</td></tr>
+<tr><td>CAT</td><td><code>CAT_PROVINCIA</code></td><td>PROVI</td><td>Division politica de primer nivel dentro de un pais.</td></tr>
+<tr><td>CAT</td><td><code>CAT_CANTON</code></td><td>CANT</td><td>Division politica de segundo nivel, dependiente de una provincia.</td></tr>
+<tr><td>CAT</td><td><code>CAT_DISTRITO</code></td><td>DIST</td><td>Division politica de tercer nivel. Es el nivel al que se amarra toda direccion fisica del sistema.</td></tr>
+<tr><td>PER</td><td><code>PER_PERSONA</code></td><td>PERS</td><td>Supertipo de toda persona fisica o juridica conocida por el sistema (clientes, proveedores, usuarios, la propia empresa).</td></tr>
+<tr><td>PER</td><td><code>PER_PERSONA_FISICA</code></td><td>PEFI</td><td>Subtipo de PER_PERSONA con los datos propios de un individuo (nacional o extranjero).</td></tr>
+<tr><td>PER</td><td><code>PER_PERSONA_JURIDICA</code></td><td>PEJU</td><td>Subtipo de PER_PERSONA con los datos propios de una empresa.</td></tr>
+<tr><td>PER</td><td><code>PER_DIRECCION</code></td><td>DIRE</td><td>Direcciones de una persona. Cada persona puede tener una direccion de casa y una de trabajo.</td></tr>
+<tr><td>PER</td><td><code>PER_CONTACTO</code></td><td>CONT</td><td>Medios de contacto de una persona: telefono, celular, fax y correo electronico.</td></tr>
+<tr><td>PER</td><td><code>PER_CLIENTE</code></td><td>CLI</td><td>Rol de cliente de una persona fisica o juridica. Incluye el cliente por defecto usado en ventas de contado sin cliente registrado.</td></tr>
+<tr><td>PER</td><td><code>PER_PROVEEDOR</code></td><td>PROVE</td><td>Rol de proveedor. Solo una persona juridica (empresa) puede ser proveedor.</td></tr>
+<tr><td>SEG</td><td><code>SEG_EMPRESA</code></td><td>EMP</td><td>Configuracion del negocio que opera la instancia. Los negocios son mutuamente excluyentes: solo una configuracion puede estar activa.</td></tr>
+<tr><td>SEG</td><td><code>SEG_SUCURSAL</code></td><td>SUC</td><td>Sucursales (negocios) de la cadena. Permite que el sistema sea multisucursal.</td></tr>
+<tr><td>SEG</td><td><code>SEG_USUARIO</code></td><td>USU</td><td>Usuarios del sistema. Permite que el sistema sea multiusuario. Todo usuario es una persona fisica.</td></tr>
+<tr><td>SEG</td><td><code>SEG_USUARIO_SUCURSAL</code></td><td>USSU</td><td>Sucursales en las que un usuario esta autorizado a trabajar.</td></tr>
+<tr><td>PRO</td><td><code>PRO_FAMILIA_PRODUCTO</code></td><td>FAMI</td><td>Familias de productos (bebidas, carnes, verduras, etc.). Admite subfamilias.</td></tr>
+<tr><td>PRO</td><td><code>PRO_IMPUESTO</code></td><td>IMPU</td><td>Impuestos aplicables a productos y servicios gravados. Un producto o servicio sin impuesto asociado es exento.</td></tr>
+<tr><td>PRO</td><td><code>PRO_PRODUCTO</code></td><td>PROD</td><td>Productos del inventario. El precio de venta no se almacena: se calcula en V_PRECIO_VENTA a partir de costo, utilidad, descuento e impuesto.</td></tr>
+<tr><td>PRO</td><td><code>PRO_CODIGO_BARRA</code></td><td>COBA</td><td>Codigos de barras de un producto. Un mismo producto puede tener varios.</td></tr>
+<tr><td>PRO</td><td><code>PRO_PRODUCTO_SUCURSAL</code></td><td>PRSU</td><td>Configuracion comercial de un producto en cada negocio (sucursal): porcentaje de utilidad y descuento maximo.</td></tr>
+<tr><td>PRO</td><td><code>PRO_PRECIO_HIST</code></td><td>PRHI</td><td>Bitacora de cambios de precio de costo. Cada fila guarda el costo que dejo de regir; el costo vigente esta en PRO_PRODUCTO, por lo que no hay datos duplicados.</td></tr>
+<tr><td>PRO</td><td><code>PRO_LOTE</code></td><td>LOTE</td><td>Lotes de un producto. Guarda la fecha de ingreso y la fecha de vencimiento.</td></tr>
+<tr><td>PRO</td><td><code>PRO_SERVICIO</code></td><td>SERV</td><td>Servicios que el punto de venta puede facturar ademas de los productos.</td></tr>
+<tr><td>INV</td><td><code>INV_BODEGA</code></td><td>BODE</td><td>Bodegas. El inventario esta centralizado en la bodega central (sin sucursal) y desde ella se traslada a las bodegas de cada sucursal.</td></tr>
+<tr><td>INV</td><td><code>INV_EXISTENCIA</code></td><td>EXIS</td><td>Existencia de cada producto (y lote, si aplica) en cada bodega.</td></tr>
+<tr><td>INV</td><td><code>INV_MOVIMIENTO</code></td><td>MOVI</td><td>Encabezado de los movimientos de inventario (kardex) de una bodega.</td></tr>
+<tr><td>INV</td><td><code>INV_MOVIMIENTO_DET</code></td><td>MODE</td><td>Detalle de productos de un movimiento de inventario. Los saldos no se almacenan: se calculan en V_KARDEX.</td></tr>
+<tr><td>INV</td><td><code>INV_TRASLADO</code></td><td>TRAS</td><td>Encabezado de los traslados de productos entre bodegas (de la bodega central a las sucursales).</td></tr>
+<tr><td>INV</td><td><code>INV_TRASLADO_DET</code></td><td>TRDE</td><td>Detalle de productos de un traslado entre bodegas.</td></tr>
+<tr><td>COM</td><td><code>COM_FACTURA_COMPRA</code></td><td>FACO</td><td>Facturas de compra a proveedores. Una factura a credito con saldo es una cuenta por pagar (ver V_CUENTA_PAGAR). Los totales se guardan porque el enunciado lo exige.</td></tr>
+<tr><td>COM</td><td><code>COM_FACTURA_COMPRA_DET</code></td><td>FCDE</td><td>Detalle de productos comprados en una factura de compra. Los montos de linea son columnas virtuales.</td></tr>
+<tr><td>COM</td><td><code>COM_ABONO_PAGAR</code></td><td>ABPA</td><td>Abonos (pagos parciales) a facturas de compra a credito. El saldo de la cuenta por pagar se calcula a partir de estos abonos.</td></tr>
+<tr><td>COM</td><td><code>COM_DEVOLUCION</code></td><td>DEVC</td><td>Encabezado de las devoluciones de producto a un proveedor, total o parcial, sobre una factura de compra.</td></tr>
+<tr><td>COM</td><td><code>COM_DEVOLUCION_DET</code></td><td>DVCD</td><td>Lineas de factura de compra devueltas y su cantidad. Producto, lote y costo se obtienen de la linea original; no se repiten aqui.</td></tr>
+<tr><td>COM</td><td><code>COM_NOTA_CREDITO</code></td><td>NCCO</td><td>Notas de credito emitidas por el proveedor para pagar una devolucion de compra. Cada devolucion genera a lo sumo una nota.</td></tr>
+<tr><td>VEN</td><td><code>VEN_FACTURA</code></td><td>FAVE</td><td>Facturas de venta. Siempre tienen cliente (el cliente por defecto si no hay uno registrado). Una factura a credito con saldo es una cuenta por cobrar (ver V_CUENTA_COBRAR).</td></tr>
+<tr><td>VEN</td><td><code>VEN_FACTURA_DET</code></td><td>FVDE</td><td>Detalle de la factura de venta: cada linea cobra un producto o un servicio, con su precio, descuento e impuesto. Los montos de linea son columnas virtuales.</td></tr>
+<tr><td>VEN</td><td><code>VEN_PAGO</code></td><td>PAGO</td><td>Pagos recibidos al cancelar una factura de venta. Una factura puede pagarse con varios tipos de pago.</td></tr>
+<tr><td>VEN</td><td><code>VEN_ABONO_COBRAR</code></td><td>ABCO</td><td>Abonos de clientes a facturas de venta a credito. El saldo de la cuenta por cobrar se calcula a partir de estos abonos.</td></tr>
+<tr><td>VEN</td><td><code>VEN_DEVOLUCION</code></td><td>DEVV</td><td>Encabezado de las devoluciones de un cliente, total o parcial, sobre una factura de venta.</td></tr>
+<tr><td>VEN</td><td><code>VEN_DEVOLUCION_DET</code></td><td>DVVD</td><td>Lineas de factura de venta devueltas y su cantidad. Producto o servicio, lote y precio se obtienen de la linea original; no se repiten aqui.</td></tr>
+<tr><td>VEN</td><td><code>VEN_NOTA_CREDITO</code></td><td>NCVE</td><td>Notas de credito emitidas a clientes para pagar una devolucion de venta. Cada devolucion genera a lo sumo una nota.</td></tr>
+<tr><td>PRM</td><td><code>PRM_PROMOCION</code></td><td>PROM</td><td>Promociones de mercadeo. Sus productos patrocinadores estan en PRM_PATROCINADOR y sus premios en PRM_PREMIO.</td></tr>
+<tr><td>PRM</td><td><code>PRM_PATROCINADOR</code></td><td>PATR</td><td>Productos patrocinadores de una promocion: cuantas unidades hay que comprar y cuantas acciones se entregan al cumplirlo.</td></tr>
+<tr><td>PRM</td><td><code>PRM_PREMIO</code></td><td>PREM</td><td>Premios que se pueden obtener en una promocion a cambio de acciones.</td></tr>
+<tr><td>PRM</td><td><code>PRM_ACCION_CLIENTE</code></td><td>ACLI</td><td>Acciones que una factura de venta le otorga a su cliente dentro de una promocion, y el premio canjeado con ellas si lo hay. El cliente y la fecha se obtienen de la factura.</td></tr>
+<tr><td>PRM</td><td><code>PRM_DESCUENTO</code></td><td>DSCT</td><td>Descuentos comerciales con su vigencia. A que productos aplica cada uno se define en PRM_DESCUENTO_REGLA.</td></tr>
+<tr><td>PRM</td><td><code>PRM_DESCUENTO_REGLA</code></td><td>DSRE</td><td>Criterio de aplicacion de un descuento: por familia, por proveedor, por dias desde el ingreso o por dias para el vencimiento. Cada regla usa exactamente un criterio.</td></tr>
+<tr><td>AUD</td><td><code>AUD_BITACORA</code></td><td>BITA</td><td>Bitacora general de operaciones realizadas por los usuarios del sistema.</td></tr>
+</table>
+<h2>M&oacute;dulo CAT_ - Jerarquia geografica</h2>
+<h3>CAT_PAIS</h3><p>Catalogo de paises. Se usa para nacionalidad, residencia y ubicacion geografica.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_CAT_PAIS</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PAIS</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_CAT_PAIS.NEXTVAL</code></td><td>PK</td><td>Identificador unico del pais.</td></tr>
+<tr><td><code>CODIGO_ISO_PAIS</code></td><td><code>VARCHAR2(3)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo ISO 3166-1 alfa-3 del pais. Ejemplo: CRI.</td></tr>
+<tr><td><code>NOMBRE_PAIS</code></td><td><code>VARCHAR2(50)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Nombre oficial del pais.</td></tr>
+<tr><td><code>COD_TELEFONICO_PAIS</code></td><td><code>VARCHAR2(5)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Prefijo telefonico internacional sin el signo mas. Ejemplo: 506.</td></tr>
+<tr><td><code>ESTADO_PAIS</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_PAIS</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PAIS</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PAIS</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PAIS</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PAIS</code></td><td>PK</td><td><code>ID_PAIS</code></td></tr>
+<tr><td><code>UK_PAIS_CODIGO_ISO</code></td><td>UK</td><td><code>CODIGO_ISO_PAIS</code></td></tr>
+<tr><td><code>UK_PAIS_NOMBRE</code></td><td>UK</td><td><code>NOMBRE_PAIS</code></td></tr>
+<tr><td><code>CK_PAIS_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_PAIS IN ('A','I')</code></td></tr>
+</table>
+<h3>CAT_PROVINCIA</h3><p>Division politica de primer nivel dentro de un pais.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_CAT_PROVINCIA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PROVINCIA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_CAT_PROVINCIA.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la provincia.</td></tr>
+<tr><td><code>ID_PAIS</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Pais al que pertenece la provincia. FK a CAT_PAIS.</td></tr>
+<tr><td><code>CODIGO_PROVI</code></td><td><code>VARCHAR2(10)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo oficial de la provincia, unico dentro del pais.</td></tr>
+<tr><td><code>NOMBRE_PROVI</code></td><td><code>VARCHAR2(50)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre de la provincia.</td></tr>
+<tr><td><code>ESTADO_PROVI</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_PROVI</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PROVI</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PROVI</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PROVI</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PROVI</code></td><td>PK</td><td><code>ID_PROVINCIA</code></td></tr>
+<tr><td><code>FK_PROVI_PAIS</code></td><td>FK</td><td><code>(ID_PAIS)</code> &rarr; <code>CAT_PAIS (ID_PAIS)</code></td></tr>
+<tr><td><code>UK_PROVI_PAIS_COD</code></td><td>UK</td><td><code>ID_PAIS, CODIGO_PROVI</code></td></tr>
+<tr><td><code>CK_PROVI_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_PROVI IN ('A','I')</code></td></tr>
+</table>
+<h3>CAT_CANTON</h3><p>Division politica de segundo nivel, dependiente de una provincia.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_CAT_CANTON</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_CANTON</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_CAT_CANTON.NEXTVAL</code></td><td>PK</td><td>Identificador unico del canton.</td></tr>
+<tr><td><code>ID_PROVINCIA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Provincia a la que pertenece el canton. FK a CAT_PROVINCIA.</td></tr>
+<tr><td><code>CODIGO_CANT</code></td><td><code>VARCHAR2(10)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo oficial del canton, unico dentro de la provincia.</td></tr>
+<tr><td><code>NOMBRE_CANT</code></td><td><code>VARCHAR2(50)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre del canton.</td></tr>
+<tr><td><code>ESTADO_CANT</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_CANT</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_CANT</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_CANT</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_CANT</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_CANT</code></td><td>PK</td><td><code>ID_CANTON</code></td></tr>
+<tr><td><code>FK_CANT_PROVI</code></td><td>FK</td><td><code>(ID_PROVINCIA)</code> &rarr; <code>CAT_PROVINCIA (ID_PROVINCIA)</code></td></tr>
+<tr><td><code>UK_CANT_PROVI_COD</code></td><td>UK</td><td><code>ID_PROVINCIA, CODIGO_CANT</code></td></tr>
+<tr><td><code>CK_CANT_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_CANT IN ('A','I')</code></td></tr>
+</table>
+<h3>CAT_DISTRITO</h3><p>Division politica de tercer nivel. Es el nivel al que se amarra toda direccion fisica del sistema.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_CAT_DISTRITO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_DISTRITO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_CAT_DISTRITO.NEXTVAL</code></td><td>PK</td><td>Identificador unico del distrito.</td></tr>
+<tr><td><code>ID_CANTON</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Canton al que pertenece el distrito. FK a CAT_CANTON.</td></tr>
+<tr><td><code>CODIGO_DIST</code></td><td><code>VARCHAR2(10)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo oficial del distrito, unico dentro del canton.</td></tr>
+<tr><td><code>NOMBRE_DIST</code></td><td><code>VARCHAR2(50)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre del distrito.</td></tr>
+<tr><td><code>CODIGO_POSTAL_DIST</code></td><td><code>VARCHAR2(10)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Codigo postal del distrito. Es el unico lugar donde se guarda el codigo postal.</td></tr>
+<tr><td><code>ESTADO_DIST</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_DIST</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_DIST</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_DIST</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_DIST</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_DIST</code></td><td>PK</td><td><code>ID_DISTRITO</code></td></tr>
+<tr><td><code>FK_DIST_CANT</code></td><td>FK</td><td><code>(ID_CANTON)</code> &rarr; <code>CAT_CANTON (ID_CANTON)</code></td></tr>
+<tr><td><code>UK_DIST_CANT_COD</code></td><td>UK</td><td><code>ID_CANTON, CODIGO_DIST</code></td></tr>
+<tr><td><code>CK_DIST_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_DIST IN ('A','I')</code></td></tr>
+</table>
+<h2>M&oacute;dulo PER_ - Personas, clientes y proveedores</h2>
+<h3>PER_PERSONA</h3><p>Supertipo de toda persona fisica o juridica conocida por el sistema (clientes, proveedores, usuarios, la propia empresa).<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PER_PERSONA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PERSONA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PER_PERSONA.NEXTVAL</code></td><td>PK, UK</td><td>Identificador unico de la persona.</td></tr>
+<tr><td><code>TIPO_PERS</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Tipo de persona: N=Nacional, E=Extranjero, J=Empresa (juridica). Es el discriminador de los subtipos.</td></tr>
+<tr><td><code>NUM_IDENTIFICACION_PERS</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Cedula, DIMEX, pasaporte o cedula juridica. Longitud variable porque las cedulas de extranjeros varian de tipo y tamano.</td></tr>
+<tr><td><code>FECHA_REGISTRO_PERS</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha en que la persona se registro en el sistema.</td></tr>
+<tr><td><code>ESTADO_PERS</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_PERS</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PERS</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PERS</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PERS</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PERS</code></td><td>PK</td><td><code>ID_PERSONA</code></td></tr>
+<tr><td><code>UK_PERS_IDENTIFICACION</code></td><td>UK</td><td><code>TIPO_PERS, NUM_IDENTIFICACION_PERS</code></td></tr>
+<tr><td><code>UK_PERS_TIPO</code></td><td>UK</td><td><code>ID_PERSONA, TIPO_PERS</code></td></tr>
+<tr><td><code>CK_PERS_TIPO</code></td><td>CHECK</td><td><code>TIPO_PERS IN ('N','E','J')</code></td></tr>
+<tr><td><code>CK_PERS_FORMATO_IDENT</code></td><td>CHECK</td><td><code>(TIPO_PERS = 'N' AND REGEXP_LIKE(NUM_IDENTIFICACION_PERS, '^[1-9][0-9]{8}$')) OR (TIPO_PERS = 'J' AND REGEXP_LIKE(NUM_IDENTIFICACION_PERS, '^[0-9]{10}$')) OR (TIPO_PERS = 'E' AND LENGTH(NUM_IDENTIFICACION_PERS) &gt;= 5)</code></td></tr>
+<tr><td><code>CK_PERS_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_PERS IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_PERS_NUM_IDENT</code></td><td>Secundario (b&uacute;squeda)</td><td><code>NUM_IDENTIFICACION_PERS</code></td></tr>
+</table>
+<h3>PER_PERSONA_FISICA</h3><p>Subtipo de PER_PERSONA con los datos propios de un individuo (nacional o extranjero).<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PER_PERSONA_FISICA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PERSONA_FISICA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>PK, FK</td><td>Identificador de la persona fisica. Es el mismo valor de PER_PERSONA.ID_PERSONA (subtipo).</td></tr>
+<tr><td><code>TIPO_PERS</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td>FK</td><td>Discriminador heredado de PER_PERSONA. Solo admite N o E; impide que una empresa sea persona fisica.</td></tr>
+<tr><td><code>NOMBRE_PEFI</code></td><td><code>VARCHAR2(40)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre de pila.</td></tr>
+<tr><td><code>APELLIDO1_PEFI</code></td><td><code>VARCHAR2(40)</code></td><td>No</td><td><code></code></td><td></td><td>Primer apellido.</td></tr>
+<tr><td><code>APELLIDO2_PEFI</code></td><td><code>VARCHAR2(40)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Segundo apellido. Opcional porque los extranjeros pueden no tenerlo.</td></tr>
+<tr><td><code>SEXO_PEFI</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code></code></td><td></td><td>Sexo: M=Masculino, F=Femenino, O=Otro.</td></tr>
+<tr><td><code>FECHA_NACIMIENTO_PEFI</code></td><td><code>DATE</code></td><td>No</td><td><code></code></td><td></td><td>Fecha de nacimiento.</td></tr>
+<tr><td><code>ESTADO_CIVIL_PEFI</code></td><td><code>VARCHAR2(1)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Estado civil: S=Soltero, C=Casado, D=Divorciado, V=Viudo, U=Union libre.</td></tr>
+<tr><td><code>ESCOLARIDAD_PEFI</code></td><td><code>VARCHAR2(1)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Escolaridad: N=Ninguna, P=Primaria, S=Secundaria, T=Tecnico, U=Universitaria, G=Posgrado.</td></tr>
+<tr><td><code>ID_PAIS_NACIONALIDAD</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Pais de nacionalidad. FK a CAT_PAIS (rol: nacionalidad).</td></tr>
+<tr><td><code>ID_PAIS_RESIDENCIA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Pais de residencia. FK a CAT_PAIS (rol: residencia).</td></tr>
+<tr><td><code>PUESTO_PEFI</code></td><td><code>VARCHAR2(100)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Puesto que desempena la persona en su trabajo.</td></tr>
+<tr><td><code>EMPRESA_LABORA_PEFI</code></td><td><code>VARCHAR2(150)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Nombre de la empresa donde labora.</td></tr>
+<tr><td><code>ES_ASEGURADO_PEFI</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si la persona esta asegurada: S=Si, N=No.</td></tr>
+<tr><td><code>USUARIO_CREA_PEFI</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PEFI</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PEFI</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PEFI</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PEFI</code></td><td>PK</td><td><code>ID_PERSONA_FISICA</code></td></tr>
+<tr><td><code>FK_PEFI_PERS</code></td><td>FK</td><td><code>(ID_PERSONA_FISICA, TIPO_PERS)</code> &rarr; <code>PER_PERSONA (ID_PERSONA, TIPO_PERS)</code></td></tr>
+<tr><td><code>FK_PEFI_PAIS_NAC</code></td><td>FK</td><td><code>(ID_PAIS_NACIONALIDAD)</code> &rarr; <code>CAT_PAIS (ID_PAIS)</code></td></tr>
+<tr><td><code>FK_PEFI_PAIS_RES</code></td><td>FK</td><td><code>(ID_PAIS_RESIDENCIA)</code> &rarr; <code>CAT_PAIS (ID_PAIS)</code></td></tr>
+<tr><td><code>CK_PEFI_TIPO</code></td><td>CHECK</td><td><code>TIPO_PERS IN ('N','E')</code></td></tr>
+<tr><td><code>CK_PEFI_SEXO</code></td><td>CHECK</td><td><code>SEXO_PEFI IN ('M','F','O')</code></td></tr>
+<tr><td><code>CK_PEFI_ESTADO_CIVIL</code></td><td>CHECK</td><td><code>ESTADO_CIVIL_PEFI IN ('S','C','D','V','U')</code></td></tr>
+<tr><td><code>CK_PEFI_ESCOLARIDAD</code></td><td>CHECK</td><td><code>ESCOLARIDAD_PEFI IN ('N','P','S','T','U','G')</code></td></tr>
+<tr><td><code>CK_PEFI_ASEGURADO</code></td><td>CHECK</td><td><code>ES_ASEGURADO_PEFI IN ('S','N')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_PEFI_PERS</code></td><td>Secundario (FK)</td><td><code>ID_PERSONA_FISICA, TIPO_PERS</code></td></tr>
+<tr><td><code>IX_PEFI_PAIS_NAC</code></td><td>Secundario (FK)</td><td><code>ID_PAIS_NACIONALIDAD</code></td></tr>
+<tr><td><code>IX_PEFI_PAIS_RES</code></td><td>Secundario (FK)</td><td><code>ID_PAIS_RESIDENCIA</code></td></tr>
+<tr><td><code>IX_PEFI_APELLIDOS</code></td><td>Secundario (b&uacute;squeda)</td><td><code>APELLIDO1_PEFI, APELLIDO2_PEFI, NOMBRE_PEFI</code></td></tr>
+</table>
+<h3>PER_PERSONA_JURIDICA</h3><p>Subtipo de PER_PERSONA con los datos propios de una empresa.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PER_PERSONA_JURIDICA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PERSONA_JURIDICA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>PK, FK</td><td>Identificador de la persona juridica. Es el mismo valor de PER_PERSONA.ID_PERSONA (subtipo).</td></tr>
+<tr><td><code>TIPO_PERS</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'J'</code></td><td>FK</td><td>Discriminador heredado de PER_PERSONA. Solo admite J; impide que un individuo sea persona juridica.</td></tr>
+<tr><td><code>RAZON_SOCIAL_PEJU</code></td><td><code>VARCHAR2(150)</code></td><td>No</td><td><code></code></td><td></td><td>Razon social inscrita.</td></tr>
+<tr><td><code>NOMBRE_COMERCIAL_PEJU</code></td><td><code>VARCHAR2(150)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Nombre comercial o de fantasia.</td></tr>
+<tr><td><code>FECHA_CONSTITUCION_PEJU</code></td><td><code>DATE</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha de constitucion de la sociedad.</td></tr>
+<tr><td><code>ID_PAIS_ORIGEN</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Pais donde esta constituida la empresa. FK a CAT_PAIS (rol: origen).</td></tr>
+<tr><td><code>SITIO_WEB_PEJU</code></td><td><code>VARCHAR2(150)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Direccion del sitio web.</td></tr>
+<tr><td><code>USUARIO_CREA_PEJU</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PEJU</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PEJU</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PEJU</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PEJU</code></td><td>PK</td><td><code>ID_PERSONA_JURIDICA</code></td></tr>
+<tr><td><code>FK_PEJU_PERS</code></td><td>FK</td><td><code>(ID_PERSONA_JURIDICA, TIPO_PERS)</code> &rarr; <code>PER_PERSONA (ID_PERSONA, TIPO_PERS)</code></td></tr>
+<tr><td><code>FK_PEJU_PAIS_ORI</code></td><td>FK</td><td><code>(ID_PAIS_ORIGEN)</code> &rarr; <code>CAT_PAIS (ID_PAIS)</code></td></tr>
+<tr><td><code>CK_PEJU_TIPO</code></td><td>CHECK</td><td><code>TIPO_PERS = 'J'</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_PEJU_PERS</code></td><td>Secundario (FK)</td><td><code>ID_PERSONA_JURIDICA, TIPO_PERS</code></td></tr>
+<tr><td><code>IX_PEJU_PAIS_ORI</code></td><td>Secundario (FK)</td><td><code>ID_PAIS_ORIGEN</code></td></tr>
+<tr><td><code>IX_PEJU_RAZON</code></td><td>Secundario (b&uacute;squeda)</td><td><code>RAZON_SOCIAL_PEJU</code></td></tr>
+</table>
+<h3>PER_DIRECCION</h3><p>Direcciones de una persona. Cada persona puede tener una direccion de casa y una de trabajo.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PER_DIRECCION</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_DIRECCION</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PER_DIRECCION.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la direccion.</td></tr>
+<tr><td><code>ID_PERSONA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Persona duena de la direccion. FK a PER_PERSONA.</td></tr>
+<tr><td><code>TIPO_DIRE</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Tipo de direccion: C=Casa, T=Trabajo.</td></tr>
+<tr><td><code>ID_DISTRITO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Distrito donde se ubica. FK a CAT_DISTRITO.</td></tr>
+<tr><td><code>SENNAS_EXACTAS_DIRE</code></td><td><code>VARCHAR2(250)</code></td><td>No</td><td><code></code></td><td></td><td>Senas exactas de la direccion.</td></tr>
+<tr><td><code>ES_PRINCIPAL_DIRE</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si es la direccion principal de la persona: S=Si, N=No.</td></tr>
+<tr><td><code>ESTADO_DIRE</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_DIRE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_DIRE</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_DIRE</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_DIRE</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_DIRE</code></td><td>PK</td><td><code>ID_DIRECCION</code></td></tr>
+<tr><td><code>FK_DIRE_PERS</code></td><td>FK</td><td><code>(ID_PERSONA)</code> &rarr; <code>PER_PERSONA (ID_PERSONA)</code></td></tr>
+<tr><td><code>FK_DIRE_DIST</code></td><td>FK</td><td><code>(ID_DISTRITO)</code> &rarr; <code>CAT_DISTRITO (ID_DISTRITO)</code></td></tr>
+<tr><td><code>UK_DIRE_PERS_TIPO</code></td><td>UK</td><td><code>ID_PERSONA, TIPO_DIRE</code></td></tr>
+<tr><td><code>CK_DIRE_TIPO</code></td><td>CHECK</td><td><code>TIPO_DIRE IN ('C','T')</code></td></tr>
+<tr><td><code>CK_DIRE_PRINCIPAL</code></td><td>CHECK</td><td><code>ES_PRINCIPAL_DIRE IN ('S','N')</code></td></tr>
+<tr><td><code>CK_DIRE_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_DIRE IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>UX_DIRE_PRINCIPAL</code></td><td>&Uacute;nico por expresi&oacute;n</td><td><code>CASE WHEN ES_PRINCIPAL_DIRE = 'S' THEN ID_PERSONA END</code></td></tr>
+<tr><td><code>IX_DIRE_DIST</code></td><td>Secundario (FK)</td><td><code>ID_DISTRITO</code></td></tr>
+</table>
+<h3>PER_CONTACTO</h3><p>Medios de contacto de una persona: telefono, celular, fax y correo electronico.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PER_CONTACTO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_CONTACTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PER_CONTACTO.NEXTVAL</code></td><td>PK</td><td>Identificador unico del contacto.</td></tr>
+<tr><td><code>ID_PERSONA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Persona duena del contacto. FK a PER_PERSONA.</td></tr>
+<tr><td><code>TIPO_CONT</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Tipo de contacto: T=Telefono, C=Celular, F=Fax, E=Email.</td></tr>
+<tr><td><code>VALOR_CONT</code></td><td><code>VARCHAR2(100)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero o direccion de correo segun el tipo.</td></tr>
+<tr><td><code>ES_PRINCIPAL_CONT</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si es el contacto principal de su tipo: S=Si, N=No.</td></tr>
+<tr><td><code>ESTADO_CONT</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_CONT</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_CONT</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_CONT</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_CONT</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_CONT</code></td><td>PK</td><td><code>ID_CONTACTO</code></td></tr>
+<tr><td><code>FK_CONT_PERS</code></td><td>FK</td><td><code>(ID_PERSONA)</code> &rarr; <code>PER_PERSONA (ID_PERSONA)</code></td></tr>
+<tr><td><code>UK_CONT_PERS_TIPO_VAL</code></td><td>UK</td><td><code>ID_PERSONA, TIPO_CONT, VALOR_CONT</code></td></tr>
+<tr><td><code>CK_CONT_TIPO</code></td><td>CHECK</td><td><code>TIPO_CONT IN ('T','C','F','E')</code></td></tr>
+<tr><td><code>CK_CONT_FORMATO</code></td><td>CHECK</td><td><code>(TIPO_CONT = 'E' AND VALOR_CONT LIKE '_%@_%._%') OR (TIPO_CONT &lt;&gt; 'E' AND REGEXP_LIKE(VALOR_CONT, '^[0-9+ -]{8,20}$'))</code></td></tr>
+<tr><td><code>CK_CONT_PRINCIPAL</code></td><td>CHECK</td><td><code>ES_PRINCIPAL_CONT IN ('S','N')</code></td></tr>
+<tr><td><code>CK_CONT_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_CONT IN ('A','I')</code></td></tr>
+</table>
+<h3>PER_CLIENTE</h3><p>Rol de cliente de una persona fisica o juridica. Incluye el cliente por defecto usado en ventas de contado sin cliente registrado.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PER_CLIENTE</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_CLIENTE</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PER_CLIENTE.NEXTVAL</code></td><td>PK</td><td>Identificador unico del cliente.</td></tr>
+<tr><td><code>ID_PERSONA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Persona (fisica o juridica) que es cliente. FK a PER_PERSONA.</td></tr>
+<tr><td><code>CODIGO_CLI</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo interno del cliente.</td></tr>
+<tr><td><code>FECHA_INGRESO_CLI</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de ingreso a la empresa como cliente.</td></tr>
+<tr><td><code>ES_PREFERENCIAL_CLI</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si es cliente preferencial (puede comprar a credito): S=Si, N=No.</td></tr>
+<tr><td><code>MONTO_MAX_CREDITO_CLI</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Monto maximo de credito permitido. Solo puede ser mayor a cero en clientes preferenciales.</td></tr>
+<tr><td><code>DIAS_CREDITO_CLI</code></td><td><code>NUMBER(4)</code></td><td>No</td><td><code>0</code></td><td></td><td>Plazo de credito en dias.</td></tr>
+<tr><td><code>ES_DEFECTO_CLI</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si es el cliente por defecto de la facturacion: S=Si, N=No. Solo puede existir uno.</td></tr>
+<tr><td><code>ESTADO_CLI</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_CLI</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_CLI</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_CLI</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_CLI</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_CLI</code></td><td>PK</td><td><code>ID_CLIENTE</code></td></tr>
+<tr><td><code>FK_CLI_PERS</code></td><td>FK</td><td><code>(ID_PERSONA)</code> &rarr; <code>PER_PERSONA (ID_PERSONA)</code></td></tr>
+<tr><td><code>UK_CLI_PERSONA</code></td><td>UK</td><td><code>ID_PERSONA</code></td></tr>
+<tr><td><code>UK_CLI_CODIGO</code></td><td>UK</td><td><code>CODIGO_CLI</code></td></tr>
+<tr><td><code>CK_CLI_MONTO_CREDITO</code></td><td>CHECK</td><td><code>MONTO_MAX_CREDITO_CLI &gt;= 0</code></td></tr>
+<tr><td><code>CK_CLI_DIAS_CREDITO</code></td><td>CHECK</td><td><code>DIAS_CREDITO_CLI &gt;= 0</code></td></tr>
+<tr><td><code>CK_CLI_CRED_PREF</code></td><td>CHECK</td><td><code>ES_PREFERENCIAL_CLI = 'S' OR MONTO_MAX_CREDITO_CLI = 0</code></td></tr>
+<tr><td><code>CK_CLI_PREFERENCIAL</code></td><td>CHECK</td><td><code>ES_PREFERENCIAL_CLI IN ('S','N')</code></td></tr>
+<tr><td><code>CK_CLI_DEFECTO</code></td><td>CHECK</td><td><code>ES_DEFECTO_CLI IN ('S','N')</code></td></tr>
+<tr><td><code>CK_CLI_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_CLI IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>UX_CLI_DEFECTO</code></td><td>&Uacute;nico por expresi&oacute;n</td><td><code>CASE WHEN ES_DEFECTO_CLI = 'S' THEN 1 END</code></td></tr>
+</table>
+<h3>PER_PROVEEDOR</h3><p>Rol de proveedor. Solo una persona juridica (empresa) puede ser proveedor.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PER_PROVEEDOR</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PROVEEDOR</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PER_PROVEEDOR.NEXTVAL</code></td><td>PK</td><td>Identificador unico del proveedor.</td></tr>
+<tr><td><code>ID_PERSONA_JURIDICA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Empresa que es proveedor. FK a PER_PERSONA_JURIDICA, lo que impide registrar individuos como proveedores.</td></tr>
+<tr><td><code>CODIGO_PROVE</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo interno del proveedor.</td></tr>
+<tr><td><code>FECHA_INGRESO_PROVE</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de inicio de la relacion comercial.</td></tr>
+<tr><td><code>LIMITE_CREDITO_PROVE</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Limite de credito que el proveedor le otorga al negocio.</td></tr>
+<tr><td><code>DIAS_CREDITO_PROVE</code></td><td><code>NUMBER(4)</code></td><td>No</td><td><code>0</code></td><td></td><td>Plazo de credito en dias otorgado por el proveedor.</td></tr>
+<tr><td><code>NOMBRE_CONTACTO_PROVE</code></td><td><code>VARCHAR2(100)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Nombre del agente o persona de contacto en el proveedor.</td></tr>
+<tr><td><code>ESTADO_PROVE</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_PROVE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PROVE</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PROVE</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PROVE</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PROVE</code></td><td>PK</td><td><code>ID_PROVEEDOR</code></td></tr>
+<tr><td><code>FK_PROVE_PEJU</code></td><td>FK</td><td><code>(ID_PERSONA_JURIDICA)</code> &rarr; <code>PER_PERSONA_JURIDICA (ID_PERSONA_JURIDICA)</code></td></tr>
+<tr><td><code>UK_PROVE_PEJU</code></td><td>UK</td><td><code>ID_PERSONA_JURIDICA</code></td></tr>
+<tr><td><code>UK_PROVE_CODIGO</code></td><td>UK</td><td><code>CODIGO_PROVE</code></td></tr>
+<tr><td><code>CK_PROVE_LIMITE</code></td><td>CHECK</td><td><code>LIMITE_CREDITO_PROVE &gt;= 0</code></td></tr>
+<tr><td><code>CK_PROVE_DIAS_CREDITO</code></td><td>CHECK</td><td><code>DIAS_CREDITO_PROVE &gt;= 0</code></td></tr>
+<tr><td><code>CK_PROVE_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_PROVE IN ('A','I')</code></td></tr>
+</table>
+<h2>M&oacute;dulo SEG_ - Configuracion del negocio, sucursales y usuarios</h2>
+<h3>SEG_EMPRESA</h3><p>Configuracion del negocio que opera la instancia. Los negocios son mutuamente excluyentes: solo una configuracion puede estar activa.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_SEG_EMPRESA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_EMPRESA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_SEG_EMPRESA.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la configuracion de empresa.</td></tr>
+<tr><td><code>ID_PERSONA_JURIDICA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Persona juridica duena del negocio. FK a PER_PERSONA_JURIDICA.</td></tr>
+<tr><td><code>TIPO_NEGOCIO_EMP</code></td><td><code>VARCHAR2(15)</code></td><td>No</td><td><code></code></td><td></td><td>Tipo de negocio configurado: SUPERMERCADO, FERRETERIA o SUMINISTROS.</td></tr>
+<tr><td><code>NOMBRE_SISTEMA_EMP</code></td><td><code>VARCHAR2(100)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre con que se identifica el punto de venta.</td></tr>
+<tr><td><code>MONEDA_BASE_EMP</code></td><td><code>VARCHAR2(3)</code></td><td>No</td><td><code>'CRC'</code></td><td></td><td>Codigo ISO 4217 de la moneda base.</td></tr>
+<tr><td><code>FECHA_INICIO_OP_EMP</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha desde la que rige la configuracion.</td></tr>
+<tr><td><code>ESTADO_EMP</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activa (vigente), I=Inactiva (historica).</td></tr>
+<tr><td><code>USUARIO_CREA_EMP</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_EMP</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_EMP</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_EMP</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_EMP</code></td><td>PK</td><td><code>ID_EMPRESA</code></td></tr>
+<tr><td><code>FK_EMP_PEJU</code></td><td>FK</td><td><code>(ID_PERSONA_JURIDICA)</code> &rarr; <code>PER_PERSONA_JURIDICA (ID_PERSONA_JURIDICA)</code></td></tr>
+<tr><td><code>CK_EMP_TIPO_NEGOCIO</code></td><td>CHECK</td><td><code>TIPO_NEGOCIO_EMP IN ('SUPERMERCADO','FERRETERIA','SUMINISTROS')</code></td></tr>
+<tr><td><code>CK_EMP_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_EMP IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>UX_EMP_ACTIVA</code></td><td>&Uacute;nico por expresi&oacute;n</td><td><code>CASE WHEN ESTADO_EMP = 'A' THEN 1 END</code></td></tr>
+<tr><td><code>IX_EMP_PEJU</code></td><td>Secundario (FK)</td><td><code>ID_PERSONA_JURIDICA</code></td></tr>
+</table>
+<h3>SEG_SUCURSAL</h3><p>Sucursales (negocios) de la cadena. Permite que el sistema sea multisucursal.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_SEG_SUCURSAL</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_SUCURSAL</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_SEG_SUCURSAL.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la sucursal.</td></tr>
+<tr><td><code>ID_EMPRESA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Configuracion de empresa a la que pertenece. FK a SEG_EMPRESA.</td></tr>
+<tr><td><code>ID_DISTRITO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Distrito donde se ubica. FK a CAT_DISTRITO.</td></tr>
+<tr><td><code>CODIGO_SUC</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo interno de la sucursal.</td></tr>
+<tr><td><code>NOMBRE_SUC</code></td><td><code>VARCHAR2(100)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre de la sucursal.</td></tr>
+<tr><td><code>SENNAS_EXACTAS_SUC</code></td><td><code>VARCHAR2(250)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Senas exactas del local.</td></tr>
+<tr><td><code>TELEFONO_SUC</code></td><td><code>VARCHAR2(25)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Telefono del local.</td></tr>
+<tr><td><code>ES_CASA_MATRIZ_SUC</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si es la casa matriz: S=Si, N=No. Solo puede existir una.</td></tr>
+<tr><td><code>FECHA_APERTURA_SUC</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de apertura.</td></tr>
+<tr><td><code>ESTADO_SUC</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_SUC</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_SUC</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_SUC</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_SUC</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_SUC</code></td><td>PK</td><td><code>ID_SUCURSAL</code></td></tr>
+<tr><td><code>FK_SUC_EMP</code></td><td>FK</td><td><code>(ID_EMPRESA)</code> &rarr; <code>SEG_EMPRESA (ID_EMPRESA)</code></td></tr>
+<tr><td><code>FK_SUC_DIST</code></td><td>FK</td><td><code>(ID_DISTRITO)</code> &rarr; <code>CAT_DISTRITO (ID_DISTRITO)</code></td></tr>
+<tr><td><code>UK_SUC_CODIGO</code></td><td>UK</td><td><code>CODIGO_SUC</code></td></tr>
+<tr><td><code>CK_SUC_CASA_MATRIZ</code></td><td>CHECK</td><td><code>ES_CASA_MATRIZ_SUC IN ('S','N')</code></td></tr>
+<tr><td><code>CK_SUC_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_SUC IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>UX_SUC_CASA_MATRIZ</code></td><td>&Uacute;nico por expresi&oacute;n</td><td><code>CASE WHEN ES_CASA_MATRIZ_SUC = 'S' THEN 1 END</code></td></tr>
+<tr><td><code>IX_SUC_EMP</code></td><td>Secundario (FK)</td><td><code>ID_EMPRESA</code></td></tr>
+<tr><td><code>IX_SUC_DIST</code></td><td>Secundario (FK)</td><td><code>ID_DISTRITO</code></td></tr>
+</table>
+<h3>SEG_USUARIO</h3><p>Usuarios del sistema. Permite que el sistema sea multiusuario. Todo usuario es una persona fisica.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_SEG_USUARIO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_SEG_USUARIO.NEXTVAL</code></td><td>PK</td><td>Identificador unico del usuario.</td></tr>
+<tr><td><code>ID_PERSONA_FISICA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Persona fisica que es usuario. FK a PER_PERSONA_FISICA.</td></tr>
+<tr><td><code>NOMBRE_USUARIO_USU</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Nombre de inicio de sesion.</td></tr>
+<tr><td><code>CLAVE_HASH_USU</code></td><td><code>VARCHAR2(256)</code></td><td>No</td><td><code></code></td><td></td><td>Hash de la contrasena. Nunca se guarda la contrasena en texto plano.</td></tr>
+<tr><td><code>ROL_USU</code></td><td><code>VARCHAR2(10)</code></td><td>No</td><td><code></code></td><td></td><td>Rol del usuario: ADMIN, SUPERVISOR, CAJERO, BODEGUERO o CONTADOR.</td></tr>
+<tr><td><code>FECHA_ALTA_USU</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de creacion del usuario.</td></tr>
+<tr><td><code>FECHA_ULT_ACCESO_USU</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora del ultimo inicio de sesion.</td></tr>
+<tr><td><code>INTENTOS_FALLIDOS_USU</code></td><td><code>NUMBER(2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Intentos de acceso fallidos consecutivos.</td></tr>
+<tr><td><code>DEBE_CAMBIAR_CLAVE_USU</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'S'</code></td><td></td><td>Indica si debe cambiar la contrasena en el proximo ingreso: S=Si, N=No.</td></tr>
+<tr><td><code>ESTADO_USU</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo, B=Bloqueado.</td></tr>
+<tr><td><code>USUARIO_CREA_USU</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_USU</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_USU</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_USU</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_USU</code></td><td>PK</td><td><code>ID_USUARIO</code></td></tr>
+<tr><td><code>FK_USU_PEFI</code></td><td>FK</td><td><code>(ID_PERSONA_FISICA)</code> &rarr; <code>PER_PERSONA_FISICA (ID_PERSONA_FISICA)</code></td></tr>
+<tr><td><code>UK_USU_NOMBRE</code></td><td>UK</td><td><code>NOMBRE_USUARIO_USU</code></td></tr>
+<tr><td><code>UK_USU_PEFI</code></td><td>UK</td><td><code>ID_PERSONA_FISICA</code></td></tr>
+<tr><td><code>CK_USU_ROL</code></td><td>CHECK</td><td><code>ROL_USU IN ('ADMIN','SUPERVISOR','CAJERO','BODEGUERO','CONTADOR')</code></td></tr>
+<tr><td><code>CK_USU_INTENTOS</code></td><td>CHECK</td><td><code>INTENTOS_FALLIDOS_USU &gt;= 0</code></td></tr>
+<tr><td><code>CK_USU_DEBE_CAMBIAR_CLAVE</code></td><td>CHECK</td><td><code>DEBE_CAMBIAR_CLAVE_USU IN ('S','N')</code></td></tr>
+<tr><td><code>CK_USU_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_USU IN ('A','I','B')</code></td></tr>
+</table>
+<h3>SEG_USUARIO_SUCURSAL</h3><p>Sucursales en las que un usuario esta autorizado a trabajar.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_SEG_USUARIO_SUCURSAL</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_USUARIO_SUCURSAL</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_SEG_USUARIO_SUCURSAL.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la asignacion.</td></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Usuario asignado. FK a SEG_USUARIO.</td></tr>
+<tr><td><code>ID_SUCURSAL</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Sucursal asignada. FK a SEG_SUCURSAL.</td></tr>
+<tr><td><code>ES_DEFECTO_USSU</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si es la sucursal por defecto del usuario: S=Si, N=No. Solo una por usuario.</td></tr>
+<tr><td><code>FECHA_ASIGNA_USSU</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de la asignacion.</td></tr>
+<tr><td><code>ESTADO_USSU</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_USSU</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_USSU</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_USSU</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_USSU</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_USSU</code></td><td>PK</td><td><code>ID_USUARIO_SUCURSAL</code></td></tr>
+<tr><td><code>FK_USSU_USU</code></td><td>FK</td><td><code>(ID_USUARIO)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>FK_USSU_SUC</code></td><td>FK</td><td><code>(ID_SUCURSAL)</code> &rarr; <code>SEG_SUCURSAL (ID_SUCURSAL)</code></td></tr>
+<tr><td><code>UK_USSU_USU_SUC</code></td><td>UK</td><td><code>ID_USUARIO, ID_SUCURSAL</code></td></tr>
+<tr><td><code>CK_USSU_DEFECTO</code></td><td>CHECK</td><td><code>ES_DEFECTO_USSU IN ('S','N')</code></td></tr>
+<tr><td><code>CK_USSU_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_USSU IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>UX_USSU_DEFECTO</code></td><td>&Uacute;nico por expresi&oacute;n</td><td><code>CASE WHEN ES_DEFECTO_USSU = 'S' THEN ID_USUARIO END</code></td></tr>
+<tr><td><code>IX_USSU_SUC</code></td><td>Secundario (FK)</td><td><code>ID_SUCURSAL</code></td></tr>
+</table>
+<h2>M&oacute;dulo PRO_ - Productos, servicios, precios y lotes</h2>
+<h3>PRO_FAMILIA_PRODUCTO</h3><p>Familias de productos (bebidas, carnes, verduras, etc.). Admite subfamilias.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRO_FAMILIA_PRODUCTO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_FAMILIA_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PRO_FAMILIA_PRODUCTO.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la familia.</td></tr>
+<tr><td><code>ID_FAMILIA_PRODUCTO_PADRE</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Familia de nivel superior. FK a PRO_FAMILIA_PRODUCTO (rol: padre). Nulo en familias raiz.</td></tr>
+<tr><td><code>CODIGO_FAMI</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo interno de la familia.</td></tr>
+<tr><td><code>NOMBRE_FAMI</code></td><td><code>VARCHAR2(50)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre de la familia.</td></tr>
+<tr><td><code>DESCRIPCION_FAMI</code></td><td><code>VARCHAR2(200)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Descripcion de la familia.</td></tr>
+<tr><td><code>ESTADO_FAMI</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_FAMI</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_FAMI</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_FAMI</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_FAMI</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_FAMI</code></td><td>PK</td><td><code>ID_FAMILIA_PRODUCTO</code></td></tr>
+<tr><td><code>FK_FAMI_FAMI_PADRE</code></td><td>FK</td><td><code>(ID_FAMILIA_PRODUCTO_PADRE)</code> &rarr; <code>PRO_FAMILIA_PRODUCTO (ID_FAMILIA_PRODUCTO)</code></td></tr>
+<tr><td><code>UK_FAMI_CODIGO</code></td><td>UK</td><td><code>CODIGO_FAMI</code></td></tr>
+<tr><td><code>CK_FAMI_PADRE</code></td><td>CHECK</td><td><code>ID_FAMILIA_PRODUCTO_PADRE &lt;&gt; ID_FAMILIA_PRODUCTO</code></td></tr>
+<tr><td><code>CK_FAMI_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_FAMI IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_FAMI_FAMI_PADRE</code></td><td>Secundario (FK)</td><td><code>ID_FAMILIA_PRODUCTO_PADRE</code></td></tr>
+</table>
+<h3>PRO_IMPUESTO</h3><p>Impuestos aplicables a productos y servicios gravados. Un producto o servicio sin impuesto asociado es exento.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRO_IMPUESTO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_IMPUESTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PRO_IMPUESTO.NEXTVAL</code></td><td>PK</td><td>Identificador unico del impuesto.</td></tr>
+<tr><td><code>CODIGO_IMPU</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo interno del impuesto.</td></tr>
+<tr><td><code>NOMBRE_IMPU</code></td><td><code>VARCHAR2(50)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre del impuesto.</td></tr>
+<tr><td><code>PORCENTAJE_IMPU</code></td><td><code>NUMBER(5,2)</code></td><td>No</td><td><code></code></td><td></td><td>Porcentaje del impuesto. Siempre mayor a cero: la exencion se representa sin impuesto asociado.</td></tr>
+<tr><td><code>ESTADO_IMPU</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_IMPU</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_IMPU</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_IMPU</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_IMPU</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_IMPU</code></td><td>PK</td><td><code>ID_IMPUESTO</code></td></tr>
+<tr><td><code>UK_IMPU_CODIGO</code></td><td>UK</td><td><code>CODIGO_IMPU</code></td></tr>
+<tr><td><code>CK_IMPU_PORCENTAJE</code></td><td>CHECK</td><td><code>PORCENTAJE_IMPU &gt; 0 AND PORCENTAJE_IMPU &lt;= 100</code></td></tr>
+<tr><td><code>CK_IMPU_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_IMPU IN ('A','I')</code></td></tr>
+</table>
+<h3>PRO_PRODUCTO</h3><p>Productos del inventario. El precio de venta no se almacena: se calcula en V_PRECIO_VENTA a partir de costo, utilidad, descuento e impuesto.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRO_PRODUCTO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PRO_PRODUCTO.NEXTVAL</code></td><td>PK</td><td>Identificador unico del producto.</td></tr>
+<tr><td><code>ID_FAMILIA_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Familia a la que pertenece. FK a PRO_FAMILIA_PRODUCTO.</td></tr>
+<tr><td><code>ID_PROVEEDOR</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Proveedor del producto. FK a PER_PROVEEDOR.</td></tr>
+<tr><td><code>ID_IMPUESTO</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Impuesto que grava el producto. FK a PRO_IMPUESTO. Nulo significa producto exento.</td></tr>
+<tr><td><code>CODIGO_PROD</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo interno del producto.</td></tr>
+<tr><td><code>NOMBRE_PROD</code></td><td><code>VARCHAR2(150)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre del producto.</td></tr>
+<tr><td><code>DESCRIPCION_PROD</code></td><td><code>VARCHAR2(250)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Descripcion ampliada.</td></tr>
+<tr><td><code>UNIDAD_MEDIDA_PROD</code></td><td><code>VARCHAR2(3)</code></td><td>No</td><td><code>'UND'</code></td><td></td><td>Unidad de medida: UND=Unidad, KG=Kilogramo, LT=Litro, CJ=Caja, PQ=Paquete.</td></tr>
+<tr><td><code>PRECIO_COSTO_PROD</code></td><td><code>NUMBER(14,4)</code></td><td>No</td><td><code>0</code></td><td></td><td>Precio de costo vigente. Los costos anteriores quedan en PRO_PRECIO_HIST.</td></tr>
+<tr><td><code>ES_EXENTO_PROD</code></td><td><code>VARCHAR2(1)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: S si el producto es exento de impuestos (sin impuesto asociado), N si es gravado.<br><code>CASE WHEN ID_IMPUESTO IS NULL THEN 'S' ELSE 'N' END</code></td></tr>
+<tr><td><code>MANEJA_LOTE_PROD</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si el producto se controla por lote y fecha de vencimiento: S=Si, N=No.</td></tr>
+<tr><td><code>STOCK_MINIMO_PROD</code></td><td><code>NUMBER(14,3)</code></td><td>No</td><td><code>0</code></td><td></td><td>Existencia minima antes de reordenar.</td></tr>
+<tr><td><code>ESTADO_PROD</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_PROD</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PROD</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PROD</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PROD</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PROD</code></td><td>PK</td><td><code>ID_PRODUCTO</code></td></tr>
+<tr><td><code>FK_PROD_FAMI</code></td><td>FK</td><td><code>(ID_FAMILIA_PRODUCTO)</code> &rarr; <code>PRO_FAMILIA_PRODUCTO (ID_FAMILIA_PRODUCTO)</code></td></tr>
+<tr><td><code>FK_PROD_PROVE</code></td><td>FK</td><td><code>(ID_PROVEEDOR)</code> &rarr; <code>PER_PROVEEDOR (ID_PROVEEDOR)</code></td></tr>
+<tr><td><code>FK_PROD_IMPU</code></td><td>FK</td><td><code>(ID_IMPUESTO)</code> &rarr; <code>PRO_IMPUESTO (ID_IMPUESTO)</code></td></tr>
+<tr><td><code>UK_PROD_CODIGO</code></td><td>UK</td><td><code>CODIGO_PROD</code></td></tr>
+<tr><td><code>CK_PROD_UNIDAD</code></td><td>CHECK</td><td><code>UNIDAD_MEDIDA_PROD IN ('UND','KG','LT','CJ','PQ')</code></td></tr>
+<tr><td><code>CK_PROD_COSTO</code></td><td>CHECK</td><td><code>PRECIO_COSTO_PROD &gt;= 0</code></td></tr>
+<tr><td><code>CK_PROD_STOCK_MIN</code></td><td>CHECK</td><td><code>STOCK_MINIMO_PROD &gt;= 0</code></td></tr>
+<tr><td><code>CK_PROD_MANEJA_LOTE</code></td><td>CHECK</td><td><code>MANEJA_LOTE_PROD IN ('S','N')</code></td></tr>
+<tr><td><code>CK_PROD_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_PROD IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_PROD_FAMI</code></td><td>Secundario (FK)</td><td><code>ID_FAMILIA_PRODUCTO</code></td></tr>
+<tr><td><code>IX_PROD_PROVE</code></td><td>Secundario (FK)</td><td><code>ID_PROVEEDOR</code></td></tr>
+<tr><td><code>IX_PROD_IMPU</code></td><td>Secundario (FK)</td><td><code>ID_IMPUESTO</code></td></tr>
+<tr><td><code>IX_PROD_NOMBRE</code></td><td>Secundario (b&uacute;squeda)</td><td><code>NOMBRE_PROD</code></td></tr>
+</table>
+<h3>PRO_CODIGO_BARRA</h3><p>Codigos de barras de un producto. Un mismo producto puede tener varios.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRO_CODIGO_BARRA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_CODIGO_BARRA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PRO_CODIGO_BARRA.NEXTVAL</code></td><td>PK</td><td>Identificador unico del codigo de barras.</td></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Producto al que pertenece. FK a PRO_PRODUCTO.</td></tr>
+<tr><td><code>CODIGO_COBA</code></td><td><code>VARCHAR2(50)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo de barras. Unico en todo el sistema.</td></tr>
+<tr><td><code>TIPO_COBA</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code>'EAN13'</code></td><td></td><td>Simbologia: EAN13, EAN8, UPCA, ITF14, GS1128 o INTERNO.</td></tr>
+<tr><td><code>ES_PRINCIPAL_COBA</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si es el codigo principal del producto: S=Si, N=No. Solo uno por producto.</td></tr>
+<tr><td><code>ESTADO_COBA</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_COBA</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_COBA</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_COBA</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_COBA</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_COBA</code></td><td>PK</td><td><code>ID_CODIGO_BARRA</code></td></tr>
+<tr><td><code>FK_COBA_PROD</code></td><td>FK</td><td><code>(ID_PRODUCTO)</code> &rarr; <code>PRO_PRODUCTO (ID_PRODUCTO)</code></td></tr>
+<tr><td><code>UK_COBA_CODIGO</code></td><td>UK</td><td><code>CODIGO_COBA</code></td></tr>
+<tr><td><code>CK_COBA_TIPO</code></td><td>CHECK</td><td><code>TIPO_COBA IN ('EAN13','EAN8','UPCA','ITF14','GS1128','INTERNO')</code></td></tr>
+<tr><td><code>CK_COBA_PRINCIPAL</code></td><td>CHECK</td><td><code>ES_PRINCIPAL_COBA IN ('S','N')</code></td></tr>
+<tr><td><code>CK_COBA_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_COBA IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>UX_COBA_PRINCIPAL</code></td><td>&Uacute;nico por expresi&oacute;n</td><td><code>CASE WHEN ES_PRINCIPAL_COBA = 'S' THEN ID_PRODUCTO END</code></td></tr>
+<tr><td><code>IX_COBA_PROD</code></td><td>Secundario (FK)</td><td><code>ID_PRODUCTO</code></td></tr>
+</table>
+<h3>PRO_PRODUCTO_SUCURSAL</h3><p>Configuracion comercial de un producto en cada negocio (sucursal): porcentaje de utilidad y descuento maximo.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRO_PRODUCTO_SUCURSAL</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PRODUCTO_SUCURSAL</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PRO_PRODUCTO_SUCURSAL.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la configuracion.</td></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Producto configurado. FK a PRO_PRODUCTO.</td></tr>
+<tr><td><code>ID_SUCURSAL</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Sucursal donde aplica. FK a SEG_SUCURSAL.</td></tr>
+<tr><td><code>PORC_UTILIDAD_PRSU</code></td><td><code>NUMBER(5,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Porcentaje de utilidad sobre el costo en esta sucursal.</td></tr>
+<tr><td><code>PORC_DESC_MAX_PRSU</code></td><td><code>NUMBER(5,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Porcentaje maximo de descuento permitido en esta sucursal.</td></tr>
+<tr><td><code>SE_VENDE_PRSU</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'S'</code></td><td></td><td>Indica si el producto se vende en la sucursal: S=Si, N=No.</td></tr>
+<tr><td><code>ESTADO_PRSU</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_PRSU</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PRSU</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PRSU</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PRSU</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PRSU</code></td><td>PK</td><td><code>ID_PRODUCTO_SUCURSAL</code></td></tr>
+<tr><td><code>FK_PRSU_PROD</code></td><td>FK</td><td><code>(ID_PRODUCTO)</code> &rarr; <code>PRO_PRODUCTO (ID_PRODUCTO)</code></td></tr>
+<tr><td><code>FK_PRSU_SUC</code></td><td>FK</td><td><code>(ID_SUCURSAL)</code> &rarr; <code>SEG_SUCURSAL (ID_SUCURSAL)</code></td></tr>
+<tr><td><code>UK_PRSU_PROD_SUC</code></td><td>UK</td><td><code>ID_PRODUCTO, ID_SUCURSAL</code></td></tr>
+<tr><td><code>CK_PRSU_UTILIDAD</code></td><td>CHECK</td><td><code>PORC_UTILIDAD_PRSU BETWEEN 0 AND 500</code></td></tr>
+<tr><td><code>CK_PRSU_DESC_MAX</code></td><td>CHECK</td><td><code>PORC_DESC_MAX_PRSU BETWEEN 0 AND 100</code></td></tr>
+<tr><td><code>CK_PRSU_SE_VENDE</code></td><td>CHECK</td><td><code>SE_VENDE_PRSU IN ('S','N')</code></td></tr>
+<tr><td><code>CK_PRSU_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_PRSU IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_PRSU_SUC</code></td><td>Secundario (FK)</td><td><code>ID_SUCURSAL</code></td></tr>
+</table>
+<h3>PRO_PRECIO_HIST</h3><p>Bitacora de cambios de precio de costo. Cada fila guarda el costo que dejo de regir; el costo vigente esta en PRO_PRODUCTO, por lo que no hay datos duplicados.<br><span class="m">Tablespace: <code>TBS_AUDITORIA</code> - Secuencia: <code>SEQ_PRO_PRECIO_HIST</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PRECIO_HIST</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_PRO_PRECIO_HIST.NEXTVAL</code></td><td>PK</td><td>Identificador unico del cambio.</td></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Producto cuyo costo cambio. FK a PRO_PRODUCTO.</td></tr>
+<tr><td><code>COSTO_ANTERIOR_PRHI</code></td><td><code>NUMBER(14,4)</code></td><td>No</td><td><code></code></td><td></td><td>Precio de costo que regia hasta la fecha del cambio.</td></tr>
+<tr><td><code>FECHA_CAMBIO_PRHI</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td>UK</td><td>Fecha y hora en que el costo anterior dejo de regir.</td></tr>
+<tr><td><code>MOTIVO_PRHI</code></td><td><code>VARCHAR2(200)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Motivo del cambio de precio.</td></tr>
+<tr><td><code>USUARIO_CREA_PRHI</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PRHI</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PRHI</code></td><td>PK</td><td><code>ID_PRECIO_HIST</code></td></tr>
+<tr><td><code>FK_PRHI_PROD</code></td><td>FK</td><td><code>(ID_PRODUCTO)</code> &rarr; <code>PRO_PRODUCTO (ID_PRODUCTO)</code></td></tr>
+<tr><td><code>UK_PRHI_PROD_FECHA</code></td><td>UK</td><td><code>ID_PRODUCTO, FECHA_CAMBIO_PRHI</code></td></tr>
+<tr><td><code>CK_PRHI_COSTO</code></td><td>CHECK</td><td><code>COSTO_ANTERIOR_PRHI &gt;= 0</code></td></tr>
+</table>
+<h3>PRO_LOTE</h3><p>Lotes de un producto. Guarda la fecha de ingreso y la fecha de vencimiento.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRO_LOTE</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_LOTE</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_PRO_LOTE.NEXTVAL</code></td><td>PK, UK</td><td>Identificador unico del lote.</td></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Producto al que pertenece el lote. FK a PRO_PRODUCTO.</td></tr>
+<tr><td><code>NUMERO_LOTE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero de lote asignado por el fabricante o el negocio.</td></tr>
+<tr><td><code>FECHA_INGRESO_LOTE</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de ingreso del lote al inventario.</td></tr>
+<tr><td><code>FECHA_VENCIM_LOTE</code></td><td><code>DATE</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha de vencimiento. Nulo en productos no perecederos.</td></tr>
+<tr><td><code>FECHA_FABRIC_LOTE</code></td><td><code>DATE</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha de fabricacion.</td></tr>
+<tr><td><code>ESTADO_LOTE</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_LOTE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_LOTE</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_LOTE</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_LOTE</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_LOTE</code></td><td>PK</td><td><code>ID_LOTE</code></td></tr>
+<tr><td><code>FK_LOTE_PROD</code></td><td>FK</td><td><code>(ID_PRODUCTO)</code> &rarr; <code>PRO_PRODUCTO (ID_PRODUCTO)</code></td></tr>
+<tr><td><code>UK_LOTE_PROD_NUM</code></td><td>UK</td><td><code>ID_PRODUCTO, NUMERO_LOTE</code></td></tr>
+<tr><td><code>UK_LOTE_ID_PROD</code></td><td>UK</td><td><code>ID_LOTE, ID_PRODUCTO</code></td></tr>
+<tr><td><code>CK_LOTE_FECHAS</code></td><td>CHECK</td><td><code>FECHA_VENCIM_LOTE IS NULL OR FECHA_VENCIM_LOTE &gt; FECHA_INGRESO_LOTE</code></td></tr>
+<tr><td><code>CK_LOTE_FABRIC</code></td><td>CHECK</td><td><code>FECHA_FABRIC_LOTE IS NULL OR FECHA_FABRIC_LOTE &lt;= FECHA_INGRESO_LOTE</code></td></tr>
+<tr><td><code>CK_LOTE_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_LOTE IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_LOTE_VENCIMIENTO</code></td><td>Secundario (b&uacute;squeda)</td><td><code>FECHA_VENCIM_LOTE, ID_PRODUCTO</code></td></tr>
+<tr><td><code>IX_LOTE_INGRESO</code></td><td>Secundario (b&uacute;squeda)</td><td><code>FECHA_INGRESO_LOTE, ID_PRODUCTO</code></td></tr>
+</table>
+<h3>PRO_SERVICIO</h3><p>Servicios que el punto de venta puede facturar ademas de los productos.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRO_SERVICIO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_SERVICIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PRO_SERVICIO.NEXTVAL</code></td><td>PK</td><td>Identificador unico del servicio.</td></tr>
+<tr><td><code>ID_IMPUESTO</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Impuesto que grava el servicio. FK a PRO_IMPUESTO. Nulo significa servicio exento.</td></tr>
+<tr><td><code>CODIGO_SERV</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo interno del servicio.</td></tr>
+<tr><td><code>NOMBRE_SERV</code></td><td><code>VARCHAR2(150)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre del servicio.</td></tr>
+<tr><td><code>DESCRIPCION_SERV</code></td><td><code>VARCHAR2(250)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Descripcion ampliada.</td></tr>
+<tr><td><code>PRECIO_SERV</code></td><td><code>NUMBER(14,4)</code></td><td>No</td><td><code>0</code></td><td></td><td>Precio del servicio sin impuesto.</td></tr>
+<tr><td><code>ES_EXENTO_SERV</code></td><td><code>VARCHAR2(1)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: S si el servicio es exento de impuestos, N si es gravado.<br><code>CASE WHEN ID_IMPUESTO IS NULL THEN 'S' ELSE 'N' END</code></td></tr>
+<tr><td><code>ESTADO_SERV</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_SERV</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_SERV</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_SERV</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_SERV</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_SERV</code></td><td>PK</td><td><code>ID_SERVICIO</code></td></tr>
+<tr><td><code>FK_SERV_IMPU</code></td><td>FK</td><td><code>(ID_IMPUESTO)</code> &rarr; <code>PRO_IMPUESTO (ID_IMPUESTO)</code></td></tr>
+<tr><td><code>UK_SERV_CODIGO</code></td><td>UK</td><td><code>CODIGO_SERV</code></td></tr>
+<tr><td><code>CK_SERV_PRECIO</code></td><td>CHECK</td><td><code>PRECIO_SERV &gt;= 0</code></td></tr>
+<tr><td><code>CK_SERV_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_SERV IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_SERV_IMPU</code></td><td>Secundario (FK)</td><td><code>ID_IMPUESTO</code></td></tr>
+</table>
+<h3>V_PRECIO_VENTA (vista)</h3><p>Calcula el precio de venta de cada producto por sucursal a partir del costo, la utilidad, el descuento maximo y el impuesto. El precio de venta no se almacena.</p>
+<h2>M&oacute;dulo INV_ - Bodegas, existencias, movimientos y traslados</h2>
+<h3>INV_BODEGA</h3><p>Bodegas. El inventario esta centralizado en la bodega central (sin sucursal) y desde ella se traslada a las bodegas de cada sucursal.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_INV_BODEGA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_BODEGA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_INV_BODEGA.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la bodega.</td></tr>
+<tr><td><code>ID_SUCURSAL</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Sucursal a la que pertenece. FK a SEG_SUCURSAL. Nulo unicamente en la bodega central.</td></tr>
+<tr><td><code>CODIGO_BODE</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo interno de la bodega.</td></tr>
+<tr><td><code>NOMBRE_BODE</code></td><td><code>VARCHAR2(100)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre de la bodega.</td></tr>
+<tr><td><code>ES_CENTRAL_BODE</code></td><td><code>VARCHAR2(1)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: S si es la bodega central (no pertenece a ninguna sucursal), N en caso contrario.<br><code>CASE WHEN ID_SUCURSAL IS NULL THEN 'S' ELSE 'N' END</code></td></tr>
+<tr><td><code>SENNAS_EXACTAS_BODE</code></td><td><code>VARCHAR2(250)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Senas exactas de la bodega.</td></tr>
+<tr><td><code>ESTADO_BODE</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_BODE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_BODE</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_BODE</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_BODE</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_BODE</code></td><td>PK</td><td><code>ID_BODEGA</code></td></tr>
+<tr><td><code>FK_BODE_SUC</code></td><td>FK</td><td><code>(ID_SUCURSAL)</code> &rarr; <code>SEG_SUCURSAL (ID_SUCURSAL)</code></td></tr>
+<tr><td><code>UK_BODE_CODIGO</code></td><td>UK</td><td><code>CODIGO_BODE</code></td></tr>
+<tr><td><code>CK_BODE_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_BODE IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>UX_BODE_CENTRAL</code></td><td>&Uacute;nico por expresi&oacute;n</td><td><code>CASE WHEN ID_SUCURSAL IS NULL THEN 1 END</code></td></tr>
+<tr><td><code>IX_BODE_SUC</code></td><td>Secundario (FK)</td><td><code>ID_SUCURSAL</code></td></tr>
+</table>
+<h3>INV_EXISTENCIA</h3><p>Existencia de cada producto (y lote, si aplica) en cada bodega.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_INV_EXISTENCIA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_EXISTENCIA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_INV_EXISTENCIA.NEXTVAL</code></td><td>PK</td><td>Identificador unico del registro de existencia.</td></tr>
+<tr><td><code>ID_BODEGA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Bodega donde esta el producto. FK a INV_BODEGA.</td></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Producto en existencia. FK a PRO_PRODUCTO.</td></tr>
+<tr><td><code>ID_LOTE</code></td><td><code>NUMBER(12)</code></td><td>S&iacute;</td><td><code></code></td><td>FK, UK</td><td>Lote en existencia. FK compuesta a PRO_LOTE junto con ID_PRODUCTO, lo que garantiza que el lote sea de ese producto.</td></tr>
+<tr><td><code>CANTIDAD_EXIS</code></td><td><code>NUMBER(14,3)</code></td><td>No</td><td><code>0</code></td><td></td><td>Cantidad disponible.</td></tr>
+<tr><td><code>CANTIDAD_RESERV_EXIS</code></td><td><code>NUMBER(14,3)</code></td><td>No</td><td><code>0</code></td><td></td><td>Cantidad reservada para traslados pendientes.</td></tr>
+<tr><td><code>USUARIO_CREA_EXIS</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_EXIS</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_EXIS</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_EXIS</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_EXIS</code></td><td>PK</td><td><code>ID_EXISTENCIA</code></td></tr>
+<tr><td><code>FK_EXIS_BODE</code></td><td>FK</td><td><code>(ID_BODEGA)</code> &rarr; <code>INV_BODEGA (ID_BODEGA)</code></td></tr>
+<tr><td><code>FK_EXIS_PROD</code></td><td>FK</td><td><code>(ID_PRODUCTO)</code> &rarr; <code>PRO_PRODUCTO (ID_PRODUCTO)</code></td></tr>
+<tr><td><code>FK_EXIS_LOTE</code></td><td>FK</td><td><code>(ID_LOTE, ID_PRODUCTO)</code> &rarr; <code>PRO_LOTE (ID_LOTE, ID_PRODUCTO)</code></td></tr>
+<tr><td><code>UK_EXIS_BODE_PROD_LOTE</code></td><td>UK</td><td><code>ID_BODEGA, ID_PRODUCTO, ID_LOTE</code></td></tr>
+<tr><td><code>CK_EXIS_CANTIDAD</code></td><td>CHECK</td><td><code>CANTIDAD_EXIS &gt;= 0</code></td></tr>
+<tr><td><code>CK_EXIS_RESERVADA</code></td><td>CHECK</td><td><code>CANTIDAD_RESERV_EXIS &gt;= 0 AND CANTIDAD_RESERV_EXIS &lt;= CANTIDAD_EXIS</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_EXIS_PROD</code></td><td>Secundario (FK)</td><td><code>ID_PRODUCTO</code></td></tr>
+<tr><td><code>IX_EXIS_LOTE</code></td><td>Secundario (FK)</td><td><code>ID_LOTE, ID_PRODUCTO</code></td></tr>
+</table>
+<h3>INV_MOVIMIENTO</h3><p>Encabezado de los movimientos de inventario (kardex) de una bodega.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_INV_MOVIMIENTO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_MOVIMIENTO</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_INV_MOVIMIENTO.NEXTVAL</code></td><td>PK</td><td>Identificador unico del movimiento.</td></tr>
+<tr><td><code>ID_BODEGA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Bodega afectada. FK a INV_BODEGA.</td></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Usuario que registro el movimiento. FK a SEG_USUARIO.</td></tr>
+<tr><td><code>TIPO_MOVI</code></td><td><code>VARCHAR2(10)</code></td><td>No</td><td><code></code></td><td></td><td>Tipo: COMPRA, TRASL_ENT, AJUSTE_ENT y DEVOL_CLI son entradas; VENTA, TRASL_SAL, AJUSTE_SAL y DEVOL_PROV son salidas.</td></tr>
+<tr><td><code>CONSECUTIVO_MOVI</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Consecutivo interno del movimiento.</td></tr>
+<tr><td><code>FECHA_MOVI</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha del movimiento.</td></tr>
+<tr><td><code>DOCUMENTO_REF_MOVI</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Numero del documento que origino el movimiento (factura, traslado, ajuste).</td></tr>
+<tr><td><code>OBSERVACION_MOVI</code></td><td><code>VARCHAR2(250)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Observaciones.</td></tr>
+<tr><td><code>ESTADO_MOVI</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, N=Anulado.</td></tr>
+<tr><td><code>USUARIO_CREA_MOVI</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_MOVI</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_MOVI</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_MOVI</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_MOVI</code></td><td>PK</td><td><code>ID_MOVIMIENTO</code></td></tr>
+<tr><td><code>FK_MOVI_BODE</code></td><td>FK</td><td><code>(ID_BODEGA)</code> &rarr; <code>INV_BODEGA (ID_BODEGA)</code></td></tr>
+<tr><td><code>FK_MOVI_USU</code></td><td>FK</td><td><code>(ID_USUARIO)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>UK_MOVI_CONSECUTIVO</code></td><td>UK</td><td><code>CONSECUTIVO_MOVI</code></td></tr>
+<tr><td><code>CK_MOVI_TIPO</code></td><td>CHECK</td><td><code>TIPO_MOVI IN ('COMPRA','VENTA','TRASL_ENT','TRASL_SAL','AJUSTE_ENT','AJUSTE_SAL','DEVOL_CLI','DEVOL_PROV')</code></td></tr>
+<tr><td><code>CK_MOVI_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_MOVI IN ('A','N')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_MOVI_USU</code></td><td>Secundario (FK)</td><td><code>ID_USUARIO</code></td></tr>
+<tr><td><code>IX_MOVI_BODE_FECHA</code></td><td>Secundario (b&uacute;squeda)</td><td><code>ID_BODEGA, FECHA_MOVI</code></td></tr>
+</table>
+<h3>INV_MOVIMIENTO_DET</h3><p>Detalle de productos de un movimiento de inventario. Los saldos no se almacenan: se calculan en V_KARDEX.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_INV_MOVIMIENTO_DET</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_MOVIMIENTO_DET</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_INV_MOVIMIENTO_DET.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la linea.</td></tr>
+<tr><td><code>ID_MOVIMIENTO</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Movimiento al que pertenece. FK a INV_MOVIMIENTO.</td></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Producto movido. FK a PRO_PRODUCTO.</td></tr>
+<tr><td><code>ID_LOTE</code></td><td><code>NUMBER(12)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Lote movido. FK compuesta a PRO_LOTE junto con ID_PRODUCTO.</td></tr>
+<tr><td><code>LINEA_MODE</code></td><td><code>NUMBER(4)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero de linea dentro del movimiento.</td></tr>
+<tr><td><code>CANTIDAD_MODE</code></td><td><code>NUMBER(14,3)</code></td><td>No</td><td><code></code></td><td></td><td>Cantidad movida, siempre positiva. El signo lo da el tipo de movimiento.</td></tr>
+<tr><td><code>COSTO_UNITARIO_MODE</code></td><td><code>NUMBER(14,4)</code></td><td>No</td><td><code>0</code></td><td></td><td>Costo unitario al momento del movimiento.</td></tr>
+<tr><td><code>USUARIO_CREA_MODE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_MODE</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_MODE</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_MODE</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_MODE</code></td><td>PK</td><td><code>ID_MOVIMIENTO_DET</code></td></tr>
+<tr><td><code>FK_MODE_MOVI</code></td><td>FK</td><td><code>(ID_MOVIMIENTO)</code> &rarr; <code>INV_MOVIMIENTO (ID_MOVIMIENTO)</code></td></tr>
+<tr><td><code>FK_MODE_PROD</code></td><td>FK</td><td><code>(ID_PRODUCTO)</code> &rarr; <code>PRO_PRODUCTO (ID_PRODUCTO)</code></td></tr>
+<tr><td><code>FK_MODE_LOTE</code></td><td>FK</td><td><code>(ID_LOTE, ID_PRODUCTO)</code> &rarr; <code>PRO_LOTE (ID_LOTE, ID_PRODUCTO)</code></td></tr>
+<tr><td><code>UK_MODE_MOVI_LINEA</code></td><td>UK</td><td><code>ID_MOVIMIENTO, LINEA_MODE</code></td></tr>
+<tr><td><code>CK_MODE_CANTIDAD</code></td><td>CHECK</td><td><code>CANTIDAD_MODE &gt; 0</code></td></tr>
+<tr><td><code>CK_MODE_COSTO</code></td><td>CHECK</td><td><code>COSTO_UNITARIO_MODE &gt;= 0</code></td></tr>
+<tr><td><code>CK_MODE_LINEA</code></td><td>CHECK</td><td><code>LINEA_MODE &gt; 0</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_MODE_PROD</code></td><td>Secundario (FK)</td><td><code>ID_PRODUCTO</code></td></tr>
+<tr><td><code>IX_MODE_LOTE</code></td><td>Secundario (FK)</td><td><code>ID_LOTE, ID_PRODUCTO</code></td></tr>
+</table>
+<h3>INV_TRASLADO</h3><p>Encabezado de los traslados de productos entre bodegas (de la bodega central a las sucursales).<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_INV_TRASLADO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_TRASLADO</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_INV_TRASLADO.NEXTVAL</code></td><td>PK</td><td>Identificador unico del traslado.</td></tr>
+<tr><td><code>ID_BODEGA_ORIGEN</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Bodega que envia. FK a INV_BODEGA (rol: origen).</td></tr>
+<tr><td><code>ID_BODEGA_DESTINO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Bodega que recibe. FK a INV_BODEGA (rol: destino).</td></tr>
+<tr><td><code>ID_USUARIO_ENVIA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Usuario que despacha. FK a SEG_USUARIO (rol: envia).</td></tr>
+<tr><td><code>ID_USUARIO_RECIBE</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Usuario que recibe. FK a SEG_USUARIO (rol: recibe). Nulo mientras no se reciba.</td></tr>
+<tr><td><code>CONSECUTIVO_TRAS</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Consecutivo interno del traslado.</td></tr>
+<tr><td><code>FECHA_ENVIO_TRAS</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de envio.</td></tr>
+<tr><td><code>FECHA_RECEPCION_TRAS</code></td><td><code>DATE</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha de recepcion.</td></tr>
+<tr><td><code>OBSERVACION_TRAS</code></td><td><code>VARCHAR2(250)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Observaciones.</td></tr>
+<tr><td><code>ESTADO_TRAS</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'P'</code></td><td></td><td>Estado del registro: P=Pendiente, T=En transito, R=Recibido, N=Anulado.</td></tr>
+<tr><td><code>USUARIO_CREA_TRAS</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_TRAS</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_TRAS</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_TRAS</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_TRAS</code></td><td>PK</td><td><code>ID_TRASLADO</code></td></tr>
+<tr><td><code>FK_TRAS_BODE_ORI</code></td><td>FK</td><td><code>(ID_BODEGA_ORIGEN)</code> &rarr; <code>INV_BODEGA (ID_BODEGA)</code></td></tr>
+<tr><td><code>FK_TRAS_BODE_DES</code></td><td>FK</td><td><code>(ID_BODEGA_DESTINO)</code> &rarr; <code>INV_BODEGA (ID_BODEGA)</code></td></tr>
+<tr><td><code>FK_TRAS_USU_ENV</code></td><td>FK</td><td><code>(ID_USUARIO_ENVIA)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>FK_TRAS_USU_REC</code></td><td>FK</td><td><code>(ID_USUARIO_RECIBE)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>UK_TRAS_CONSECUTIVO</code></td><td>UK</td><td><code>CONSECUTIVO_TRAS</code></td></tr>
+<tr><td><code>CK_TRAS_BODEGAS</code></td><td>CHECK</td><td><code>ID_BODEGA_ORIGEN &lt;&gt; ID_BODEGA_DESTINO</code></td></tr>
+<tr><td><code>CK_TRAS_FECHAS</code></td><td>CHECK</td><td><code>FECHA_RECEPCION_TRAS IS NULL OR FECHA_RECEPCION_TRAS &gt;= FECHA_ENVIO_TRAS</code></td></tr>
+<tr><td><code>CK_TRAS_RECEPCION</code></td><td>CHECK</td><td><code>(ESTADO_TRAS = 'R' AND ID_USUARIO_RECIBE IS NOT NULL AND FECHA_RECEPCION_TRAS IS NOT NULL) OR (ESTADO_TRAS &lt;&gt; 'R' AND FECHA_RECEPCION_TRAS IS NULL)</code></td></tr>
+<tr><td><code>CK_TRAS_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_TRAS IN ('P','T','R','N')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_TRAS_BODE_ORI</code></td><td>Secundario (FK)</td><td><code>ID_BODEGA_ORIGEN</code></td></tr>
+<tr><td><code>IX_TRAS_USU_ENV</code></td><td>Secundario (FK)</td><td><code>ID_USUARIO_ENVIA</code></td></tr>
+<tr><td><code>IX_TRAS_USU_REC</code></td><td>Secundario (FK)</td><td><code>ID_USUARIO_RECIBE</code></td></tr>
+<tr><td><code>IX_TRAS_DEST_ESTADO</code></td><td>Secundario (b&uacute;squeda)</td><td><code>ID_BODEGA_DESTINO, ESTADO_TRAS</code></td></tr>
+</table>
+<h3>INV_TRASLADO_DET</h3><p>Detalle de productos de un traslado entre bodegas.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_INV_TRASLADO_DET</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_TRASLADO_DET</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_INV_TRASLADO_DET.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la linea.</td></tr>
+<tr><td><code>ID_TRASLADO</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Traslado al que pertenece. FK a INV_TRASLADO.</td></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Producto trasladado. FK a PRO_PRODUCTO.</td></tr>
+<tr><td><code>ID_LOTE</code></td><td><code>NUMBER(12)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Lote trasladado. FK compuesta a PRO_LOTE junto con ID_PRODUCTO.</td></tr>
+<tr><td><code>LINEA_TRDE</code></td><td><code>NUMBER(4)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero de linea dentro del traslado.</td></tr>
+<tr><td><code>CANTIDAD_ENVIA_TRDE</code></td><td><code>NUMBER(14,3)</code></td><td>No</td><td><code></code></td><td></td><td>Cantidad enviada.</td></tr>
+<tr><td><code>CANTIDAD_RECIBE_TRDE</code></td><td><code>NUMBER(14,3)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Cantidad recibida. Nulo mientras no se reciba.</td></tr>
+<tr><td><code>OBSERVACION_TRDE</code></td><td><code>VARCHAR2(200)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Observaciones de la linea (faltantes, danos).</td></tr>
+<tr><td><code>USUARIO_CREA_TRDE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_TRDE</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_TRDE</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_TRDE</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_TRDE</code></td><td>PK</td><td><code>ID_TRASLADO_DET</code></td></tr>
+<tr><td><code>FK_TRDE_TRAS</code></td><td>FK</td><td><code>(ID_TRASLADO)</code> &rarr; <code>INV_TRASLADO (ID_TRASLADO)</code></td></tr>
+<tr><td><code>FK_TRDE_PROD</code></td><td>FK</td><td><code>(ID_PRODUCTO)</code> &rarr; <code>PRO_PRODUCTO (ID_PRODUCTO)</code></td></tr>
+<tr><td><code>FK_TRDE_LOTE</code></td><td>FK</td><td><code>(ID_LOTE, ID_PRODUCTO)</code> &rarr; <code>PRO_LOTE (ID_LOTE, ID_PRODUCTO)</code></td></tr>
+<tr><td><code>UK_TRDE_TRAS_LINEA</code></td><td>UK</td><td><code>ID_TRASLADO, LINEA_TRDE</code></td></tr>
+<tr><td><code>CK_TRDE_CANT_ENVIA</code></td><td>CHECK</td><td><code>CANTIDAD_ENVIA_TRDE &gt; 0</code></td></tr>
+<tr><td><code>CK_TRDE_CANT_RECIBE</code></td><td>CHECK</td><td><code>CANTIDAD_RECIBE_TRDE IS NULL OR (CANTIDAD_RECIBE_TRDE &gt;= 0 AND CANTIDAD_RECIBE_TRDE &lt;= CANTIDAD_ENVIA_TRDE)</code></td></tr>
+<tr><td><code>CK_TRDE_LINEA</code></td><td>CHECK</td><td><code>LINEA_TRDE &gt; 0</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_TRDE_PROD</code></td><td>Secundario (FK)</td><td><code>ID_PRODUCTO</code></td></tr>
+<tr><td><code>IX_TRDE_LOTE</code></td><td>Secundario (FK)</td><td><code>ID_LOTE, ID_PRODUCTO</code></td></tr>
+</table>
+<h3>V_KARDEX (vista)</h3><p>Kardex por bodega y producto. La cantidad con signo y el saldo acumulado se calculan; no se almacenan.</p>
+<h2>M&oacute;dulo COM_ - Compras, cuentas por pagar y devoluciones a proveedores</h2>
+<h3>COM_FACTURA_COMPRA</h3><p>Facturas de compra a proveedores. Una factura a credito con saldo es una cuenta por pagar (ver V_CUENTA_PAGAR). Los totales se guardan porque el enunciado lo exige.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_COM_FACTURA_COMPRA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_FACTURA_COMPRA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_COM_FACTURA_COMPRA.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la factura de compra.</td></tr>
+<tr><td><code>ID_PROVEEDOR</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Proveedor que emite la factura. FK a PER_PROVEEDOR.</td></tr>
+<tr><td><code>ID_BODEGA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Bodega que recibe la mercaderia (normalmente la central). FK a INV_BODEGA.</td></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Usuario que registro la compra. FK a SEG_USUARIO.</td></tr>
+<tr><td><code>NUM_FACTURA_FACO</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero de factura del proveedor.</td></tr>
+<tr><td><code>FECHA_FACO</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de la factura.</td></tr>
+<tr><td><code>ES_CREDITO_FACO</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si la compra queda pendiente de pago: S=Credito, N=Contado.</td></tr>
+<tr><td><code>FECHA_VENCIM_FACO</code></td><td><code>DATE</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha de vencimiento del credito. Obligatoria en compras a credito.</td></tr>
+<tr><td><code>SUBTOTAL_FACO</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Suma de las lineas antes de descuento e impuesto.</td></tr>
+<tr><td><code>DESCUENTO_FACO</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Total de descuentos.</td></tr>
+<tr><td><code>IMPUESTO_FACO</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Total de impuestos.</td></tr>
+<tr><td><code>TOTAL_FACO</code></td><td><code>NUMBER(14,2)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: subtotal menos descuento mas impuesto.<br><code>SUBTOTAL_FACO - DESCUENTO_FACO + IMPUESTO_FACO</code></td></tr>
+<tr><td><code>OBSERVACION_FACO</code></td><td><code>VARCHAR2(250)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Observaciones.</td></tr>
+<tr><td><code>ESTADO_FACO</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activa, N=Anulada.</td></tr>
+<tr><td><code>USUARIO_CREA_FACO</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_FACO</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_FACO</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_FACO</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_FACO</code></td><td>PK</td><td><code>ID_FACTURA_COMPRA</code></td></tr>
+<tr><td><code>FK_FACO_PROVE</code></td><td>FK</td><td><code>(ID_PROVEEDOR)</code> &rarr; <code>PER_PROVEEDOR (ID_PROVEEDOR)</code></td></tr>
+<tr><td><code>FK_FACO_BODE</code></td><td>FK</td><td><code>(ID_BODEGA)</code> &rarr; <code>INV_BODEGA (ID_BODEGA)</code></td></tr>
+<tr><td><code>FK_FACO_USU</code></td><td>FK</td><td><code>(ID_USUARIO)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>UK_FACO_PROVE_NUM</code></td><td>UK</td><td><code>ID_PROVEEDOR, NUM_FACTURA_FACO</code></td></tr>
+<tr><td><code>CK_FACO_SUBTOTAL</code></td><td>CHECK</td><td><code>SUBTOTAL_FACO &gt;= 0</code></td></tr>
+<tr><td><code>CK_FACO_DESCUENTO</code></td><td>CHECK</td><td><code>DESCUENTO_FACO &gt;= 0 AND DESCUENTO_FACO &lt;= SUBTOTAL_FACO</code></td></tr>
+<tr><td><code>CK_FACO_IMPUESTO</code></td><td>CHECK</td><td><code>IMPUESTO_FACO &gt;= 0</code></td></tr>
+<tr><td><code>CK_FACO_CRED_VENCIM</code></td><td>CHECK</td><td><code>ES_CREDITO_FACO = 'N' OR FECHA_VENCIM_FACO IS NOT NULL</code></td></tr>
+<tr><td><code>CK_FACO_FECHAS</code></td><td>CHECK</td><td><code>FECHA_VENCIM_FACO IS NULL OR FECHA_VENCIM_FACO &gt;= FECHA_FACO</code></td></tr>
+<tr><td><code>CK_FACO_CREDITO</code></td><td>CHECK</td><td><code>ES_CREDITO_FACO IN ('S','N')</code></td></tr>
+<tr><td><code>CK_FACO_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_FACO IN ('A','N')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_FACO_BODE</code></td><td>Secundario (FK)</td><td><code>ID_BODEGA</code></td></tr>
+<tr><td><code>IX_FACO_USU</code></td><td>Secundario (FK)</td><td><code>ID_USUARIO</code></td></tr>
+<tr><td><code>IX_FACO_FECHA</code></td><td>Secundario (b&uacute;squeda)</td><td><code>FECHA_FACO</code></td></tr>
+<tr><td><code>IX_FACO_CRED_VENCIM</code></td><td>Secundario (b&uacute;squeda)</td><td><code>ES_CREDITO_FACO, FECHA_VENCIM_FACO</code></td></tr>
+</table>
+<h3>COM_FACTURA_COMPRA_DET</h3><p>Detalle de productos comprados en una factura de compra. Los montos de linea son columnas virtuales.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_COM_FACTURA_COMPRA_DET</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_FACTURA_COMPRA_DET</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_COM_FACTURA_COMPRA_DET.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la linea.</td></tr>
+<tr><td><code>ID_FACTURA_COMPRA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Factura a la que pertenece. FK a COM_FACTURA_COMPRA.</td></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Producto comprado. FK a PRO_PRODUCTO.</td></tr>
+<tr><td><code>ID_LOTE</code></td><td><code>NUMBER(12)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Lote recibido. FK compuesta a PRO_LOTE junto con ID_PRODUCTO.</td></tr>
+<tr><td><code>LINEA_FCDE</code></td><td><code>NUMBER(4)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero de linea dentro de la factura.</td></tr>
+<tr><td><code>CANTIDAD_FCDE</code></td><td><code>NUMBER(14,3)</code></td><td>No</td><td><code></code></td><td></td><td>Cantidad comprada.</td></tr>
+<tr><td><code>COSTO_UNITARIO_FCDE</code></td><td><code>NUMBER(14,4)</code></td><td>No</td><td><code></code></td><td></td><td>Costo unitario pactado en la factura.</td></tr>
+<tr><td><code>PORC_DESCUENTO_FCDE</code></td><td><code>NUMBER(5,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Porcentaje de descuento de la linea.</td></tr>
+<tr><td><code>PORC_IMPUESTO_FCDE</code></td><td><code>NUMBER(5,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Porcentaje de impuesto aplicado a la linea. Cero si es exenta.</td></tr>
+<tr><td><code>SUBTOTAL_FCDE</code></td><td><code>NUMBER(14,2)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: cantidad por costo unitario.<br><code>ROUND(CANTIDAD_FCDE * COSTO_UNITARIO_FCDE, 2)</code></td></tr>
+<tr><td><code>MONTO_DESCUENTO_FCDE</code></td><td><code>NUMBER(14,2)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: monto de descuento de la linea.<br><code>ROUND(CANTIDAD_FCDE * COSTO_UNITARIO_FCDE * PORC_DESCUENTO_FCDE / 100, 2)</code></td></tr>
+<tr><td><code>MONTO_IMPUESTO_FCDE</code></td><td><code>NUMBER(14,2)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: monto de impuesto de la linea, calculado sobre el neto de descuento.<br><code>ROUND(CANTIDAD_FCDE * COSTO_UNITARIO_FCDE * (1 - PORC_DESCUENTO_FCDE / 100) * PORC_IMPUESTO_FCDE / 100, 2)</code></td></tr>
+<tr><td><code>USUARIO_CREA_FCDE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_FCDE</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_FCDE</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_FCDE</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_FCDE</code></td><td>PK</td><td><code>ID_FACTURA_COMPRA_DET</code></td></tr>
+<tr><td><code>FK_FCDE_FACO</code></td><td>FK</td><td><code>(ID_FACTURA_COMPRA)</code> &rarr; <code>COM_FACTURA_COMPRA (ID_FACTURA_COMPRA)</code></td></tr>
+<tr><td><code>FK_FCDE_PROD</code></td><td>FK</td><td><code>(ID_PRODUCTO)</code> &rarr; <code>PRO_PRODUCTO (ID_PRODUCTO)</code></td></tr>
+<tr><td><code>FK_FCDE_LOTE</code></td><td>FK</td><td><code>(ID_LOTE, ID_PRODUCTO)</code> &rarr; <code>PRO_LOTE (ID_LOTE, ID_PRODUCTO)</code></td></tr>
+<tr><td><code>UK_FCDE_FACO_LINEA</code></td><td>UK</td><td><code>ID_FACTURA_COMPRA, LINEA_FCDE</code></td></tr>
+<tr><td><code>CK_FCDE_CANTIDAD</code></td><td>CHECK</td><td><code>CANTIDAD_FCDE &gt; 0</code></td></tr>
+<tr><td><code>CK_FCDE_COSTO</code></td><td>CHECK</td><td><code>COSTO_UNITARIO_FCDE &gt;= 0</code></td></tr>
+<tr><td><code>CK_FCDE_PORC_DESC</code></td><td>CHECK</td><td><code>PORC_DESCUENTO_FCDE BETWEEN 0 AND 100</code></td></tr>
+<tr><td><code>CK_FCDE_PORC_IMPU</code></td><td>CHECK</td><td><code>PORC_IMPUESTO_FCDE BETWEEN 0 AND 100</code></td></tr>
+<tr><td><code>CK_FCDE_LINEA</code></td><td>CHECK</td><td><code>LINEA_FCDE &gt; 0</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_FCDE_PROD</code></td><td>Secundario (FK)</td><td><code>ID_PRODUCTO</code></td></tr>
+<tr><td><code>IX_FCDE_LOTE</code></td><td>Secundario (FK)</td><td><code>ID_LOTE, ID_PRODUCTO</code></td></tr>
+</table>
+<h3>COM_ABONO_PAGAR</h3><p>Abonos (pagos parciales) a facturas de compra a credito. El saldo de la cuenta por pagar se calcula a partir de estos abonos.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_COM_ABONO_PAGAR</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_ABONO_PAGAR</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_COM_ABONO_PAGAR.NEXTVAL</code></td><td>PK</td><td>Identificador unico del abono.</td></tr>
+<tr><td><code>ID_FACTURA_COMPRA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Factura de compra que se abona. FK a COM_FACTURA_COMPRA.</td></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Usuario que registro el abono. FK a SEG_USUARIO.</td></tr>
+<tr><td><code>NUM_COMPROBANTE_ABPA</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero de comprobante del pago.</td></tr>
+<tr><td><code>FECHA_ABPA</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha del abono.</td></tr>
+<tr><td><code>MONTO_ABPA</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code></code></td><td></td><td>Monto abonado.</td></tr>
+<tr><td><code>OBSERVACION_ABPA</code></td><td><code>VARCHAR2(200)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Observaciones.</td></tr>
+<tr><td><code>ESTADO_ABPA</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, N=Anulado.</td></tr>
+<tr><td><code>USUARIO_CREA_ABPA</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_ABPA</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_ABPA</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_ABPA</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_ABPA</code></td><td>PK</td><td><code>ID_ABONO_PAGAR</code></td></tr>
+<tr><td><code>FK_ABPA_FACO</code></td><td>FK</td><td><code>(ID_FACTURA_COMPRA)</code> &rarr; <code>COM_FACTURA_COMPRA (ID_FACTURA_COMPRA)</code></td></tr>
+<tr><td><code>FK_ABPA_USU</code></td><td>FK</td><td><code>(ID_USUARIO)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>UK_ABPA_COMPROBANTE</code></td><td>UK</td><td><code>NUM_COMPROBANTE_ABPA</code></td></tr>
+<tr><td><code>CK_ABPA_MONTO</code></td><td>CHECK</td><td><code>MONTO_ABPA &gt; 0</code></td></tr>
+<tr><td><code>CK_ABPA_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_ABPA IN ('A','N')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_ABPA_FACO</code></td><td>Secundario (FK)</td><td><code>ID_FACTURA_COMPRA</code></td></tr>
+<tr><td><code>IX_ABPA_USU</code></td><td>Secundario (FK)</td><td><code>ID_USUARIO</code></td></tr>
+</table>
+<h3>COM_DEVOLUCION</h3><p>Encabezado de las devoluciones de producto a un proveedor, total o parcial, sobre una factura de compra.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_COM_DEVOLUCION</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_DEVOLUCION_COMPRA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_COM_DEVOLUCION.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la devolucion de compra.</td></tr>
+<tr><td><code>ID_FACTURA_COMPRA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Factura de compra que se devuelve. FK a COM_FACTURA_COMPRA.</td></tr>
+<tr><td><code>ID_BODEGA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Bodega de donde sale el producto devuelto. FK a INV_BODEGA.</td></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Usuario que registro la devolucion. FK a SEG_USUARIO.</td></tr>
+<tr><td><code>CONSECUTIVO_DEVC</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Consecutivo interno de la devolucion.</td></tr>
+<tr><td><code>FECHA_DEVC</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de la devolucion.</td></tr>
+<tr><td><code>MOTIVO_DEVC</code></td><td><code>VARCHAR2(250)</code></td><td>No</td><td><code></code></td><td></td><td>Motivo de la devolucion.</td></tr>
+<tr><td><code>ESTADO_DEVC</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, N=Anulado.</td></tr>
+<tr><td><code>USUARIO_CREA_DEVC</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_DEVC</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_DEVC</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_DEVC</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_DEVC</code></td><td>PK</td><td><code>ID_DEVOLUCION_COMPRA</code></td></tr>
+<tr><td><code>FK_DEVC_FACO</code></td><td>FK</td><td><code>(ID_FACTURA_COMPRA)</code> &rarr; <code>COM_FACTURA_COMPRA (ID_FACTURA_COMPRA)</code></td></tr>
+<tr><td><code>FK_DEVC_BODE</code></td><td>FK</td><td><code>(ID_BODEGA)</code> &rarr; <code>INV_BODEGA (ID_BODEGA)</code></td></tr>
+<tr><td><code>FK_DEVC_USU</code></td><td>FK</td><td><code>(ID_USUARIO)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>UK_DEVC_CONSECUTIVO</code></td><td>UK</td><td><code>CONSECUTIVO_DEVC</code></td></tr>
+<tr><td><code>CK_DEVC_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_DEVC IN ('A','N')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_DEVC_FACO</code></td><td>Secundario (FK)</td><td><code>ID_FACTURA_COMPRA</code></td></tr>
+<tr><td><code>IX_DEVC_BODE</code></td><td>Secundario (FK)</td><td><code>ID_BODEGA</code></td></tr>
+<tr><td><code>IX_DEVC_USU</code></td><td>Secundario (FK)</td><td><code>ID_USUARIO</code></td></tr>
+</table>
+<h3>COM_DEVOLUCION_DET</h3><p>Lineas de factura de compra devueltas y su cantidad. Producto, lote y costo se obtienen de la linea original; no se repiten aqui.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_COM_DEVOLUCION_DET</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_DEVOLUCION_COMPRA_DET</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_COM_DEVOLUCION_DET.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la linea devuelta.</td></tr>
+<tr><td><code>ID_DEVOLUCION_COMPRA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Devolucion a la que pertenece. FK a COM_DEVOLUCION.</td></tr>
+<tr><td><code>ID_FACTURA_COMPRA_DET</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Linea de la factura de compra que se devuelve. FK a COM_FACTURA_COMPRA_DET.</td></tr>
+<tr><td><code>CANTIDAD_DVCD</code></td><td><code>NUMBER(14,3)</code></td><td>No</td><td><code></code></td><td></td><td>Cantidad devuelta.</td></tr>
+<tr><td><code>MOTIVO_DVCD</code></td><td><code>VARCHAR2(200)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Motivo especifico de la linea.</td></tr>
+<tr><td><code>USUARIO_CREA_DVCD</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_DVCD</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_DVCD</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_DVCD</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_DVCD</code></td><td>PK</td><td><code>ID_DEVOLUCION_COMPRA_DET</code></td></tr>
+<tr><td><code>FK_DVCD_DEVC</code></td><td>FK</td><td><code>(ID_DEVOLUCION_COMPRA)</code> &rarr; <code>COM_DEVOLUCION (ID_DEVOLUCION_COMPRA)</code></td></tr>
+<tr><td><code>FK_DVCD_FCDE</code></td><td>FK</td><td><code>(ID_FACTURA_COMPRA_DET)</code> &rarr; <code>COM_FACTURA_COMPRA_DET (ID_FACTURA_COMPRA_DET)</code></td></tr>
+<tr><td><code>UK_DVCD_DEVC_FCDE</code></td><td>UK</td><td><code>ID_DEVOLUCION_COMPRA, ID_FACTURA_COMPRA_DET</code></td></tr>
+<tr><td><code>CK_DVCD_CANTIDAD</code></td><td>CHECK</td><td><code>CANTIDAD_DVCD &gt; 0</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_DVCD_FCDE</code></td><td>Secundario (FK)</td><td><code>ID_FACTURA_COMPRA_DET</code></td></tr>
+</table>
+<h3>COM_NOTA_CREDITO</h3><p>Notas de credito emitidas por el proveedor para pagar una devolucion de compra. Cada devolucion genera a lo sumo una nota.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_COM_NOTA_CREDITO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_NOTA_CREDITO_COMPRA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_COM_NOTA_CREDITO.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la nota de credito de compra.</td></tr>
+<tr><td><code>ID_DEVOLUCION_COMPRA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Devolucion que origina la nota. FK a COM_DEVOLUCION. La factura y el proveedor se obtienen a traves de la devolucion.</td></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Usuario que registro la nota. FK a SEG_USUARIO.</td></tr>
+<tr><td><code>NUM_NOTA_NCCO</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code></code></td><td></td><td>Numero de la nota de credito del proveedor.</td></tr>
+<tr><td><code>FECHA_NCCO</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de la nota de credito.</td></tr>
+<tr><td><code>ESTADO_NCCO</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Disponible, C=Aplicada, N=Anulada.</td></tr>
+<tr><td><code>USUARIO_CREA_NCCO</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_NCCO</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_NCCO</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_NCCO</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_NCCO</code></td><td>PK</td><td><code>ID_NOTA_CREDITO_COMPRA</code></td></tr>
+<tr><td><code>FK_NCCO_DEVC</code></td><td>FK</td><td><code>(ID_DEVOLUCION_COMPRA)</code> &rarr; <code>COM_DEVOLUCION (ID_DEVOLUCION_COMPRA)</code></td></tr>
+<tr><td><code>FK_NCCO_USU</code></td><td>FK</td><td><code>(ID_USUARIO)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>UK_NCCO_DEVC</code></td><td>UK</td><td><code>ID_DEVOLUCION_COMPRA</code></td></tr>
+<tr><td><code>CK_NCCO_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_NCCO IN ('A','C','N')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_NCCO_USU</code></td><td>Secundario (FK)</td><td><code>ID_USUARIO</code></td></tr>
+<tr><td><code>IX_NCCO_NUM</code></td><td>Secundario (b&uacute;squeda)</td><td><code>NUM_NOTA_NCCO</code></td></tr>
+</table>
+<h3>V_CUENTA_PAGAR (vista)</h3><p>Cuentas por pagar: facturas de compra a credito con su monto abonado y saldo. Monto original, saldo y estado se calculan; no se almacenan.</p>
+<h3>V_SALDO_PROVEEDOR (vista)</h3><p>Saldo pendiente y credito disponible del negocio con cada proveedor, contra el limite de credito.</p>
+<h2>M&oacute;dulo VEN_ - Facturacion, pagos, cuentas por cobrar y devoluciones de clientes</h2>
+<h3>VEN_FACTURA</h3><p>Facturas de venta. Siempre tienen cliente (el cliente por defecto si no hay uno registrado). Una factura a credito con saldo es una cuenta por cobrar (ver V_CUENTA_COBRAR).<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_VEN_FACTURA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_FACTURA_VENTA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_VEN_FACTURA.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la factura de venta.</td></tr>
+<tr><td><code>ID_CLIENTE</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Cliente facturado. FK a PER_CLIENTE.</td></tr>
+<tr><td><code>ID_SUCURSAL</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Sucursal que factura. FK a SEG_SUCURSAL.</td></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Usuario (cajero) que emitio la factura. FK a SEG_USUARIO.</td></tr>
+<tr><td><code>NUM_FACTURA_FAVE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero de factura, unico dentro de la sucursal.</td></tr>
+<tr><td><code>FECHA_FAVE</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha y hora de la factura.</td></tr>
+<tr><td><code>ES_CREDITO_FAVE</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si la venta queda en cuentas por cobrar: S=Credito, N=Contado.</td></tr>
+<tr><td><code>FECHA_VENCIM_FAVE</code></td><td><code>DATE</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha de vencimiento del credito. Obligatoria en ventas a credito.</td></tr>
+<tr><td><code>SUBTOTAL_FAVE</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Suma de las lineas antes de descuento e impuesto.</td></tr>
+<tr><td><code>DESCUENTO_FAVE</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Total de descuentos.</td></tr>
+<tr><td><code>IMPUESTO_FAVE</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Total de impuestos.</td></tr>
+<tr><td><code>TOTAL_FAVE</code></td><td><code>NUMBER(14,2)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: subtotal menos descuento mas impuesto.<br><code>SUBTOTAL_FAVE - DESCUENTO_FAVE + IMPUESTO_FAVE</code></td></tr>
+<tr><td><code>OBSERVACION_FAVE</code></td><td><code>VARCHAR2(250)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Observaciones.</td></tr>
+<tr><td><code>ESTADO_FAVE</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activa, N=Anulada.</td></tr>
+<tr><td><code>USUARIO_CREA_FAVE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_FAVE</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_FAVE</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_FAVE</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_FAVE</code></td><td>PK</td><td><code>ID_FACTURA_VENTA</code></td></tr>
+<tr><td><code>FK_FAVE_CLI</code></td><td>FK</td><td><code>(ID_CLIENTE)</code> &rarr; <code>PER_CLIENTE (ID_CLIENTE)</code></td></tr>
+<tr><td><code>FK_FAVE_SUC</code></td><td>FK</td><td><code>(ID_SUCURSAL)</code> &rarr; <code>SEG_SUCURSAL (ID_SUCURSAL)</code></td></tr>
+<tr><td><code>FK_FAVE_USU</code></td><td>FK</td><td><code>(ID_USUARIO)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>UK_FAVE_SUC_NUM</code></td><td>UK</td><td><code>ID_SUCURSAL, NUM_FACTURA_FAVE</code></td></tr>
+<tr><td><code>CK_FAVE_SUBTOTAL</code></td><td>CHECK</td><td><code>SUBTOTAL_FAVE &gt;= 0</code></td></tr>
+<tr><td><code>CK_FAVE_DESCUENTO</code></td><td>CHECK</td><td><code>DESCUENTO_FAVE &gt;= 0 AND DESCUENTO_FAVE &lt;= SUBTOTAL_FAVE</code></td></tr>
+<tr><td><code>CK_FAVE_IMPUESTO</code></td><td>CHECK</td><td><code>IMPUESTO_FAVE &gt;= 0</code></td></tr>
+<tr><td><code>CK_FAVE_CRED_VENCIM</code></td><td>CHECK</td><td><code>ES_CREDITO_FAVE = 'N' OR FECHA_VENCIM_FAVE IS NOT NULL</code></td></tr>
+<tr><td><code>CK_FAVE_FECHAS</code></td><td>CHECK</td><td><code>FECHA_VENCIM_FAVE IS NULL OR FECHA_VENCIM_FAVE &gt;= FECHA_FAVE</code></td></tr>
+<tr><td><code>CK_FAVE_CREDITO</code></td><td>CHECK</td><td><code>ES_CREDITO_FAVE IN ('S','N')</code></td></tr>
+<tr><td><code>CK_FAVE_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_FAVE IN ('A','N')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_FAVE_SUC_FECHA</code></td><td>Secundario (b&uacute;squeda)</td><td><code>ID_SUCURSAL, FECHA_FAVE</code></td></tr>
+<tr><td><code>IX_FAVE_CLI_FECHA</code></td><td>Secundario (b&uacute;squeda)</td><td><code>ID_CLIENTE, FECHA_FAVE</code></td></tr>
+<tr><td><code>IX_FAVE_USU_FECHA</code></td><td>Secundario (b&uacute;squeda)</td><td><code>ID_USUARIO, FECHA_FAVE</code></td></tr>
+<tr><td><code>IX_FAVE_CRED_VENCIM</code></td><td>Secundario (b&uacute;squeda)</td><td><code>ES_CREDITO_FAVE, FECHA_VENCIM_FAVE</code></td></tr>
+</table>
+<h3>VEN_FACTURA_DET</h3><p>Detalle de la factura de venta: cada linea cobra un producto o un servicio, con su precio, descuento e impuesto. Los montos de linea son columnas virtuales.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_VEN_FACTURA_DET</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_FACTURA_VENTA_DET</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_VEN_FACTURA_DET.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la linea.</td></tr>
+<tr><td><code>ID_FACTURA_VENTA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Factura a la que pertenece. FK a VEN_FACTURA.</td></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Producto vendido. FK a PRO_PRODUCTO. Excluyente con ID_SERVICIO.</td></tr>
+<tr><td><code>ID_SERVICIO</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Servicio vendido. FK a PRO_SERVICIO. Excluyente con ID_PRODUCTO.</td></tr>
+<tr><td><code>ID_LOTE</code></td><td><code>NUMBER(12)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Lote vendido. FK compuesta a PRO_LOTE junto con ID_PRODUCTO.</td></tr>
+<tr><td><code>LINEA_FVDE</code></td><td><code>NUMBER(4)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero de linea dentro de la factura.</td></tr>
+<tr><td><code>CANTIDAD_FVDE</code></td><td><code>NUMBER(14,3)</code></td><td>No</td><td><code></code></td><td></td><td>Cantidad vendida.</td></tr>
+<tr><td><code>PRECIO_UNITARIO_FVDE</code></td><td><code>NUMBER(14,4)</code></td><td>No</td><td><code></code></td><td></td><td>Precio unitario sin impuesto al momento de la venta.</td></tr>
+<tr><td><code>PORC_DESCUENTO_FVDE</code></td><td><code>NUMBER(5,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Porcentaje de descuento aplicado a la linea.</td></tr>
+<tr><td><code>PORC_IMPUESTO_FVDE</code></td><td><code>NUMBER(5,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Porcentaje de impuesto aplicado a la linea. Cero si es exenta.</td></tr>
+<tr><td><code>SUBTOTAL_FVDE</code></td><td><code>NUMBER(14,2)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: cantidad por precio unitario.<br><code>ROUND(CANTIDAD_FVDE * PRECIO_UNITARIO_FVDE, 2)</code></td></tr>
+<tr><td><code>MONTO_DESCUENTO_FVDE</code></td><td><code>NUMBER(14,2)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: monto de descuento de la linea.<br><code>ROUND(CANTIDAD_FVDE * PRECIO_UNITARIO_FVDE * PORC_DESCUENTO_FVDE / 100, 2)</code></td></tr>
+<tr><td><code>MONTO_IMPUESTO_FVDE</code></td><td><code>NUMBER(14,2)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: monto de impuesto de la linea, calculado sobre el neto de descuento.<br><code>ROUND(CANTIDAD_FVDE * PRECIO_UNITARIO_FVDE * (1 - PORC_DESCUENTO_FVDE / 100) * PORC_IMPUESTO_FVDE / 100, 2)</code></td></tr>
+<tr><td><code>USUARIO_CREA_FVDE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_FVDE</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_FVDE</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_FVDE</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_FVDE</code></td><td>PK</td><td><code>ID_FACTURA_VENTA_DET</code></td></tr>
+<tr><td><code>FK_FVDE_FAVE</code></td><td>FK</td><td><code>(ID_FACTURA_VENTA)</code> &rarr; <code>VEN_FACTURA (ID_FACTURA_VENTA)</code></td></tr>
+<tr><td><code>FK_FVDE_PROD</code></td><td>FK</td><td><code>(ID_PRODUCTO)</code> &rarr; <code>PRO_PRODUCTO (ID_PRODUCTO)</code></td></tr>
+<tr><td><code>FK_FVDE_SERV</code></td><td>FK</td><td><code>(ID_SERVICIO)</code> &rarr; <code>PRO_SERVICIO (ID_SERVICIO)</code></td></tr>
+<tr><td><code>FK_FVDE_LOTE</code></td><td>FK</td><td><code>(ID_LOTE, ID_PRODUCTO)</code> &rarr; <code>PRO_LOTE (ID_LOTE, ID_PRODUCTO)</code></td></tr>
+<tr><td><code>UK_FVDE_FAVE_LINEA</code></td><td>UK</td><td><code>ID_FACTURA_VENTA, LINEA_FVDE</code></td></tr>
+<tr><td><code>CK_FVDE_CANTIDAD</code></td><td>CHECK</td><td><code>CANTIDAD_FVDE &gt; 0</code></td></tr>
+<tr><td><code>CK_FVDE_PRECIO</code></td><td>CHECK</td><td><code>PRECIO_UNITARIO_FVDE &gt;= 0</code></td></tr>
+<tr><td><code>CK_FVDE_PORC_DESC</code></td><td>CHECK</td><td><code>PORC_DESCUENTO_FVDE BETWEEN 0 AND 100</code></td></tr>
+<tr><td><code>CK_FVDE_PORC_IMPU</code></td><td>CHECK</td><td><code>PORC_IMPUESTO_FVDE BETWEEN 0 AND 100</code></td></tr>
+<tr><td><code>CK_FVDE_LINEA</code></td><td>CHECK</td><td><code>LINEA_FVDE &gt; 0</code></td></tr>
+<tr><td><code>CK_FVDE_PROD_SERV</code></td><td>CHECK</td><td><code>(ID_PRODUCTO IS NOT NULL AND ID_SERVICIO IS NULL) OR (ID_PRODUCTO IS NULL AND ID_SERVICIO IS NOT NULL)</code></td></tr>
+<tr><td><code>CK_FVDE_LOTE_PROD</code></td><td>CHECK</td><td><code>ID_LOTE IS NULL OR ID_PRODUCTO IS NOT NULL</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_FVDE_PROD</code></td><td>Secundario (FK)</td><td><code>ID_PRODUCTO</code></td></tr>
+<tr><td><code>IX_FVDE_SERV</code></td><td>Secundario (FK)</td><td><code>ID_SERVICIO</code></td></tr>
+<tr><td><code>IX_FVDE_LOTE</code></td><td>Secundario (FK)</td><td><code>ID_LOTE, ID_PRODUCTO</code></td></tr>
+</table>
+<h3>VEN_PAGO</h3><p>Pagos recibidos al cancelar una factura de venta. Una factura puede pagarse con varios tipos de pago.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_VEN_PAGO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PAGO</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_VEN_PAGO.NEXTVAL</code></td><td>PK</td><td>Identificador unico del pago.</td></tr>
+<tr><td><code>ID_FACTURA_VENTA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Factura que se paga. FK a VEN_FACTURA.</td></tr>
+<tr><td><code>TIPO_PAGO</code></td><td><code>VARCHAR2(15)</code></td><td>No</td><td><code></code></td><td></td><td>Tipo de pago: EFECTIVO, TARJETA, SINPE, TRANSFERENCIA o NOTA_CREDITO.</td></tr>
+<tr><td><code>LINEA_PAGO</code></td><td><code>NUMBER(4)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero de linea de pago dentro de la factura.</td></tr>
+<tr><td><code>MONTO_PAGO</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code></code></td><td></td><td>Monto recibido.</td></tr>
+<tr><td><code>MONTO_VUELTO_PAGO</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Vuelto entregado. Solo aplica a pagos en efectivo.</td></tr>
+<tr><td><code>REFERENCIA_PAGO</code></td><td><code>VARCHAR2(50)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Numero de autorizacion o referencia. Obligatorio en todo pago que no sea efectivo.</td></tr>
+<tr><td><code>FECHA_PAGO</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora del pago.</td></tr>
+<tr><td><code>ESTADO_PAGO</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, N=Anulado.</td></tr>
+<tr><td><code>USUARIO_CREA_PAGO</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PAGO</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PAGO</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PAGO</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PAGO</code></td><td>PK</td><td><code>ID_PAGO</code></td></tr>
+<tr><td><code>FK_PAGO_FAVE</code></td><td>FK</td><td><code>(ID_FACTURA_VENTA)</code> &rarr; <code>VEN_FACTURA (ID_FACTURA_VENTA)</code></td></tr>
+<tr><td><code>UK_PAGO_FAVE_LINEA</code></td><td>UK</td><td><code>ID_FACTURA_VENTA, LINEA_PAGO</code></td></tr>
+<tr><td><code>CK_PAGO_TIPO</code></td><td>CHECK</td><td><code>TIPO_PAGO IN ('EFECTIVO','TARJETA','SINPE','TRANSFERENCIA','NOTA_CREDITO')</code></td></tr>
+<tr><td><code>CK_PAGO_MONTO</code></td><td>CHECK</td><td><code>MONTO_PAGO &gt; 0</code></td></tr>
+<tr><td><code>CK_PAGO_LINEA</code></td><td>CHECK</td><td><code>LINEA_PAGO &gt; 0</code></td></tr>
+<tr><td><code>CK_PAGO_VUELTO</code></td><td>CHECK</td><td><code>MONTO_VUELTO_PAGO &gt;= 0 AND (MONTO_VUELTO_PAGO = 0 OR TIPO_PAGO = 'EFECTIVO')</code></td></tr>
+<tr><td><code>CK_PAGO_REFERENCIA</code></td><td>CHECK</td><td><code>TIPO_PAGO = 'EFECTIVO' OR REFERENCIA_PAGO IS NOT NULL</code></td></tr>
+<tr><td><code>CK_PAGO_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_PAGO IN ('A','N')</code></td></tr>
+</table>
+<h3>VEN_ABONO_COBRAR</h3><p>Abonos de clientes a facturas de venta a credito. El saldo de la cuenta por cobrar se calcula a partir de estos abonos.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_VEN_ABONO_COBRAR</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_ABONO_COBRAR</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_VEN_ABONO_COBRAR.NEXTVAL</code></td><td>PK</td><td>Identificador unico del abono.</td></tr>
+<tr><td><code>ID_FACTURA_VENTA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Factura de venta que se abona. FK a VEN_FACTURA.</td></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Usuario que recibio el abono. FK a SEG_USUARIO.</td></tr>
+<tr><td><code>TIPO_PAGO_ABCO</code></td><td><code>VARCHAR2(15)</code></td><td>No</td><td><code></code></td><td></td><td>Tipo de pago del abono: EFECTIVO, TARJETA, SINPE, TRANSFERENCIA o NOTA_CREDITO.</td></tr>
+<tr><td><code>NUM_RECIBO_ABCO</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero de recibo entregado al cliente.</td></tr>
+<tr><td><code>FECHA_ABCO</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha del abono.</td></tr>
+<tr><td><code>MONTO_ABCO</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code></code></td><td></td><td>Monto abonado.</td></tr>
+<tr><td><code>REFERENCIA_ABCO</code></td><td><code>VARCHAR2(50)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Numero de autorizacion o referencia. Obligatorio en todo abono que no sea efectivo.</td></tr>
+<tr><td><code>ESTADO_ABCO</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, N=Anulado.</td></tr>
+<tr><td><code>USUARIO_CREA_ABCO</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_ABCO</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_ABCO</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_ABCO</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_ABCO</code></td><td>PK</td><td><code>ID_ABONO_COBRAR</code></td></tr>
+<tr><td><code>FK_ABCO_FAVE</code></td><td>FK</td><td><code>(ID_FACTURA_VENTA)</code> &rarr; <code>VEN_FACTURA (ID_FACTURA_VENTA)</code></td></tr>
+<tr><td><code>FK_ABCO_USU</code></td><td>FK</td><td><code>(ID_USUARIO)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>UK_ABCO_RECIBO</code></td><td>UK</td><td><code>NUM_RECIBO_ABCO</code></td></tr>
+<tr><td><code>CK_ABCO_TIPO</code></td><td>CHECK</td><td><code>TIPO_PAGO_ABCO IN ('EFECTIVO','TARJETA','SINPE','TRANSFERENCIA','NOTA_CREDITO')</code></td></tr>
+<tr><td><code>CK_ABCO_MONTO</code></td><td>CHECK</td><td><code>MONTO_ABCO &gt; 0</code></td></tr>
+<tr><td><code>CK_ABCO_REFERENCIA</code></td><td>CHECK</td><td><code>TIPO_PAGO_ABCO = 'EFECTIVO' OR REFERENCIA_ABCO IS NOT NULL</code></td></tr>
+<tr><td><code>CK_ABCO_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_ABCO IN ('A','N')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_ABCO_FAVE</code></td><td>Secundario (FK)</td><td><code>ID_FACTURA_VENTA</code></td></tr>
+<tr><td><code>IX_ABCO_USU</code></td><td>Secundario (FK)</td><td><code>ID_USUARIO</code></td></tr>
+</table>
+<h3>VEN_DEVOLUCION</h3><p>Encabezado de las devoluciones de un cliente, total o parcial, sobre una factura de venta.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_VEN_DEVOLUCION</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_DEVOLUCION_VENTA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_VEN_DEVOLUCION.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la devolucion de venta.</td></tr>
+<tr><td><code>ID_FACTURA_VENTA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Factura de venta que se devuelve. FK a VEN_FACTURA.</td></tr>
+<tr><td><code>ID_BODEGA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Bodega que recibe el producto devuelto. FK a INV_BODEGA.</td></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Usuario que registro la devolucion. FK a SEG_USUARIO.</td></tr>
+<tr><td><code>CONSECUTIVO_DEVV</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Consecutivo interno de la devolucion.</td></tr>
+<tr><td><code>FECHA_DEVV</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de la devolucion.</td></tr>
+<tr><td><code>MOTIVO_DEVV</code></td><td><code>VARCHAR2(250)</code></td><td>No</td><td><code></code></td><td></td><td>Motivo de la devolucion.</td></tr>
+<tr><td><code>ESTADO_DEVV</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, N=Anulado.</td></tr>
+<tr><td><code>USUARIO_CREA_DEVV</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_DEVV</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_DEVV</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_DEVV</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_DEVV</code></td><td>PK</td><td><code>ID_DEVOLUCION_VENTA</code></td></tr>
+<tr><td><code>FK_DEVV_FAVE</code></td><td>FK</td><td><code>(ID_FACTURA_VENTA)</code> &rarr; <code>VEN_FACTURA (ID_FACTURA_VENTA)</code></td></tr>
+<tr><td><code>FK_DEVV_BODE</code></td><td>FK</td><td><code>(ID_BODEGA)</code> &rarr; <code>INV_BODEGA (ID_BODEGA)</code></td></tr>
+<tr><td><code>FK_DEVV_USU</code></td><td>FK</td><td><code>(ID_USUARIO)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>UK_DEVV_CONSECUTIVO</code></td><td>UK</td><td><code>CONSECUTIVO_DEVV</code></td></tr>
+<tr><td><code>CK_DEVV_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_DEVV IN ('A','N')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_DEVV_FAVE</code></td><td>Secundario (FK)</td><td><code>ID_FACTURA_VENTA</code></td></tr>
+<tr><td><code>IX_DEVV_BODE</code></td><td>Secundario (FK)</td><td><code>ID_BODEGA</code></td></tr>
+<tr><td><code>IX_DEVV_USU</code></td><td>Secundario (FK)</td><td><code>ID_USUARIO</code></td></tr>
+</table>
+<h3>VEN_DEVOLUCION_DET</h3><p>Lineas de factura de venta devueltas y su cantidad. Producto o servicio, lote y precio se obtienen de la linea original; no se repiten aqui.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_VEN_DEVOLUCION_DET</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_DEVOLUCION_VENTA_DET</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_VEN_DEVOLUCION_DET.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la linea devuelta.</td></tr>
+<tr><td><code>ID_DEVOLUCION_VENTA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Devolucion a la que pertenece. FK a VEN_DEVOLUCION.</td></tr>
+<tr><td><code>ID_FACTURA_VENTA_DET</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Linea de la factura de venta que se devuelve. FK a VEN_FACTURA_DET.</td></tr>
+<tr><td><code>CANTIDAD_DVVD</code></td><td><code>NUMBER(14,3)</code></td><td>No</td><td><code></code></td><td></td><td>Cantidad devuelta.</td></tr>
+<tr><td><code>MOTIVO_DVVD</code></td><td><code>VARCHAR2(200)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Motivo especifico de la linea.</td></tr>
+<tr><td><code>USUARIO_CREA_DVVD</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_DVVD</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_DVVD</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_DVVD</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_DVVD</code></td><td>PK</td><td><code>ID_DEVOLUCION_VENTA_DET</code></td></tr>
+<tr><td><code>FK_DVVD_DEVV</code></td><td>FK</td><td><code>(ID_DEVOLUCION_VENTA)</code> &rarr; <code>VEN_DEVOLUCION (ID_DEVOLUCION_VENTA)</code></td></tr>
+<tr><td><code>FK_DVVD_FVDE</code></td><td>FK</td><td><code>(ID_FACTURA_VENTA_DET)</code> &rarr; <code>VEN_FACTURA_DET (ID_FACTURA_VENTA_DET)</code></td></tr>
+<tr><td><code>UK_DVVD_DEVV_FVDE</code></td><td>UK</td><td><code>ID_DEVOLUCION_VENTA, ID_FACTURA_VENTA_DET</code></td></tr>
+<tr><td><code>CK_DVVD_CANTIDAD</code></td><td>CHECK</td><td><code>CANTIDAD_DVVD &gt; 0</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_DVVD_FVDE</code></td><td>Secundario (FK)</td><td><code>ID_FACTURA_VENTA_DET</code></td></tr>
+</table>
+<h3>VEN_NOTA_CREDITO</h3><p>Notas de credito emitidas a clientes para pagar una devolucion de venta. Cada devolucion genera a lo sumo una nota.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_VEN_NOTA_CREDITO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_NOTA_CREDITO_VENTA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_VEN_NOTA_CREDITO.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la nota de credito de venta.</td></tr>
+<tr><td><code>ID_DEVOLUCION_VENTA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Devolucion que origina la nota. FK a VEN_DEVOLUCION. La factura y el cliente se obtienen a traves de la devolucion.</td></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Usuario que emitio la nota. FK a SEG_USUARIO.</td></tr>
+<tr><td><code>NUM_NOTA_NCVE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Numero de la nota de credito.</td></tr>
+<tr><td><code>FECHA_NCVE</code></td><td><code>DATE</code></td><td>No</td><td><code>SYSDATE</code></td><td></td><td>Fecha de la nota de credito.</td></tr>
+<tr><td><code>ESTADO_NCVE</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Disponible, C=Aplicada, N=Anulada.</td></tr>
+<tr><td><code>USUARIO_CREA_NCVE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_NCVE</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_NCVE</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_NCVE</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_NCVE</code></td><td>PK</td><td><code>ID_NOTA_CREDITO_VENTA</code></td></tr>
+<tr><td><code>FK_NCVE_DEVV</code></td><td>FK</td><td><code>(ID_DEVOLUCION_VENTA)</code> &rarr; <code>VEN_DEVOLUCION (ID_DEVOLUCION_VENTA)</code></td></tr>
+<tr><td><code>FK_NCVE_USU</code></td><td>FK</td><td><code>(ID_USUARIO)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>UK_NCVE_DEVV</code></td><td>UK</td><td><code>ID_DEVOLUCION_VENTA</code></td></tr>
+<tr><td><code>UK_NCVE_NUM</code></td><td>UK</td><td><code>NUM_NOTA_NCVE</code></td></tr>
+<tr><td><code>CK_NCVE_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_NCVE IN ('A','C','N')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_NCVE_USU</code></td><td>Secundario (FK)</td><td><code>ID_USUARIO</code></td></tr>
+</table>
+<h3>V_CUENTA_COBRAR (vista)</h3><p>Cuentas por cobrar: facturas de venta a credito con su monto abonado y saldo. Monto original, saldo y estado se calculan; no se almacenan.</p>
+<h3>V_SALDO_CLIENTE (vista)</h3><p>Saldo pendiente y credito disponible de cada cliente, contra su monto maximo de credito.</p>
+<h2>M&oacute;dulo PRM_ - Promociones, premios y descuentos</h2>
+<h3>PRM_PROMOCION</h3><p>Promociones de mercadeo. Sus productos patrocinadores estan en PRM_PATROCINADOR y sus premios en PRM_PREMIO.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRM_PROMOCION</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PROMOCION</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PRM_PROMOCION.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la promocion.</td></tr>
+<tr><td><code>ID_SUCURSAL</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Sucursal donde aplica. FK a SEG_SUCURSAL. Nulo significa que aplica en toda la cadena.</td></tr>
+<tr><td><code>CODIGO_PROM</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo interno de la promocion.</td></tr>
+<tr><td><code>NOMBRE_PROM</code></td><td><code>VARCHAR2(100)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre de la promocion.</td></tr>
+<tr><td><code>DESCRIPCION_PROM</code></td><td><code>VARCHAR2(250)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Descripcion y condiciones.</td></tr>
+<tr><td><code>FECHA_INICIO_PROM</code></td><td><code>DATE</code></td><td>No</td><td><code></code></td><td></td><td>Fecha de inicio de vigencia.</td></tr>
+<tr><td><code>FECHA_FIN_PROM</code></td><td><code>DATE</code></td><td>No</td><td><code></code></td><td></td><td>Fecha de fin de vigencia.</td></tr>
+<tr><td><code>ESTADO_PROM</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activa, I=Inactiva, F=Finalizada.</td></tr>
+<tr><td><code>USUARIO_CREA_PROM</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PROM</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PROM</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PROM</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PROM</code></td><td>PK</td><td><code>ID_PROMOCION</code></td></tr>
+<tr><td><code>FK_PROM_SUC</code></td><td>FK</td><td><code>(ID_SUCURSAL)</code> &rarr; <code>SEG_SUCURSAL (ID_SUCURSAL)</code></td></tr>
+<tr><td><code>UK_PROM_CODIGO</code></td><td>UK</td><td><code>CODIGO_PROM</code></td></tr>
+<tr><td><code>CK_PROM_FECHAS</code></td><td>CHECK</td><td><code>FECHA_FIN_PROM &gt;= FECHA_INICIO_PROM</code></td></tr>
+<tr><td><code>CK_PROM_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_PROM IN ('A','I','F')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_PROM_SUC</code></td><td>Secundario (FK)</td><td><code>ID_SUCURSAL</code></td></tr>
+<tr><td><code>IX_PROM_VIGENCIA</code></td><td>Secundario (b&uacute;squeda)</td><td><code>FECHA_INICIO_PROM, FECHA_FIN_PROM</code></td></tr>
+</table>
+<h3>PRM_PATROCINADOR</h3><p>Productos patrocinadores de una promocion: cuantas unidades hay que comprar y cuantas acciones se entregan al cumplirlo.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRM_PATROCINADOR</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PATROCINADOR</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PRM_PATROCINADOR.NEXTVAL</code></td><td>PK</td><td>Identificador unico del producto patrocinador.</td></tr>
+<tr><td><code>ID_PROMOCION</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Promocion patrocinada. FK a PRM_PROMOCION.</td></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Producto patrocinador. FK a PRO_PRODUCTO.</td></tr>
+<tr><td><code>CANT_REQUERIDA_PATR</code></td><td><code>NUMBER(14,3)</code></td><td>No</td><td><code>1</code></td><td></td><td>Cantidad del producto necesaria para ser acreedor de acciones.</td></tr>
+<tr><td><code>ACCIONES_OTORGA_PATR</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>1</code></td><td></td><td>Cantidad de acciones que se entregan al cumplir la cantidad requerida.</td></tr>
+<tr><td><code>ESTADO_PATR</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_PATR</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PATR</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PATR</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PATR</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PATR</code></td><td>PK</td><td><code>ID_PATROCINADOR</code></td></tr>
+<tr><td><code>FK_PATR_PROM</code></td><td>FK</td><td><code>(ID_PROMOCION)</code> &rarr; <code>PRM_PROMOCION (ID_PROMOCION)</code></td></tr>
+<tr><td><code>FK_PATR_PROD</code></td><td>FK</td><td><code>(ID_PRODUCTO)</code> &rarr; <code>PRO_PRODUCTO (ID_PRODUCTO)</code></td></tr>
+<tr><td><code>UK_PATR_PROM_PROD</code></td><td>UK</td><td><code>ID_PROMOCION, ID_PRODUCTO</code></td></tr>
+<tr><td><code>CK_PATR_CANTIDAD</code></td><td>CHECK</td><td><code>CANT_REQUERIDA_PATR &gt; 0</code></td></tr>
+<tr><td><code>CK_PATR_ACCIONES</code></td><td>CHECK</td><td><code>ACCIONES_OTORGA_PATR &gt; 0</code></td></tr>
+<tr><td><code>CK_PATR_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_PATR IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_PATR_PROD</code></td><td>Secundario (FK)</td><td><code>ID_PRODUCTO</code></td></tr>
+</table>
+<h3>PRM_PREMIO</h3><p>Premios que se pueden obtener en una promocion a cambio de acciones.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRM_PREMIO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_PREMIO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PRM_PREMIO.NEXTVAL</code></td><td>PK, UK</td><td>Identificador unico del premio.</td></tr>
+<tr><td><code>ID_PROMOCION</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Promocion a la que pertenece el premio. FK a PRM_PROMOCION.</td></tr>
+<tr><td><code>ID_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Producto del inventario que se entrega como premio. FK a PRO_PRODUCTO. Nulo si el premio no es un producto del inventario.</td></tr>
+<tr><td><code>NOMBRE_PREM</code></td><td><code>VARCHAR2(150)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Nombre del premio.</td></tr>
+<tr><td><code>DESCRIPCION_PREM</code></td><td><code>VARCHAR2(250)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Descripcion del premio.</td></tr>
+<tr><td><code>ACCIONES_COSTO_PREM</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>1</code></td><td></td><td>Cantidad de acciones necesarias para canjear el premio.</td></tr>
+<tr><td><code>CANT_DISPONIBLE_PREM</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>0</code></td><td></td><td>Unidades del premio disponibles para canje.</td></tr>
+<tr><td><code>ESTADO_PREM</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo, G=Agotado.</td></tr>
+<tr><td><code>USUARIO_CREA_PREM</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_PREM</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_PREM</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_PREM</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_PREM</code></td><td>PK</td><td><code>ID_PREMIO</code></td></tr>
+<tr><td><code>FK_PREM_PROM</code></td><td>FK</td><td><code>(ID_PROMOCION)</code> &rarr; <code>PRM_PROMOCION (ID_PROMOCION)</code></td></tr>
+<tr><td><code>FK_PREM_PROD</code></td><td>FK</td><td><code>(ID_PRODUCTO)</code> &rarr; <code>PRO_PRODUCTO (ID_PRODUCTO)</code></td></tr>
+<tr><td><code>UK_PREM_PROM_NOMBRE</code></td><td>UK</td><td><code>ID_PROMOCION, NOMBRE_PREM</code></td></tr>
+<tr><td><code>UK_PREM_ID_PROM</code></td><td>UK</td><td><code>ID_PREMIO, ID_PROMOCION</code></td></tr>
+<tr><td><code>CK_PREM_ACCIONES</code></td><td>CHECK</td><td><code>ACCIONES_COSTO_PREM &gt; 0</code></td></tr>
+<tr><td><code>CK_PREM_DISPONIBLE</code></td><td>CHECK</td><td><code>CANT_DISPONIBLE_PREM &gt;= 0</code></td></tr>
+<tr><td><code>CK_PREM_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_PREM IN ('A','I','G')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_PREM_PROD</code></td><td>Secundario (FK)</td><td><code>ID_PRODUCTO</code></td></tr>
+</table>
+<h3>PRM_ACCION_CLIENTE</h3><p>Acciones que una factura de venta le otorga a su cliente dentro de una promocion, y el premio canjeado con ellas si lo hay. El cliente y la fecha se obtienen de la factura.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRM_ACCION_CLIENTE</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_ACCION_CLIENTE</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_PRM_ACCION_CLIENTE.NEXTVAL</code></td><td>PK</td><td>Identificador unico del registro de acciones.</td></tr>
+<tr><td><code>ID_PROMOCION</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Promocion que otorga las acciones. FK a PRM_PROMOCION.</td></tr>
+<tr><td><code>ID_FACTURA_VENTA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code></code></td><td>FK, UK</td><td>Factura de venta que genero las acciones. FK a VEN_FACTURA.</td></tr>
+<tr><td><code>ID_PREMIO</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Premio canjeado. FK compuesta a PRM_PREMIO junto con ID_PROMOCION, lo que garantiza que el premio sea de la misma promocion.</td></tr>
+<tr><td><code>CANT_ACCIONES_ACLI</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td></td><td>Cantidad de acciones otorgadas.</td></tr>
+<tr><td><code>FECHA_CANJE_ACLI</code></td><td><code>DATE</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha en que se canjeo el premio. Nulo mientras las acciones esten disponibles.</td></tr>
+<tr><td><code>ESTADO_ACLI</code></td><td><code>VARCHAR2(1)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: C=Canjeada si ya tiene premio, D=Disponible en caso contrario.<br><code>CASE WHEN ID_PREMIO IS NULL THEN 'D' ELSE 'C' END</code></td></tr>
+<tr><td><code>USUARIO_CREA_ACLI</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_ACLI</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_ACLI</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_ACLI</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_ACLI</code></td><td>PK</td><td><code>ID_ACCION_CLIENTE</code></td></tr>
+<tr><td><code>FK_ACLI_PROM</code></td><td>FK</td><td><code>(ID_PROMOCION)</code> &rarr; <code>PRM_PROMOCION (ID_PROMOCION)</code></td></tr>
+<tr><td><code>FK_ACLI_FAVE</code></td><td>FK</td><td><code>(ID_FACTURA_VENTA)</code> &rarr; <code>VEN_FACTURA (ID_FACTURA_VENTA)</code></td></tr>
+<tr><td><code>FK_ACLI_PREM</code></td><td>FK</td><td><code>(ID_PREMIO, ID_PROMOCION)</code> &rarr; <code>PRM_PREMIO (ID_PREMIO, ID_PROMOCION)</code></td></tr>
+<tr><td><code>UK_ACLI_PROM_FAVE</code></td><td>UK</td><td><code>ID_PROMOCION, ID_FACTURA_VENTA</code></td></tr>
+<tr><td><code>CK_ACLI_CANTIDAD</code></td><td>CHECK</td><td><code>CANT_ACCIONES_ACLI &gt; 0</code></td></tr>
+<tr><td><code>CK_ACLI_CANJE</code></td><td>CHECK</td><td><code>(ID_PREMIO IS NULL AND FECHA_CANJE_ACLI IS NULL) OR (ID_PREMIO IS NOT NULL AND FECHA_CANJE_ACLI IS NOT NULL)</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_ACLI_FAVE</code></td><td>Secundario (FK)</td><td><code>ID_FACTURA_VENTA</code></td></tr>
+<tr><td><code>IX_ACLI_PREM</code></td><td>Secundario (FK)</td><td><code>ID_PREMIO, ID_PROMOCION</code></td></tr>
+</table>
+<h3>PRM_DESCUENTO</h3><p>Descuentos comerciales con su vigencia. A que productos aplica cada uno se define en PRM_DESCUENTO_REGLA.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRM_DESCUENTO</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_DESCUENTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PRM_DESCUENTO.NEXTVAL</code></td><td>PK</td><td>Identificador unico del descuento.</td></tr>
+<tr><td><code>ID_SUCURSAL</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Sucursal donde aplica. FK a SEG_SUCURSAL. Nulo significa que aplica en toda la cadena.</td></tr>
+<tr><td><code>CODIGO_DSCT</code></td><td><code>VARCHAR2(20)</code></td><td>No</td><td><code></code></td><td>UK</td><td>Codigo interno del descuento.</td></tr>
+<tr><td><code>NOMBRE_DSCT</code></td><td><code>VARCHAR2(100)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre del descuento.</td></tr>
+<tr><td><code>PORCENTAJE_DSCT</code></td><td><code>NUMBER(5,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Porcentaje de descuento. Excluyente con el monto fijo.</td></tr>
+<tr><td><code>MONTO_FIJO_DSCT</code></td><td><code>NUMBER(14,2)</code></td><td>No</td><td><code>0</code></td><td></td><td>Monto fijo de descuento. Excluyente con el porcentaje.</td></tr>
+<tr><td><code>FECHA_INICIO_DSCT</code></td><td><code>DATE</code></td><td>No</td><td><code></code></td><td></td><td>Fecha de inicio de vigencia.</td></tr>
+<tr><td><code>FECHA_FIN_DSCT</code></td><td><code>DATE</code></td><td>No</td><td><code></code></td><td></td><td>Fecha de fin de vigencia.</td></tr>
+<tr><td><code>PRIORIDAD_DSCT</code></td><td><code>NUMBER(3)</code></td><td>No</td><td><code>1</code></td><td></td><td>Prioridad de aplicacion; 1 es la mas alta.</td></tr>
+<tr><td><code>ES_ACUMULABLE_DSCT</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'N'</code></td><td></td><td>Indica si se puede acumular con otros descuentos: S=Si, N=No.</td></tr>
+<tr><td><code>ESTADO_DSCT</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_DSCT</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_DSCT</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_DSCT</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_DSCT</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_DSCT</code></td><td>PK</td><td><code>ID_DESCUENTO</code></td></tr>
+<tr><td><code>FK_DSCT_SUC</code></td><td>FK</td><td><code>(ID_SUCURSAL)</code> &rarr; <code>SEG_SUCURSAL (ID_SUCURSAL)</code></td></tr>
+<tr><td><code>UK_DSCT_CODIGO</code></td><td>UK</td><td><code>CODIGO_DSCT</code></td></tr>
+<tr><td><code>CK_DSCT_PRIORIDAD</code></td><td>CHECK</td><td><code>PRIORIDAD_DSCT &gt; 0</code></td></tr>
+<tr><td><code>CK_DSCT_FECHAS</code></td><td>CHECK</td><td><code>FECHA_FIN_DSCT &gt;= FECHA_INICIO_DSCT</code></td></tr>
+<tr><td><code>CK_DSCT_TIPO</code></td><td>CHECK</td><td><code>(PORCENTAJE_DSCT &gt; 0 AND PORCENTAJE_DSCT &lt;= 100 AND MONTO_FIJO_DSCT = 0) OR (PORCENTAJE_DSCT = 0 AND MONTO_FIJO_DSCT &gt; 0)</code></td></tr>
+<tr><td><code>CK_DSCT_ACUMULABLE</code></td><td>CHECK</td><td><code>ES_ACUMULABLE_DSCT IN ('S','N')</code></td></tr>
+<tr><td><code>CK_DSCT_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_DSCT IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_DSCT_SUC</code></td><td>Secundario (FK)</td><td><code>ID_SUCURSAL</code></td></tr>
+<tr><td><code>IX_DSCT_VIGENCIA</code></td><td>Secundario (b&uacute;squeda)</td><td><code>FECHA_INICIO_DSCT, FECHA_FIN_DSCT, PRIORIDAD_DSCT</code></td></tr>
+</table>
+<h3>PRM_DESCUENTO_REGLA</h3><p>Criterio de aplicacion de un descuento: por familia, por proveedor, por dias desde el ingreso o por dias para el vencimiento. Cada regla usa exactamente un criterio.<br><span class="m">Tablespace: <code>TBS_DATOS</code> - Secuencia: <code>SEQ_PRM_DESCUENTO_REGLA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_DESCUENTO_REGLA</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code>SEQ_PRM_DESCUENTO_REGLA.NEXTVAL</code></td><td>PK</td><td>Identificador unico de la regla.</td></tr>
+<tr><td><code>ID_DESCUENTO</code></td><td><code>NUMBER(10)</code></td><td>No</td><td><code></code></td><td>FK</td><td>Descuento al que pertenece la regla. FK a PRM_DESCUENTO.</td></tr>
+<tr><td><code>ID_FAMILIA_PRODUCTO</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Familia a la que aplica. FK a PRO_FAMILIA_PRODUCTO.</td></tr>
+<tr><td><code>ID_PROVEEDOR</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Proveedor a cuyos productos aplica. FK a PER_PROVEEDOR.</td></tr>
+<tr><td><code>DIAS_INGRESO_DSRE</code></td><td><code>NUMBER(5)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Aplica a lotes con al menos esta cantidad de dias desde su fecha de ingreso.</td></tr>
+<tr><td><code>DIAS_VENCIM_DSRE</code></td><td><code>NUMBER(5)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Aplica a lotes a los que les faltan como maximo estos dias para vencer.</td></tr>
+<tr><td><code>TIPO_REGLA_DSRE</code></td><td><code>VARCHAR2(17)</code></td><td>S&iacute;</td><td><code>virtual</code></td><td></td><td>Columna virtual: FAMILIA, PROVEEDOR, FECHA_INGRESO o FECHA_VENCIMIENTO, segun el criterio que tiene valor.<br><code>CASE WHEN ID_FAMILIA_PRODUCTO IS NOT NULL THEN 'FAMILIA' WHEN ID_PROVEEDOR IS NOT NULL THEN 'PROVEEDOR' WHEN DIAS_INGRESO_DSRE IS NOT NULL THEN 'FECHA_INGRESO' ELSE 'FECHA_VENCIMIENTO' END</code></td></tr>
+<tr><td><code>ESTADO_DSRE</code></td><td><code>VARCHAR2(1)</code></td><td>No</td><td><code>'A'</code></td><td></td><td>Estado del registro: A=Activo, I=Inactivo.</td></tr>
+<tr><td><code>USUARIO_CREA_DSRE</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_DSRE</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+<tr><td><code>USUARIO_MOD_DSRE</code></td><td><code>VARCHAR2(30)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Usuario de base de datos que realizo la ultima modificacion.</td></tr>
+<tr><td><code>FECHA_MOD_DSRE</code></td><td><code>TIMESTAMP</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Fecha y hora de la ultima modificacion.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_DSRE</code></td><td>PK</td><td><code>ID_DESCUENTO_REGLA</code></td></tr>
+<tr><td><code>FK_DSRE_DSCT</code></td><td>FK</td><td><code>(ID_DESCUENTO)</code> &rarr; <code>PRM_DESCUENTO (ID_DESCUENTO)</code></td></tr>
+<tr><td><code>FK_DSRE_FAMI</code></td><td>FK</td><td><code>(ID_FAMILIA_PRODUCTO)</code> &rarr; <code>PRO_FAMILIA_PRODUCTO (ID_FAMILIA_PRODUCTO)</code></td></tr>
+<tr><td><code>FK_DSRE_PROVE</code></td><td>FK</td><td><code>(ID_PROVEEDOR)</code> &rarr; <code>PER_PROVEEDOR (ID_PROVEEDOR)</code></td></tr>
+<tr><td><code>CK_DSRE_DIAS_ING</code></td><td>CHECK</td><td><code>DIAS_INGRESO_DSRE &gt; 0</code></td></tr>
+<tr><td><code>CK_DSRE_DIAS_VEN</code></td><td>CHECK</td><td><code>DIAS_VENCIM_DSRE &gt; 0</code></td></tr>
+<tr><td><code>CK_DSRE_UN_CRITERIO</code></td><td>CHECK</td><td><code>NVL2(ID_FAMILIA_PRODUCTO, 1, 0) + NVL2(ID_PROVEEDOR, 1, 0) + NVL2(DIAS_INGRESO_DSRE, 1, 0) + NVL2(DIAS_VENCIM_DSRE, 1, 0) = 1</code></td></tr>
+<tr><td><code>CK_DSRE_ESTADO</code></td><td>CHECK</td><td><code>ESTADO_DSRE IN ('A','I')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_DSRE_DSCT</code></td><td>Secundario (FK)</td><td><code>ID_DESCUENTO</code></td></tr>
+<tr><td><code>IX_DSRE_FAMI</code></td><td>Secundario (FK)</td><td><code>ID_FAMILIA_PRODUCTO</code></td></tr>
+<tr><td><code>IX_DSRE_PROVE</code></td><td>Secundario (FK)</td><td><code>ID_PROVEEDOR</code></td></tr>
+</table>
+<h2>M&oacute;dulo AUD_ - Bitacora de auditoria</h2>
+<h3>AUD_BITACORA</h3><p>Bitacora general de operaciones realizadas por los usuarios del sistema.<br><span class="m">Tablespace: <code>TBS_AUDITORIA</code> - Secuencia: <code>SEQ_AUD_BITACORA</code></span></p>
+<table><tr><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Valor por defecto</th><th>Llave</th><th>Descripci&oacute;n</th></tr>
+<tr><td><code>ID_BITACORA</code></td><td><code>NUMBER(12)</code></td><td>No</td><td><code>SEQ_AUD_BITACORA.NEXTVAL</code></td><td>PK</td><td>Identificador unico del registro de bitacora.</td></tr>
+<tr><td><code>ID_USUARIO</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Usuario de la aplicacion que realizo la operacion. FK a SEG_USUARIO.</td></tr>
+<tr><td><code>ID_SUCURSAL</code></td><td><code>NUMBER(10)</code></td><td>S&iacute;</td><td><code></code></td><td>FK</td><td>Sucursal desde la que se realizo. FK a SEG_SUCURSAL.</td></tr>
+<tr><td><code>TABLA_BITA</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code></code></td><td></td><td>Nombre de la tabla afectada.</td></tr>
+<tr><td><code>LLAVE_REGISTRO_BITA</code></td><td><code>VARCHAR2(50)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Valor de la llave primaria del registro afectado.</td></tr>
+<tr><td><code>OPERACION_BITA</code></td><td><code>VARCHAR2(10)</code></td><td>No</td><td><code></code></td><td></td><td>Operacion: INSERT, UPDATE, DELETE, LOGIN, LOGOUT, ANULAR o CONSULTA.</td></tr>
+<tr><td><code>MODULO_BITA</code></td><td><code>VARCHAR2(50)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Modulo funcional desde el que se hizo la operacion.</td></tr>
+<tr><td><code>DESCRIPCION_BITA</code></td><td><code>VARCHAR2(500)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Descripcion de lo ocurrido.</td></tr>
+<tr><td><code>DIRECCION_IP_BITA</code></td><td><code>VARCHAR2(45)</code></td><td>S&iacute;</td><td><code></code></td><td></td><td>Direccion IP del equipo cliente.</td></tr>
+<tr><td><code>FECHA_BITA</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de la operacion.</td></tr>
+<tr><td><code>USUARIO_CREA_BITA</code></td><td><code>VARCHAR2(30)</code></td><td>No</td><td><code>USER</code></td><td></td><td>Usuario de base de datos que inserto el registro.</td></tr>
+<tr><td><code>FECHA_CREA_BITA</code></td><td><code>TIMESTAMP</code></td><td>No</td><td><code>SYSTIMESTAMP</code></td><td></td><td>Fecha y hora de creacion del registro.</td></tr>
+</table><table><tr><th>Restricci&oacute;n</th><th>Tipo</th><th>Definici&oacute;n</th></tr>
+<tr><td><code>PK_BITA</code></td><td>PK</td><td><code>ID_BITACORA</code></td></tr>
+<tr><td><code>FK_BITA_USU</code></td><td>FK</td><td><code>(ID_USUARIO)</code> &rarr; <code>SEG_USUARIO (ID_USUARIO)</code></td></tr>
+<tr><td><code>FK_BITA_SUC</code></td><td>FK</td><td><code>(ID_SUCURSAL)</code> &rarr; <code>SEG_SUCURSAL (ID_SUCURSAL)</code></td></tr>
+<tr><td><code>CK_BITA_OPERACION</code></td><td>CHECK</td><td><code>OPERACION_BITA IN ('INSERT','UPDATE','DELETE','LOGIN','LOGOUT','ANULAR','CONSULTA')</code></td></tr>
+</table>
+<table><tr><th>&Iacute;ndice</th><th>Tipo</th><th>Columnas</th></tr>
+<tr><td><code>IX_BITA_USU</code></td><td>Secundario (FK)</td><td><code>ID_USUARIO</code></td></tr>
+<tr><td><code>IX_BITA_SUC</code></td><td>Secundario (FK)</td><td><code>ID_SUCURSAL</code></td></tr>
+<tr><td><code>IX_BITA_FECHA</code></td><td>Secundario (b&uacute;squeda)</td><td><code>FECHA_BITA</code></td></tr>
+<tr><td><code>IX_BITA_TABLA_FECHA</code></td><td>Secundario (b&uacute;squeda)</td><td><code>TABLA_BITA, FECHA_BITA</code></td></tr>
+</table>
+</body></html>
