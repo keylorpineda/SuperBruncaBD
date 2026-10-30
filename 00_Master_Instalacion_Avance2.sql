@@ -27,6 +27,26 @@ PROMPT =========================================================================
 PROMPT Fecha y hora de inicio: 
 SELECT TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') AS fecha_inicio FROM dual;
 
+-- Conectar dinamicamente al PDB en caso de estar en CDB$ROOT
+DECLARE
+    v_contenedor VARCHAR2(128);
+    v_pdb        VARCHAR2(128);
+BEGIN
+    v_contenedor := SYS_CONTEXT('USERENV', 'CON_NAME');
+    IF v_contenedor = 'CDB$ROOT' THEN
+        SELECT name INTO v_pdb 
+          FROM v$pdbs 
+         WHERE open_mode LIKE 'READ WRITE%' 
+           AND name <> 'PDB$SEED' 
+           AND ROWNUM = 1;
+        EXECUTE IMMEDIATE 'ALTER SESSION SET CONTAINER = ' || v_pdb;
+        DBMS_OUTPUT.PUT_LINE('[SESION MASTER] Conectado exitosamente al PDB: ' || v_pdb);
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('[SESION MASTER] Ya en PDB: ' || v_contenedor);
+    END IF;
+END;
+/
+
 -- ----------------------------------------------------------------------------
 -- PASO 1: ESTRUCTURAS DDL, 11 TABLAS NUEVAS Y VISTAS MATERIALIZADAS
 -- ----------------------------------------------------------------------------

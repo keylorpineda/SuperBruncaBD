@@ -20,22 +20,20 @@ WHENEVER SQLERROR CONTINUE;
 
 -- Conectar dinamicamente al PDB o esquema de trabajo
 DECLARE
-    v_open_mode VARCHAR2(20);
-    v_pdb_name  VARCHAR2(30);
+    v_contenedor VARCHAR2(128);
+    v_pdb        VARCHAR2(128);
 BEGIN
-    SELECT open_mode INTO v_open_mode FROM v$database;
-    IF SYS_CONTEXT('USERENV', 'CON_NAME') = 'CDB$ROOT' THEN
-        BEGIN
-            SELECT pdb_name INTO v_pdb_name 
-              FROM cdb_pdbs 
-             WHERE open_mode = 'READ WRITE' 
-               AND ROWNUM = 1;
-            EXECUTE IMMEDIATE 'ALTER SESSION SET CONTAINER = ' || v_pdb_name;
-            DBMS_OUTPUT.PUT_LINE('[SESION] Conectado exitosamente al PDB: ' || v_pdb_name);
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                DBMS_OUTPUT.PUT_LINE('[AVISO] En CDB$ROOT, no se encontro PDB abierto.');
-        END;
+    v_contenedor := SYS_CONTEXT('USERENV', 'CON_NAME');
+    IF v_contenedor = 'CDB$ROOT' THEN
+        SELECT name INTO v_pdb 
+          FROM v$pdbs 
+         WHERE open_mode LIKE 'READ WRITE%' 
+           AND name <> 'PDB$SEED' 
+           AND ROWNUM = 1;
+        EXECUTE IMMEDIATE 'ALTER SESSION SET CONTAINER = ' || v_pdb;
+        DBMS_OUTPUT.PUT_LINE('[SESION] Conectado exitosamente al PDB: ' || v_pdb);
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('[SESION] Ya en PDB: ' || v_contenedor);
     END IF;
 END;
 /
@@ -131,10 +129,10 @@ PROMPT [OK] Roles con clave creados: ROL_GERENTE, ROL_JEFE_DEPARTAMENTO, ROL_JEF
 
 -- Registrar las contrasenas cifradas con AES-256 en la tabla de parametros del sistema
 BEGIN
-    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_GERENTE',           'ClaveGerente2026*');
-    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_JEFE_DEPARTAMENTO', 'ClaveJefeDepto2026*');
-    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_JEFE_PROVEEDURIA',  'ClaveJefeProv2026*');
-    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_DIGITADOR',         'ClaveDigitador2026*');
+    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_GERENTE',           'CLAVE_ROL_GERENTE',    'ClaveGerente2026*');
+    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_JEFE_DEPARTAMENTO', 'CLAVE_ROL_JEFE_DEPTO', 'ClaveJefeDepto2026*');
+    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_JEFE_PROVEEDURIA',  'CLAVE_ROL_JEFE_PROV',  'ClaveJefeProv2026*');
+    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_DIGITADOR',         'CLAVE_ROL_DIGITADOR',  'ClaveDigitador2026*');
     COMMIT;
     DBMS_OUTPUT.PUT_LINE('[OK] Claves de roles cifradas y almacenadas en SEG_PARAMETRO mediante DBMS_CRYPTO.');
 END;
@@ -161,9 +159,8 @@ GRANT SELECT ON CADENA_NEG.PRO_PRODUCTO              TO ROL_GERENTE;
 GRANT SELECT ON CADENA_NEG.PRO_PRECIO_HIST           TO ROL_GERENTE;
 GRANT SELECT ON CADENA_NEG.AUD_BITACORA              TO ROL_GERENTE;
 GRANT SELECT ON CADENA_NEG.AUD_REGISTRO_CAMBIO       TO ROL_GERENTE;
-GRANT SELECT ON CADENA_NEG.AUD_ERROR                 TO ROL_GERENTE;
-GRANT SELECT ON CADENA_NEG.ADM_MONITOREO_LOG         TO ROL_GERENTE;
-GRANT SELECT ON CADENA_NEG.ADM_NOTIFICACION_LOG      TO ROL_GERENTE;
+GRANT SELECT ON CADENA_NEG.AUD_ERROR_SISTEMA         TO ROL_GERENTE;
+GRANT SELECT ON CADENA_NEG.AUD_MONITOREO_BD          TO ROL_GERENTE;
 GRANT EXECUTE ON CADENA_NEG.PKG_ADM_MONITOREO        TO ROL_GERENTE;
 GRANT EXECUTE ON CADENA_NEG.PKG_PRM_MERCADEO         TO ROL_GERENTE;
 GRANT EXECUTE ON CADENA_NEG.PKG_INV_GESTION          TO ROL_GERENTE;
@@ -182,8 +179,8 @@ GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.INV_EXISTENCIA         TO ROL_JEFE_DE
 GRANT SELECT, INSERT         ON CADENA_NEG.INV_MOVIMIENTO         TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PRO_PRODUCTO           TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT                 ON CADENA_NEG.PRO_PRECIO_HIST        TO ROL_JEFE_DEPARTAMENTO;
-GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PRM_DESCUENTO_SEMANAL  TO ROL_JEFE_DEPARTAMENTO;
-GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PRM_ACCION             TO ROL_JEFE_DEPARTAMENTO;
+GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PRM_DESCUENTO_DET      TO ROL_JEFE_DEPARTAMENTO;
+GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PRM_ACCION_CLIENTE     TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PRM_PROMOCION          TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PER_CLIENTE            TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PER_PROVEEDOR          TO ROL_JEFE_DEPARTAMENTO;
@@ -201,7 +198,7 @@ GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_FACTURA_COMPRA     TO ROL_JEFE_PR
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_FACTURA_COMPRA_DET TO ROL_JEFE_PROVEEDURIA;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_CUENTA_PAGAR       TO ROL_JEFE_PROVEEDURIA;
 GRANT SELECT, INSERT         ON CADENA_NEG.COM_ABONO_PAGAR        TO ROL_JEFE_PROVEEDURIA;
-GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_DEVOLUCION_PROV    TO ROL_JEFE_PROVEEDURIA;
+GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_DEVOLUCION         TO ROL_JEFE_PROVEEDURIA;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_DEVOLUCION_DET     TO ROL_JEFE_PROVEEDURIA;
 GRANT SELECT                 ON CADENA_NEG.INV_EXISTENCIA         TO ROL_JEFE_PROVEEDURIA;
 GRANT SELECT                 ON CADENA_NEG.INV_BODEGA             TO ROL_JEFE_PROVEEDURIA;
@@ -210,16 +207,14 @@ GRANT EXECUTE ON CADENA_NEG.PKG_COM_OPERACION                     TO ROL_JEFE_PR
 
 -- 4.4 PRIVILEGIOS PARA ROL_DIGITADOR
 -- Facturacion rapida en punto de venta y recepcion de pagos. SIN DELETE ni DDL.
-GRANT SELECT                 ON CADENA_NEG.CAT_CATEGORIA          TO ROL_DIGITADOR;
-GRANT SELECT                 ON CADENA_NEG.CAT_SUB_CATEGORIA      TO ROL_DIGITADOR;
-GRANT SELECT                 ON CADENA_NEG.CAT_MARCA              TO ROL_DIGITADOR;
-GRANT SELECT                 ON CADENA_NEG.CAT_IMPUESTO           TO ROL_DIGITADOR;
-GRANT SELECT                 ON CADENA_NEG.CAT_TIPO_PAGO          TO ROL_DIGITADOR;
+GRANT SELECT                 ON CADENA_NEG.PRO_FAMILIA_PRODUCTO   TO ROL_DIGITADOR;
+GRANT SELECT                 ON CADENA_NEG.PRO_IMPUESTO           TO ROL_DIGITADOR;
+GRANT SELECT                 ON CADENA_NEG.VEN_TIPO_PAGO          TO ROL_DIGITADOR;
 GRANT SELECT                 ON CADENA_NEG.PRO_PRODUCTO           TO ROL_DIGITADOR;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PER_CLIENTE            TO ROL_DIGITADOR;
 GRANT SELECT, INSERT         ON CADENA_NEG.VEN_FACTURA            TO ROL_DIGITADOR;
 GRANT SELECT, INSERT         ON CADENA_NEG.VEN_FACTURA_DET        TO ROL_DIGITADOR;
-GRANT SELECT, INSERT         ON CADENA_NEG.VEN_FACTURA_PAGO       TO ROL_DIGITADOR;
+GRANT SELECT, INSERT         ON CADENA_NEG.VEN_PAGO               TO ROL_DIGITADOR;
 GRANT SELECT, INSERT         ON CADENA_NEG.VEN_ABONO_COBRAR       TO ROL_DIGITADOR;
 GRANT SELECT                 ON CADENA_NEG.VEN_CUENTA_COBRAR      TO ROL_DIGITADOR;
 GRANT SELECT                 ON CADENA_NEG.INV_EXISTENCIA         TO ROL_DIGITADOR;
@@ -236,15 +231,15 @@ PROMPT 5. CREACION DE USUARIOS Y ASIGNACION DE PERFILES Y ROLES
 PROMPT ============================================================================
 
 -- Tabla de Tablespaces para asignacion
--- Se asigna TBS_OPERACIONES como tablespace por defecto y TEMP como temporal
+-- Se asigna TBS_DATOS como tablespace por defecto y TEMP como temporal
 -- con cuota de 20 MB para evitar saturacion de disco.
 
 -- 5.1 Usuario Gerente
 CREATE USER USR_GERENTE IDENTIFIED BY "Gerente2026#Sec"
-    DEFAULT TABLESPACE TBS_OPERACIONES
+    DEFAULT TABLESPACE TBS_DATOS
     TEMPORARY TABLESPACE TEMP
     PROFILE PERFIL_CADENA_ADMIN
-    QUOTA 20M ON TBS_OPERACIONES;
+    QUOTA 20M ON TBS_DATOS;
 
 GRANT CREATE SESSION TO USR_GERENTE;
 GRANT ROL_GERENTE TO USR_GERENTE;
@@ -252,10 +247,10 @@ ALTER USER USR_GERENTE DEFAULT ROLE NONE; -- Requiere activacion con contrasena
 
 -- 5.2 Usuario Jefe de Departamento
 CREATE USER USR_JEFE_DEPTO IDENTIFIED BY "JefeDepto2026#Sec"
-    DEFAULT TABLESPACE TBS_OPERACIONES
+    DEFAULT TABLESPACE TBS_DATOS
     TEMPORARY TABLESPACE TEMP
     PROFILE PERFIL_CADENA_ADMIN
-    QUOTA 20M ON TBS_OPERACIONES;
+    QUOTA 20M ON TBS_DATOS;
 
 GRANT CREATE SESSION TO USR_JEFE_DEPTO;
 GRANT ROL_JEFE_DEPARTAMENTO TO USR_JEFE_DEPTO;
@@ -263,10 +258,10 @@ ALTER USER USR_JEFE_DEPTO DEFAULT ROLE NONE;
 
 -- 5.3 Usuario Jefe de Proveeduria
 CREATE USER USR_JEFE_PROV IDENTIFIED BY "JefeProv2026#Sec"
-    DEFAULT TABLESPACE TBS_OPERACIONES
+    DEFAULT TABLESPACE TBS_DATOS
     TEMPORARY TABLESPACE TEMP
     PROFILE PERFIL_CADENA_OPER
-    QUOTA 20M ON TBS_OPERACIONES;
+    QUOTA 20M ON TBS_DATOS;
 
 GRANT CREATE SESSION TO USR_JEFE_PROV;
 GRANT ROL_JEFE_PROVEEDURIA TO USR_JEFE_PROV;
@@ -274,10 +269,10 @@ ALTER USER USR_JEFE_PROV DEFAULT ROLE NONE;
 
 -- 5.4 Usuario Digitador
 CREATE USER USR_DIGITADOR IDENTIFIED BY "Digitador2026#Sec"
-    DEFAULT TABLESPACE TBS_OPERACIONES
+    DEFAULT TABLESPACE TBS_DATOS
     TEMPORARY TABLESPACE TEMP
     PROFILE PERFIL_CADENA_OPER
-    QUOTA 20M ON TBS_OPERACIONES;
+    QUOTA 20M ON TBS_DATOS;
 
 GRANT CREATE SESSION TO USR_DIGITADOR;
 GRANT ROL_DIGITADOR TO USR_DIGITADOR;
@@ -320,37 +315,36 @@ PROMPT =========================================================================
 PROMPT 7. DEMOSTRACION EN VIVO DE ACTIVACION DE ROLES Y PRUEBAS DE PERMISOS
 PROMPT ============================================================================
 
--- Creamos procedimientos de prueba en el esquema de cada usuario para simular
--- su sesion exacta de trabajo con AUTHID CURRENT_USER
+-- 7.1 Demostracion con el usuario USR_DIGITADOR en su sesion real
+-- (Demostracion de minimo privilegio: SELECT/INSERT autorizados tras activar rol, DELETE/DDL rechazados)
+CONNECT USR_DIGITADOR/Digitador2026#Sec@FREEPDB1
+SET SERVEROUTPUT ON SIZE UNLIMITED;
 
--- 7.1 Prueba de USR_DIGITADOR (Demostracion de minimo privilegio: SELECT/INSERT autorizados, DELETE rechazado)
-CREATE OR REPLACE PROCEDURE USR_DIGITADOR.PRC_PRUEBA_DIGITADOR AUTHID CURRENT_USER IS
+DECLARE
     v_total NUMBER;
-    v_error VARCHAR2(500);
 BEGIN
     DBMS_OUTPUT.PUT_LINE('------------------------------------------------------------------------');
     DBMS_OUTPUT.PUT_LINE('>>> INICIANDO PRUEBAS DE SEGURIDAD PARA USUARIO: USR_DIGITADOR');
     DBMS_OUTPUT.PUT_LINE('------------------------------------------------------------------------');
 
-    -- Paso A: Intento de consulta SIN haber activado el rol (Debe fallar o no tener permisos de objeto)
+    -- Paso A: Intento de consulta SIN haber activado el rol (Rechazado)
     BEGIN
         EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM CADENA_NEG.PRO_PRODUCTO' INTO v_total;
-        DBMS_OUTPUT.PUT_LINE('[AVISO] Consulta ejecutada con rol previo: ' || v_total || ' productos.');
+        DBMS_OUTPUT.PUT_LINE('[FALLO SEGURIDAD] Consulta permitida sin activar rol: ' || v_total);
     EXCEPTION
         WHEN OTHERS THEN
             DBMS_OUTPUT.PUT_LINE('[OK RECHAZADO PREVIO] Sin activar rol no tiene acceso: ' || SQLERRM);
     END;
 
-    -- Paso B: Activacion segura del rol mediante contrasena
+    -- Paso B: Activacion segura del rol mediante contrasena cifrada
     BEGIN
-        CADENA_NEG.PRC_ACTIVAR_ROL_SESION('ROL_DIGITADOR', 'ClaveDigitador2026*');
-        DBMS_OUTPUT.PUT_LINE('[OK] Rol ROL_DIGITADOR activado correctamente con contrasena cifrada.');
+        CADENA_NEG.PRC_ACTIVAR_ROL_SESION('ROL_DIGITADOR');
     EXCEPTION
         WHEN OTHERS THEN
             DBMS_OUTPUT.PUT_LINE('[ERROR] No se pudo activar rol: ' || SQLERRM);
     END;
 
-    -- Paso C: Consulta autorizada sobre catalogo de productos
+    -- Paso C: Consulta autorizada sobre catalogo de productos tras activar rol
     BEGIN
         EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM CADENA_NEG.PRO_PRODUCTO' INTO v_total;
         DBMS_OUTPUT.PUT_LINE('[OK AUTORIZADO] Consulta de catalogo exitosa. Total productos visibles: ' || v_total);
@@ -359,7 +353,7 @@ BEGIN
             DBMS_OUTPUT.PUT_LINE('[ERROR] Consulta autorizada fallo: ' || SQLERRM);
     END;
 
-    -- Paso D: Intento de DELETE sobre productos (DEBE SER RECHAZADO)
+    -- Paso D: Intento de DELETE sobre productos (DEBE SER RECHAZADO: Minimo Privilegio)
     BEGIN
         EXECUTE IMMEDIATE 'DELETE FROM CADENA_NEG.PRO_PRODUCTO WHERE ROWNUM = 1';
         DBMS_OUTPUT.PUT_LINE('[FALLO SEGURIDAD] Se permitio DELETE indebidamente.');
@@ -368,7 +362,7 @@ BEGIN
             DBMS_OUTPUT.PUT_LINE('[OK RECHAZADO] DELETE sobre PRO_PRODUCTO denegado correctamente: ' || SQLERRM);
     END;
 
-    -- Paso E: Intento de DROP TABLE (DEBE SER RECHAZADO)
+    -- Paso E: Intento de DROP TABLE (DEBE SER RECHAZADO: Sin permisos DDL)
     BEGIN
         EXECUTE IMMEDIATE 'DROP TABLE CADENA_NEG.VEN_FACTURA';
         DBMS_OUTPUT.PUT_LINE('[FALLO SEGURIDAD] Se permitio DROP TABLE indebidamente.');
@@ -376,27 +370,30 @@ BEGIN
         WHEN OTHERS THEN
             DBMS_OUTPUT.PUT_LINE('[OK RECHAZADO] DDL DROP TABLE denegado correctamente: ' || SQLERRM);
     END;
-END PRC_PRUEBA_DIGITADOR;
+END;
 /
 
--- 7.2 Prueba de USR_GERENTE (Acceso a vistas ejecutivas y bloqueo de modificacion directa)
-CREATE OR REPLACE PROCEDURE USR_GERENTE.PRC_PRUEBA_GERENTE AUTHID CURRENT_USER IS
+-- 7.2 Demostracion con el usuario USR_GERENTE en su sesion real
+-- (Acceso a vistas ejecutivas y bloqueo de modificacion de tablas operativas)
+CONNECT USR_GERENTE/Gerente2026#Sec@FREEPDB1
+SET SERVEROUTPUT ON SIZE UNLIMITED;
+
+DECLARE
     v_total NUMBER;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('------------------------------------------------------------------------');
     DBMS_OUTPUT.PUT_LINE('>>> INICIANDO PRUEBAS DE SEGURIDAD PARA USUARIO: USR_GERENTE');
     DBMS_OUTPUT.PUT_LINE('------------------------------------------------------------------------');
 
-    -- Activacion de rol
+    -- Paso A: Activacion de rol gerencial mediante contrasena cifrada
     BEGIN
-        CADENA_NEG.PRC_ACTIVAR_ROL_SESION('ROL_GERENTE', 'ClaveGerente2026*');
-        DBMS_OUTPUT.PUT_LINE('[OK] Rol ROL_GERENTE activado con contrasena.');
+        CADENA_NEG.PRC_ACTIVAR_ROL_SESION('ROL_GERENTE');
     EXCEPTION
         WHEN OTHERS THEN
             DBMS_OUTPUT.PUT_LINE('[ERROR] Activacion de rol fallo: ' || SQLERRM);
     END;
 
-    -- Consulta autorizada a Vista Materializada de Ventas
+    -- Paso B: Consulta autorizada a Vista Materializada de Ventas
     BEGIN
         EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM CADENA_NEG.MV_VENTAS_MENSUALES' INTO v_total;
         DBMS_OUTPUT.PUT_LINE('[OK AUTORIZADO] Consulta a MV_VENTAS_MENSUALES exitosa. Filas: ' || v_total);
@@ -405,7 +402,7 @@ BEGIN
             DBMS_OUTPUT.PUT_LINE('[ERROR] ' || SQLERRM);
     END;
 
-    -- Consulta autorizada a Vista Materializada de Inventario Consolidado
+    -- Paso C: Consulta autorizada a Vista Materializada de Inventario Consolidado
     BEGIN
         EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM CADENA_NEG.MV_INVENTARIO_CONSOLIDADO' INTO v_total;
         DBMS_OUTPUT.PUT_LINE('[OK AUTORIZADO] Consulta a MV_INVENTARIO_CONSOLIDADO exitosa. Filas: ' || v_total);
@@ -414,30 +411,22 @@ BEGIN
             DBMS_OUTPUT.PUT_LINE('[ERROR] ' || SQLERRM);
     END;
 
-    -- Intento de INSERT directo en factura (El gerente solo tiene permisos de consulta y auditoria)
+    -- Paso D: Intento de INSERT directo en factura (Rechazado: El gerente tiene solo lectura y monitoreo)
     BEGIN
-        EXECUTE IMMEDIATE 'INSERT INTO CADENA_NEG.VEN_FACTURA (ID_FACTURA_FAVE) VALUES (-999)';
+        EXECUTE IMMEDIATE 'INSERT INTO CADENA_NEG.VEN_FACTURA (ID_FACTURA_VENTA) VALUES (-999)';
         DBMS_OUTPUT.PUT_LINE('[FALLO SEGURIDAD] Gerente inserto factura directamente.');
     EXCEPTION
         WHEN OTHERS THEN
             DBMS_OUTPUT.PUT_LINE('[OK RECHAZADO] INSERT de venta denegado al Gerente (Solo lectura gerencial): ' || SQLERRM);
     END;
-END PRC_PRUEBA_GERENTE;
-/
-
--- Ejecutar pruebas en el motor
-BEGIN
-    USR_DIGITADOR.PRC_PRUEBA_DIGITADOR;
-    USR_GERENTE.PRC_PRUEBA_GERENTE;
 END;
 /
 
--- Limpieza de procedimientos de prueba temporales
-BEGIN
-    BEGIN EXECUTE IMMEDIATE 'DROP PROCEDURE USR_DIGITADOR.PRC_PRUEBA_DIGITADOR'; EXCEPTION WHEN OTHERS THEN NULL; END;
-    BEGIN EXECUTE IMMEDIATE 'DROP PROCEDURE USR_GERENTE.PRC_PRUEBA_GERENTE'; EXCEPTION WHEN OTHERS THEN NULL; END;
-END;
-/
+-- Restablecer sesion administrativa para continuacion de scripts maestros
+CONNECT / AS SYSDBA
+ALTER SESSION SET CONTAINER = FREEPDB1;
+ALTER SESSION SET CURRENT_SCHEMA = CADENA_NEG;
+SET SERVEROUTPUT ON SIZE UNLIMITED;
 
 PROMPT ============================================================================
 PROMPT FIN DE IMPLEMENTACION DE SEGURIDAD, PERFILES, ROLES Y USUARIOS — AVANCE 2

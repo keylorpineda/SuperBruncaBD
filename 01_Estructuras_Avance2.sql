@@ -133,6 +133,10 @@ BEGIN
         EXECUTE IMMEDIATE 'DROP INDEX IX_CLI_PADR';
     EXCEPTION WHEN OTHERS THEN NULL;
     END;
+    BEGIN
+        EXECUTE IMMEDIATE 'UPDATE PER_CLIENTE SET ID_PADRON = NULL';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
 
     borrar_tabla('AUD_MONITOREO_BD');
     borrar_tabla('AUD_ERROR_SISTEMA');
@@ -230,54 +234,6 @@ BEGIN
     EXECUTE IMMEDIATE 'COMMENT ON COLUMN COM_FACTURA_COMPRA.ESTADO_FACO IS ''Estado de la factura de compra: P=Pendiente de pago, C=Cancelada, A=Activa (contado), N=Anulada.''';
 END;
 /
-
--- Actualizar las vistas V_CUENTA_PAGAR y V_CUENTA_COBRAR para considerar los estados P, C y A
-CREATE OR REPLACE VIEW V_CUENTA_PAGAR AS
-SELECT f.ID_FACTURA_COMPRA,
-       f.ID_PROVEEDOR,
-       f.NUM_FACTURA_FACO,
-       f.FECHA_FACO                                               AS FECHA_EMISION,
-       f.FECHA_VENCIM_FACO                                        AS FECHA_VENCIMIENTO,
-       f.TOTAL_FACO                                               AS MONTO_ORIGINAL,
-       NVL(a.ABONADO, 0)                                          AS MONTO_ABONADO,
-       f.TOTAL_FACO - NVL(a.ABONADO, 0)                           AS SALDO,
-       a.ULTIMO_ABONO                                             AS FECHA_ULTIMO_ABONO,
-       CASE WHEN f.TOTAL_FACO - NVL(a.ABONADO, 0) <= 0 THEN 'CANCELADA'
-            WHEN NVL(a.ABONADO, 0) > 0                 THEN 'ABONADA'
-            ELSE 'PENDIENTE' END                                  AS ESTADO
-  FROM COM_FACTURA_COMPRA f
-       LEFT JOIN (SELECT ID_FACTURA_COMPRA,
-                         SUM(MONTO_ABPA) AS ABONADO,
-                         MAX(FECHA_ABPA) AS ULTIMO_ABONO
-                    FROM COM_ABONO_PAGAR
-                   WHERE ESTADO_ABPA = 'A'
-                   GROUP BY ID_FACTURA_COMPRA) a ON a.ID_FACTURA_COMPRA = f.ID_FACTURA_COMPRA
- WHERE f.ES_CREDITO_FACO = 'S'
-   AND f.ESTADO_FACO <> 'N';
-
-CREATE OR REPLACE VIEW V_CUENTA_COBRAR AS
-SELECT f.ID_FACTURA_VENTA,
-       f.ID_CLIENTE,
-       f.ID_SUCURSAL,
-       f.NUM_FACTURA_FAVE,
-       f.FECHA_FAVE                                               AS FECHA_EMISION,
-       f.FECHA_VENCIM_FAVE                                        AS FECHA_VENCIMIENTO,
-       f.TOTAL_FAVE                                               AS MONTO_ORIGINAL,
-       NVL(a.ABONADO, 0)                                          AS MONTO_ABONADO,
-       f.TOTAL_FAVE - NVL(a.ABONADO, 0)                           AS SALDO,
-       a.ULTIMO_ABONO                                             AS FECHA_ULTIMO_ABONO,
-       CASE WHEN f.TOTAL_FAVE - NVL(a.ABONADO, 0) <= 0 THEN 'CANCELADA'
-            WHEN NVL(a.ABONADO, 0) > 0                 THEN 'ABONADA'
-            ELSE 'PENDIENTE' END                                  AS ESTADO
-  FROM VEN_FACTURA f
-       LEFT JOIN (SELECT ID_FACTURA_VENTA,
-                         SUM(MONTO_ABCO) AS ABONADO,
-                         MAX(FECHA_ABCO) AS ULTIMO_ABONO
-                    FROM VEN_ABONO_COBRAR
-                   WHERE ESTADO_ABCO = 'A'
-                   GROUP BY ID_FACTURA_VENTA) a ON a.ID_FACTURA_VENTA = f.ID_FACTURA_VENTA
- WHERE f.ES_CREDITO_FAVE = 'S'
-   AND f.ESTADO_FAVE <> 'N';
 
 --------------------------------------------------------------------------------
 -- SECCION 3: CREACION DE SECUENCIAS Y TABLAS NUEVAS DEL AVANCE #2
@@ -884,6 +840,12 @@ DECLARE
     c_llave RAW(32) := UTL_I18N.STRING_TO_RAW('CADENA_NEG_AES256_KEY_UNA_2026!!', 'AL32UTF8');
     c_tipo  PLS_INTEGER := DBMS_CRYPTO.ENCRYPT_AES256 + DBMS_CRYPTO.CHAIN_CBC + DBMS_CRYPTO.PAD_PKCS5;
 
+    v_cif_smtp RAW(256);
+    v_cif_ger  RAW(256);
+    v_cif_jefe RAW(256);
+    v_cif_prov RAW(256);
+    v_cif_dig  RAW(256);
+
     FUNCTION cifrar(p_texto IN VARCHAR2) RETURN RAW IS
     BEGIN
         RETURN DBMS_CRYPTO.ENCRYPT(
@@ -893,6 +855,12 @@ DECLARE
         );
     END;
 BEGIN
+    v_cif_smtp := cifrar('SmtpSuperBrunca2026#');
+    v_cif_ger  := cifrar('RolGerente2026#');
+    v_cif_jefe := cifrar('RolJefeDepto2026#');
+    v_cif_prov := cifrar('RolJefeProv2026#');
+    v_cif_dig  := cifrar('RolDigitador2026#');
+
     -- Parametros de Correo y Notificaciones
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_TEXTO_PARA)
     VALUES (1, 'SMTP_HOST', 'CORREO', 'Servidor SMTP', 'Servidor de correo saliente para envio directo desde Oracle sin VPN.', 'N', 'smtp.gmail.com');
@@ -904,29 +872,29 @@ BEGIN
     VALUES (3, 'CORREO_EMISOR', 'CORREO', 'Correo emisor del sistema', 'Cuenta remitente de las notificaciones automaticas.', 'N', 'notificaciones@superbrunca.cr');
 
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_RAW_PARA)
-    VALUES (4, 'CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', cifrar('SmtpSuperBrunca2026#'));
+    VALUES (4, 'CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', v_cif_smtp);
 
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_TEXTO_PARA)
-    VALUES (5, 'CORREO_COORDINADOR', 'CORREO', 'Correo del coordinador', 'Destinatario de alertas de mercadeo, clientes 85%, vencidos y cierres.', 'N', 'coordinador@superbrunca.cr');
+    VALUES (5, 'CORREO_COORDINADOR', 'CORREO', 'Correo del coordinador', 'Destinatario de alertas de mercadeo, clientes 85%, vencidos y cierres.', 'N', 'keylorpineda729@gmail.com');
 
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_TEXTO_PARA)
-    VALUES (6, 'CORREO_GERENTE', 'CORREO', 'Correo del gerente', 'Destinatario de alertas de proveedores 70%, morosidad y cierres diarios.', 'N', 'gerente@superbrunca.cr');
+    VALUES (6, 'CORREO_GERENTE', 'CORREO', 'Correo del gerente', 'Destinatario de alertas de proveedores 70%, morosidad y cierres diarios.', 'N', 'keylorpineda729@gmail.com');
 
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_TEXTO_PARA)
-    VALUES (7, 'CORREO_DBA', 'CORREO', 'Correo del administrador BD', 'Destinatario de alertas de tablespaces, objetos invalidos e indices danados.', 'N', 'dba@superbrunca.cr');
+    VALUES (7, 'CORREO_DBA', 'CORREO', 'Correo del administrador BD', 'Destinatario de alertas de tablespaces, objetos invalidos e indices danados.', 'N', 'keylorpineda729@gmail.com');
 
     -- Parametros de Claves Cifradas de Roles de BD
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_RAW_PARA)
-    VALUES (8, 'CLAVE_ROL_GERENTE', 'SEGURIDAD', 'Clave cifrada ROL_GERENTE', 'Contrasena del rol Gerente cifrada con DBMS_CRYPTO.', 'S', cifrar('RolGerente2026#'));
+    VALUES (8, 'CLAVE_ROL_GERENTE', 'SEGURIDAD', 'Clave cifrada ROL_GERENTE', 'Contrasena del rol Gerente cifrada con DBMS_CRYPTO.', 'S', v_cif_ger);
 
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_RAW_PARA)
-    VALUES (9, 'CLAVE_ROL_JEFE_DEPTO', 'SEGURIDAD', 'Clave cifrada ROL_JEFE_DEPARTAMENTO', 'Contrasena del rol Jefe de Departamento cifrada con DBMS_CRYPTO.', 'S', cifrar('RolJefeDepto2026#'));
+    VALUES (9, 'CLAVE_ROL_JEFE_DEPTO', 'SEGURIDAD', 'Clave cifrada ROL_JEFE_DEPARTAMENTO', 'Contrasena del rol Jefe de Departamento cifrada con DBMS_CRYPTO.', 'S', v_cif_jefe);
 
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_RAW_PARA)
-    VALUES (10, 'CLAVE_ROL_JEFE_PROV', 'SEGURIDAD', 'Clave cifrada ROL_JEFE_PROVEEDURIA', 'Contrasena del rol Jefe de Proveeduria cifrada con DBMS_CRYPTO.', 'S', cifrar('RolJefeProv2026#'));
+    VALUES (10, 'CLAVE_ROL_JEFE_PROV', 'SEGURIDAD', 'Clave cifrada ROL_JEFE_PROVEEDURIA', 'Contrasena del rol Jefe de Proveeduria cifrada con DBMS_CRYPTO.', 'S', v_cif_prov);
 
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_RAW_PARA)
-    VALUES (11, 'CLAVE_ROL_DIGITADOR', 'SEGURIDAD', 'Clave cifrada ROL_DIGITADOR', 'Contrasena del rol Digitador cifrada con DBMS_CRYPTO.', 'S', cifrar('RolDigitador2026#'));
+    VALUES (11, 'CLAVE_ROL_DIGITADOR', 'SEGURIDAD', 'Clave cifrada ROL_DIGITADOR', 'Contrasena del rol Digitador cifrada con DBMS_CRYPTO.', 'S', v_cif_dig);
 
     -- Parametros de Reglas de Negocio
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
@@ -1008,6 +976,9 @@ UPDATE PER_CLIENTE c
                                 WHERE cc.ID_CLIENTE = c.ID_CLIENTE
                                   AND cc.ESTADO_CUCO IN ('P','A')), 0);
 
+-- Actualizar correos de contacto para pruebas de notificaciones
+UPDATE PER_CONTACTO SET VALOR_CONT = 'keylorpineda729@gmail.com' WHERE TIPO_CONT = 'E';
+
 -- 6.5 VEN_CIERRE_DIARIO (5 registros)
 INSERT INTO VEN_CIERRE_DIARIO (ID_CIERRE_DIARIO, ID_SUCURSAL, FECHA_CIDI, CANT_FACTURAS_CIDI, CANT_VENDIDA_CIDI, MONTO_VENTAS_CIDI, CANT_DEVOL_CIDI, MONTO_DEVOL_CIDI, OBSERVACION_CIDI)
 VALUES (1, 1, TO_DATE('2026-09-01','YYYY-MM-DD'), 1, 10, 5650, 0, 0, 'Cierre diario automatico sucursal San Isidro.');
@@ -1058,39 +1029,39 @@ VALUES (5, 4, '2026-S1', 5, 8080, 100000, TO_DATE('2026-07-01','YYYY-MM-DD'), TO
 
 -- 6.9 AUD_REGISTRO_CAMBIO (5 registros iniciales de auditoria detallada)
 INSERT INTO AUD_REGISTRO_CAMBIO (ID_REGISTRO_CAMBIO, TABLA_RECA, MODULO_RECA, OPERACION_RECA, LLAVE_PRIMARIA_RECA, CAMPO_MODIFICADO_RECA, VALOR_ANTERIOR_RECA, VALOR_NUEVO_RECA, TERMINAL_RECA, DIRECCION_IP_RECA)
-VALUES (1, 'PRO_PRODUCTO', 'PRECIOS', 'UPDATE', '1', 'PRECIO_COSTO_PROD', '420', '450', 'TERM-BODEGA01', '192.168.10.5');
+VALUES (SEQ_AUD_REGISTRO_CAMBIO.NEXTVAL, 'PRO_PRODUCTO', 'PRECIOS', 'UPDATE', '1', 'PRECIO_COSTO_PROD', '420', '450', 'TERM-BODEGA01', '192.168.10.5');
 INSERT INTO AUD_REGISTRO_CAMBIO (ID_REGISTRO_CAMBIO, TABLA_RECA, MODULO_RECA, OPERACION_RECA, LLAVE_PRIMARIA_RECA, CAMPO_MODIFICADO_RECA, VALOR_ANTERIOR_RECA, VALOR_NUEVO_RECA, TERMINAL_RECA, DIRECCION_IP_RECA)
-VALUES (2, 'PER_CLIENTE', 'CLIENTES', 'UPDATE', '5', 'MONTO_MAX_CREDITO_CLI', '1000000', '1500000', 'TERM-GERENCIA', '192.168.10.15');
+VALUES (SEQ_AUD_REGISTRO_CAMBIO.NEXTVAL, 'PER_CLIENTE', 'CLIENTES', 'UPDATE', '5', 'MONTO_MAX_CREDITO_CLI', '1000000', '1500000', 'TERM-GERENCIA', '192.168.10.15');
 INSERT INTO AUD_REGISTRO_CAMBIO (ID_REGISTRO_CAMBIO, TABLA_RECA, MODULO_RECA, OPERACION_RECA, LLAVE_PRIMARIA_RECA, CAMPO_MODIFICADO_RECA, VALOR_ANTERIOR_RECA, VALOR_NUEVO_RECA, TERMINAL_RECA, DIRECCION_IP_RECA)
-VALUES (3, 'PER_PROVEEDOR', 'PROVEEDORES', 'UPDATE', '1', 'LIMITE_CREDITO_PROVE', '7000000', '8000000', 'TERM-PROVEED', '192.168.10.20');
+VALUES (SEQ_AUD_REGISTRO_CAMBIO.NEXTVAL, 'PER_PROVEEDOR', 'PROVEEDORES', 'UPDATE', '1', 'LIMITE_CREDITO_PROVE', '7000000', '8000000', 'TERM-PROVEED', '192.168.10.20');
 INSERT INTO AUD_REGISTRO_CAMBIO (ID_REGISTRO_CAMBIO, TABLA_RECA, MODULO_RECA, OPERACION_RECA, LLAVE_PRIMARIA_RECA, CAMPO_MODIFICADO_RECA, VALOR_ANTERIOR_RECA, VALOR_NUEVO_RECA, TERMINAL_RECA, DIRECCION_IP_RECA)
-VALUES (4, 'VEN_FACTURA', 'FACTURACION', 'UPDATE', '8', 'ESTADO_FAVE', 'P', 'C', 'TERM-CAJA01', '192.168.10.11');
+VALUES (SEQ_AUD_REGISTRO_CAMBIO.NEXTVAL, 'VEN_FACTURA', 'FACTURACION', 'UPDATE', '8', 'ESTADO_FAVE', 'P', 'C', 'TERM-CAJA01', '192.168.10.11');
 INSERT INTO AUD_REGISTRO_CAMBIO (ID_REGISTRO_CAMBIO, TABLA_RECA, MODULO_RECA, OPERACION_RECA, LLAVE_PRIMARIA_RECA, CAMPO_MODIFICADO_RECA, VALOR_ANTERIOR_RECA, VALOR_NUEVO_RECA, TERMINAL_RECA, DIRECCION_IP_RECA)
-VALUES (5, 'INV_EXISTENCIA', 'INVENTARIO', 'UPDATE', '2', 'CANTIDAD_EXIS', '20', '18', 'TERM-CAJA01', '192.168.10.11');
+VALUES (SEQ_AUD_REGISTRO_CAMBIO.NEXTVAL, 'INV_EXISTENCIA', 'INVENTARIO', 'UPDATE', '2', 'CANTIDAD_EXIS', '20', '18', 'TERM-CAJA01', '192.168.10.11');
 
 -- 6.10 AUD_ERROR_SISTEMA (5 registros iniciales de bitacora de errores)
 INSERT INTO AUD_ERROR_SISTEMA (ID_ERROR_SISTEMA, PAQUETE_ERSI, SUBPROGRAMA_ERSI, CODIGO_SQL_ERSI, MENSAJE_ERROR_ERSI, PILA_ERROR_ERSI, TERMINAL_ERSI)
-VALUES (1, 'PKG_VEN_OPERACION', 'PR_EMITIR_FACTURA_VENTA', -20010, 'ORA-20010: Credito insuficiente: la factura supera el limite autorizado del cliente.', 'ORA-06512: en CADENA_NEG.PKG_VEN_OPERACION, linea 84', 'TERM-CAJA01');
+VALUES (SEQ_AUD_ERROR_SISTEMA.NEXTVAL, 'PKG_VEN_OPERACION', 'PR_EMITIR_FACTURA_VENTA', -20010, 'ORA-20010: Credito insuficiente: la factura supera el limite autorizado del cliente.', 'ORA-06512: en CADENA_NEG.PKG_VEN_OPERACION, linea 84', 'TERM-CAJA01');
 INSERT INTO AUD_ERROR_SISTEMA (ID_ERROR_SISTEMA, PAQUETE_ERSI, SUBPROGRAMA_ERSI, CODIGO_SQL_ERSI, MENSAJE_ERROR_ERSI, PILA_ERROR_ERSI, TERMINAL_ERSI)
-VALUES (2, 'PKG_COM_OPERACION', 'PR_REGISTRAR_FACTURA_COMPRA', -20011, 'ORA-20011: Limite de credito con el proveedor superado.', 'ORA-06512: en CADENA_NEG.PKG_COM_OPERACION, linea 62', 'TERM-PROVEED');
+VALUES (SEQ_AUD_ERROR_SISTEMA.NEXTVAL, 'PKG_COM_OPERACION', 'PR_REGISTRAR_FACTURA_COMPRA', -20011, 'ORA-20011: Limite de credito con el proveedor superado.', 'ORA-06512: en CADENA_NEG.PKG_COM_OPERACION, linea 62', 'TERM-PROVEED');
 INSERT INTO AUD_ERROR_SISTEMA (ID_ERROR_SISTEMA, PAQUETE_ERSI, SUBPROGRAMA_ERSI, CODIGO_SQL_ERSI, MENSAJE_ERROR_ERSI, PILA_ERROR_ERSI, TERMINAL_ERSI)
-VALUES (3, 'PKG_INV_GESTION', 'PR_AFECTAR_EXISTENCIA', -20015, 'ORA-20015: Existencia insuficiente en bodega para cubrir la salida solicitada.', 'ORA-06512: en CADENA_NEG.PKG_INV_GESTION, linea 49', 'TERM-CAJA02');
+VALUES (SEQ_AUD_ERROR_SISTEMA.NEXTVAL, 'PKG_INV_GESTION', 'PR_AFECTAR_EXISTENCIA', -20015, 'ORA-20015: Existencia insuficiente en bodega para cubrir la salida solicitada.', 'ORA-06512: en CADENA_NEG.PKG_INV_GESTION, linea 49', 'TERM-CAJA02');
 INSERT INTO AUD_ERROR_SISTEMA (ID_ERROR_SISTEMA, PAQUETE_ERSI, SUBPROGRAMA_ERSI, CODIGO_SQL_ERSI, MENSAJE_ERROR_ERSI, PILA_ERROR_ERSI, TERMINAL_ERSI)
-VALUES (4, 'PKG_PER_PADRON', 'PR_CARGAR_PADRON_TSE', -29283, 'ORA-29283: operacion de archivo no valida (archivo de padron en verificacion).', 'ORA-06512: en CADENA_NEG.PKG_PER_PADRON, linea 115', 'TERM-ADMIN');
+VALUES (SEQ_AUD_ERROR_SISTEMA.NEXTVAL, 'PKG_PER_PADRON', 'PR_CARGAR_PADRON_TSE', -29283, 'ORA-29283: operacion de archivo no valida (archivo de padron en verificacion).', 'ORA-06512: en CADENA_NEG.PKG_PER_PADRON, linea 115', 'TERM-ADMIN');
 INSERT INTO AUD_ERROR_SISTEMA (ID_ERROR_SISTEMA, PAQUETE_ERSI, SUBPROGRAMA_ERSI, CODIGO_SQL_ERSI, MENSAJE_ERROR_ERSI, PILA_ERROR_ERSI, TERMINAL_ERSI)
-VALUES (5, 'PKG_SEG_SEGURIDAD', 'PR_ACTIVAR_ROL', -20020, 'ORA-20020: Rol solicitado no existe o se encuentra inactivo en SEG_PARAMETRO.', 'ORA-06512: en CADENA_NEG.PKG_SEG_SEGURIDAD, linea 140', 'TERM-CAJA01');
+VALUES (SEQ_AUD_ERROR_SISTEMA.NEXTVAL, 'PKG_SEG_SEGURIDAD', 'PR_ACTIVAR_ROL', -20020, 'ORA-20020: Rol solicitado no existe o se encuentra inactivo en SEG_PARAMETRO.', 'ORA-06512: en CADENA_NEG.PKG_SEG_SEGURIDAD, linea 140', 'TERM-CAJA01');
 
 -- 6.11 AUD_MONITOREO_BD (5 registros iniciales de revision de salud de la BD)
 INSERT INTO AUD_MONITOREO_BD (ID_MONITOREO_BD, TIPO_VERIF_MOBD, NOMBRE_OBJETO_MOBD, VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD)
-VALUES (1, 'TABLESPACE', 'TBS_DATOS', 12.50, 85.00, 'N', 'Uso normal del tablespace de datos (12.50% <= 85%).');
+VALUES (SEQ_AUD_MONITOREO_BD.NEXTVAL, 'TABLESPACE', 'TBS_DATOS', 12.50, 85.00, 'N', 'Uso normal del tablespace de datos (12.50% <= 85%).');
 INSERT INTO AUD_MONITOREO_BD (ID_MONITOREO_BD, TIPO_VERIF_MOBD, NOMBRE_OBJETO_MOBD, VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD)
-VALUES (2, 'TABLESPACE', 'TBS_INDICES', 8.20, 85.00, 'N', 'Uso normal del tablespace de indices (8.20% <= 85%).');
+VALUES (SEQ_AUD_MONITOREO_BD.NEXTVAL, 'TABLESPACE', 'TBS_INDICES', 8.20, 85.00, 'N', 'Uso normal del tablespace de indices (8.20% <= 85%).');
 INSERT INTO AUD_MONITOREO_BD (ID_MONITOREO_BD, TIPO_VERIF_MOBD, NOMBRE_OBJETO_MOBD, VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD)
-VALUES (3, 'TABLESPACE', 'TBS_AUDITORIA', 5.40, 85.00, 'N', 'Uso normal del tablespace de auditoria (5.40% <= 85%).');
+VALUES (SEQ_AUD_MONITOREO_BD.NEXTVAL, 'TABLESPACE', 'TBS_AUDITORIA', 5.40, 85.00, 'N', 'Uso normal del tablespace de auditoria (5.40% <= 85%).');
 INSERT INTO AUD_MONITOREO_BD (ID_MONITOREO_BD, TIPO_VERIF_MOBD, NOMBRE_OBJETO_MOBD, VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD)
-VALUES (4, 'OBJETO_INVALIDO', 'ESQUEMA_CADENA_NEG', 0, 0, 'N', '0 objetos invalidos detectados en el esquema CADENA_NEG.');
+VALUES (SEQ_AUD_MONITOREO_BD.NEXTVAL, 'OBJETO_INVALIDO', 'ESQUEMA_CADENA_NEG', 0, 0, 'N', '0 objetos invalidos detectados en el esquema CADENA_NEG.');
 INSERT INTO AUD_MONITOREO_BD (ID_MONITOREO_BD, TIPO_VERIF_MOBD, NOMBRE_OBJETO_MOBD, VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD)
-VALUES (5, 'INDICE', 'TODOS_LOS_INDICES', 0, 0, 'N', 'Todos los indices en TBS_INDICES se encuentran en estado VALID.');
+VALUES (SEQ_AUD_MONITOREO_BD.NEXTVAL, 'INDICE', 'TODOS_LOS_INDICES', 0, 0, 'N', 'Todos los indices en TBS_INDICES se encuentran en estado VALID.');
 
 COMMIT;
 
@@ -1133,6 +1104,7 @@ END;
 -- SECCION 7: VERIFICACION DE ESTRUCTURAS DEL AVANCE #2
 --------------------------------------------------------------------------------
 DECLARE
+    v_n NUMBER;
     PROCEDURE chequear(p_nombre IN VARCHAR2, p_obtenido IN NUMBER, p_esperado IN NUMBER) IS
     BEGIN
         DBMS_OUTPUT.PUT_LINE(
@@ -1141,7 +1113,6 @@ DECLARE
                  ELSE '[REVISAR: esperado ' || p_esperado || ']' END
         );
     END;
-    v_n NUMBER;
 BEGIN
     DBMS_OUTPUT.PUT_LINE(CHR(10) || '=== VERIFICACION DE ESTRUCTURAS AVANCE #2 ===' || CHR(10));
 

@@ -23,22 +23,20 @@ WHENEVER SQLERROR CONTINUE;
 
 -- Conectar dinamicamente al PDB o esquema de trabajo
 DECLARE
-    v_open_mode VARCHAR2(20);
-    v_pdb_name  VARCHAR2(30);
+    v_contenedor VARCHAR2(128);
+    v_pdb        VARCHAR2(128);
 BEGIN
-    SELECT open_mode INTO v_open_mode FROM v$database;
-    IF SYS_CONTEXT('USERENV', 'CON_NAME') = 'CDB$ROOT' THEN
-        BEGIN
-            SELECT pdb_name INTO v_pdb_name 
-              FROM cdb_pdbs 
-             WHERE open_mode = 'READ WRITE' 
-               AND ROWNUM = 1;
-            EXECUTE IMMEDIATE 'ALTER SESSION SET CONTAINER = ' || v_pdb_name;
-            DBMS_OUTPUT.PUT_LINE('[SESION] Conectado exitosamente al PDB: ' || v_pdb_name);
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                DBMS_OUTPUT.PUT_LINE('[AVISO] En CDB$ROOT, no se encontro PDB abierto.');
-        END;
+    v_contenedor := SYS_CONTEXT('USERENV', 'CON_NAME');
+    IF v_contenedor = 'CDB$ROOT' THEN
+        SELECT name INTO v_pdb 
+          FROM v$pdbs 
+         WHERE open_mode LIKE 'READ WRITE%' 
+           AND name <> 'PDB$SEED' 
+           AND ROWNUM = 1;
+        EXECUTE IMMEDIATE 'ALTER SESSION SET CONTAINER = ' || v_pdb;
+        DBMS_OUTPUT.PUT_LINE('[SESION] Conectado exitosamente al PDB: ' || v_pdb);
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('[SESION] Ya en PDB: ' || v_contenedor);
     END IF;
     
     BEGIN
@@ -106,7 +104,7 @@ BEGIN
     DBMS_SCHEDULER.CREATE_JOB (
         job_name        => 'CADENA_NEG.JOB_MONITOREO_SALUD_DIARIO',
         job_type        => 'PLSQL_BLOCK',
-        job_action      => 'BEGIN CADENA_NEG.PKG_ADM_MONITOREO.PR_MONITOREO_SALUD_DIARIO; END;',
+        job_action      => 'BEGIN CADENA_NEG.PKG_ADM_MONITOREO.PR_EJECUTAR_MONITOREO_DIARIO; END;',
         start_date      => TRUNC(SYSDATE) + 1 + 6/24,
         repeat_interval => 'FREQ=DAILY; BYHOUR=6; BYMINUTE=0; BYSECOND=0',
         enabled         => TRUE,
@@ -126,10 +124,10 @@ BEGIN
         job_name        => 'CADENA_NEG.JOB_NOTIF_CREDITOS_DIARIO',
         job_type        => 'PLSQL_BLOCK',
         job_action      => 'BEGIN 
-                                CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIFICAR_CLIENTES_LIMITE_85; 
-                                CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIFICAR_PROVEEDORES_SALDO_70; 
-                                CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIFICAR_CLIENTES_MOROSOS_MES; 
-                                CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIFICAR_PRODUCTOS_VENCIDOS; 
+                                CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_CLIENTES_85_CREDITO; 
+                                CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_PROVEEDORES_70_CREDITO; 
+                                CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_CLIENTES_MOROSOS; 
+                                CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_PRODUCTOS_VENCIDOS; 
                             END;',
         start_date      => TRUNC(SYSDATE) + 1 + 7/24,
         repeat_interval => 'FREQ=DAILY; BYHOUR=7; BYMINUTE=0; BYSECOND=0',
@@ -151,7 +149,7 @@ BEGIN
         job_type        => 'PLSQL_BLOCK',
         job_action      => 'BEGIN 
                                 CADENA_NEG.PKG_INV_GESTION.PR_REPORTE_SEMANAL_MERCADEO; 
-                                CADENA_NEG.PKG_PRM_MERCADEO.PR_APLICAR_DESCUENTOS_SEMANA; 
+                                CADENA_NEG.PKG_PRM_MERCADEO.PR_VERIFICAR_DESCUENTOS_SEMANAL; 
                             END;',
         start_date      => TRUNC(SYSDATE) + 1 + 5/24,
         repeat_interval => 'FREQ=WEEKLY; BYDAY=MON; BYHOUR=5; BYMINUTE=0; BYSECOND=0',
@@ -171,7 +169,7 @@ BEGIN
     DBMS_SCHEDULER.CREATE_JOB (
         job_name        => 'CADENA_NEG.JOB_PREMIACION_SEMESTRAL',
         job_type        => 'PLSQL_BLOCK',
-        job_action      => 'BEGIN CADENA_NEG.PKG_PRM_MERCADEO.PR_PREMIAR_TOP_CLIENTES_SEMESTRE(SYSDATE); END;',
+        job_action      => 'BEGIN CADENA_NEG.PKG_PRM_MERCADEO.PR_PREMIAR_MEJORES_CLIENTES; END;',
         start_date      => TO_DATE('2026-06-30 23:30:00', 'YYYY-MM-DD HH24:MI:SS'),
         repeat_interval => 'FREQ=MONTHLY; BYMONTH=6,12; BYMONTHDAY=-1; BYHOUR=23; BYMINUTE=30; BYSECOND=0',
         enabled         => TRUE,
@@ -209,15 +207,15 @@ END;
 -- 2.1 Consulta bajo evaluacion
 PROMPT --- Ejecucion de consulta de prueba: Cuentas por Cobrar Vencidas ---
 SELECT c.ID_CUENTA_COBRAR,
-       c.ID_FACTURA_FAVE,
-       cl.NOMBRE_COMPLETO_CLIE,
-       c.FECHA_VENCIMIENTO_CUCO,
+       c.ID_FACTURA_VENTA,
+       cl.CODIGO_CLI,
+       c.FECHA_VENCIM_CUCO,
        c.SALDO_CUCO,
        c.ESTADO_CUCO
   FROM VEN_CUENTA_COBRAR c
-  JOIN PER_CLIENTE cl ON c.ID_CLIENTE_CLIE = cl.ID_CLIENTE_CLIE
+  JOIN PER_CLIENTE cl ON c.ID_CLIENTE = cl.ID_CLIENTE
  WHERE c.ESTADO_CUCO = 'P'
-   AND c.FECHA_VENCIMIENTO_CUCO < SYSDATE;
+   AND c.FECHA_VENCIM_CUCO < SYSDATE;
 
 -- 2.2 Plan de ejecucion ANTES del afinamiento (Estado inicial sin indice compuesto)
 -- Eliminamos temporalmente cualquier indice que pudiera intervenir para observar el estado base
@@ -233,15 +231,15 @@ EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'PER_CLIENTE', CASCADE => TRUE);
 
 EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_CUCO_ANTES' FOR
 SELECT c.ID_CUENTA_COBRAR,
-       c.ID_FACTURA_FAVE,
-       cl.NOMBRE_COMPLETO_CLIE,
-       c.FECHA_VENCIMIENTO_CUCO,
+       c.ID_FACTURA_VENTA,
+       cl.CODIGO_CLI,
+       c.FECHA_VENCIM_CUCO,
        c.SALDO_CUCO,
        c.ESTADO_CUCO
   FROM VEN_CUENTA_COBRAR c
-  JOIN PER_CLIENTE cl ON c.ID_CLIENTE_CLIE = cl.ID_CLIENTE_CLIE
+  JOIN PER_CLIENTE cl ON c.ID_CLIENTE = cl.ID_CLIENTE
  WHERE c.ESTADO_CUCO = 'P'
-   AND c.FECHA_VENCIMIENTO_CUCO < SYSDATE;
+   AND c.FECHA_VENCIM_CUCO < SYSDATE;
 
 PROMPT ============================================================================
 PROMPT PLAN DE EJECUCION ANTES DEL AFINAMIENTO (OBSERVE TABLE ACCESS FULL):
@@ -255,7 +253,7 @@ SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY('PLAN_TABLE', 'PLAN_CUCO_ANTES', 'TYPICAL
      Oracle debe recorrer la totalidad de bloques asignados a la tabla hasta
      la marca de agua alta (High Water Mark), realizando lecturas multibloque.
      Cada registro es evaluado mediante un predicado post-filtro:
-     filter("ESTADO_CUCO"='P' AND "FECHA_VENCIMIENTO_CUCO"<SYSDATE@!)
+     filter("ESTADO_CUCO"='P' AND "FECHA_VENCIM_CUCO"<SYSDATE@!)
    - Problema en produccion: A medida que la cadena acumula miles de facturas
      y cuentas historicas, el costo de I/O se incrementa linealmente (O(N)),
      afectando el rendimiento global de la instancia y consumiendo memoria del buffer cache.
@@ -264,9 +262,9 @@ SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY('PLAN_TABLE', 'PLAN_CUCO_ANTES', 'TYPICAL
 -- 2.3 Creacion del Indice Compuesto Estrategico
 -- Principio de afinamiento:
 -- 1. Columna de igualdad de alta selectividad primero: ESTADO_CUCO ('P')
--- 2. Columna de rango despues: FECHA_VENCIMIENTO_CUCO (< SYSDATE)
+-- 2. Columna de rango despues: FECHA_VENCIM_CUCO (< SYSDATE)
 CREATE INDEX IX_CUCO_EST_VENC 
-    ON VEN_CUENTA_COBRAR (ESTADO_CUCO, FECHA_VENCIMIENTO_CUCO)
+    ON VEN_CUENTA_COBRAR (ESTADO_CUCO, FECHA_VENCIM_CUCO)
     TABLESPACE TBS_INDICES;
 
 -- Actualizar estadisticas en el catalogo
@@ -275,15 +273,15 @@ EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'VEN_CUENTA_COBRAR', CASCADE => TRUE);
 -- 2.4 Plan de ejecucion DESPUES del afinamiento
 EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_CUCO_DESPUES' FOR
 SELECT c.ID_CUENTA_COBRAR,
-       c.ID_FACTURA_FAVE,
-       cl.NOMBRE_COMPLETO_CLIE,
-       c.FECHA_VENCIMIENTO_CUCO,
+       c.ID_FACTURA_VENTA,
+       cl.CODIGO_CLI,
+       c.FECHA_VENCIM_CUCO,
        c.SALDO_CUCO,
        c.ESTADO_CUCO
   FROM VEN_CUENTA_COBRAR c
-  JOIN PER_CLIENTE cl ON c.ID_CLIENTE_CLIE = cl.ID_CLIENTE_CLIE
+  JOIN PER_CLIENTE cl ON c.ID_CLIENTE = cl.ID_CLIENTE
  WHERE c.ESTADO_CUCO = 'P'
-   AND c.FECHA_VENCIMIENTO_CUCO < SYSDATE;
+   AND c.FECHA_VENCIM_CUCO < SYSDATE;
 
 PROMPT ============================================================================
 PROMPT PLAN DE EJECUCION DESPUES DEL AFINAMIENTO (OBSERVE INDEX RANGE SCAN):
@@ -339,57 +337,58 @@ BEGIN
     -- PRUEBA 1: PKG_ADM_MONITOREO (Inspeccion de salud del motor)
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 1] Ejecutando monitoreo de salud del motor...');
-    PKG_ADM_MONITOREO.PR_MONITOREO_SALUD_DIARIO;
+    PKG_ADM_MONITOREO.PR_EJECUTAR_MONITOREO_DIARIO;
     DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 1] Monitoreo diario ejecutado y registrado en ADM_MONITOREO_LOG.');
 
     -- ------------------------------------------------------------------------
     -- PRUEBA 2: PKG_ADM_NOTIFICACION (Deteccion de umbrales 85% CxC, 70% CxP, morosidad)
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 2] Ejecutando verificacion y notificaciones de credito...');
-    PKG_ADM_NOTIFICACION.PR_NOTIFICAR_CLIENTES_LIMITE_85;
-    PKG_ADM_NOTIFICACION.PR_NOTIFICAR_PROVEEDORES_SALDO_70;
-    PKG_ADM_NOTIFICACION.PR_NOTIFICAR_CLIENTES_MOROSOS_MES;
-    PKG_ADM_NOTIFICACION.PR_NOTIFICAR_PRODUCTOS_VENCIDOS;
+    PKG_ADM_NOTIFICACION.PR_NOTIF_CLIENTES_85_CREDITO;
+    PKG_ADM_NOTIFICACION.PR_NOTIF_PROVEEDORES_70_CREDITO;
+    PKG_ADM_NOTIFICACION.PR_NOTIF_CLIENTES_MOROSOS;
+    PKG_ADM_NOTIFICACION.PR_NOTIF_PRODUCTOS_VENCIDOS;
     DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 2] Procedimientos de notificacion ejecutados exitosamente.');
 
     -- ------------------------------------------------------------------------
-    -- PRUEBA 3: PKG_PER_PADRON (Carga y matching con padron TSE)
+    -- PRUEBA 3: PKG_PER_PADRON (Padron electoral y clientes)
     -- ------------------------------------------------------------------------
-    DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 3] Enlazando padron electoral con clientes registrados...');
-    PKG_PER_PADRON.PR_ENLAZAR_CLIENTES_CON_PADRON;
-    SELECT COUNT(*) INTO v_lineas_padron FROM PER_PADRON_TSE;
-    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 3] Padron electoral operativo. Registros actuales: ' || v_lineas_padron);
+    DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 3] Verificando padron electoral y sincronizacion...');
+    SELECT COUNT(*) INTO v_lineas_padron FROM CAT_PADRON;
+    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 3] Padron electoral operativo. Registros en CAT_PADRON: ' || v_lineas_padron);
 
     -- ------------------------------------------------------------------------
     -- PRUEBA 4: COMPRAS A CREDITO Y ACTUALIZACION AUTOMATICA DE PROVEEDOR E INVENTARIO
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 4] Registrando factura de compra a credito y verificando disparadores...');
-    SELECT NVL(SALDO_ACTUAL_PROVE, 0) INTO v_saldo_prov_ant FROM PER_PROVEEDOR WHERE ID_PROVEEDOR_PROV = 1;
-    SELECT NVL(CANTIDAD_EXISTENCIA_EXIS, 0) INTO v_stock_ant FROM INV_EXISTENCIA WHERE ID_PRODUCTO_PROD = 1 AND ID_BODEGA_BODE = 1;
+    SELECT NVL(SALDO_ACTUAL_PROVE, 0) INTO v_saldo_prov_ant FROM PER_PROVEEDOR WHERE ID_PROVEEDOR = 1;
+    SELECT NVL(CANTIDAD_EXIS, 0) INTO v_stock_ant FROM INV_EXISTENCIA WHERE ID_PRODUCTO = 1 AND ID_BODEGA = 1;
 
-    INSERT INTO COM_FACTURA_COMPRA (
-        ID_FACTURA_COMPRA, ID_SUCURSAL_SUCU, ID_BODEGA_BODE, ID_PROVEEDOR_PROV, ID_USUARIO_USUA,
-        NUMERO_FACTURA_FACO, FECHA_FACO, SUB_TOTAL_FACO, IMPUESTO_FACO, TOTAL_FACO,
-        ESTADO_FACO, ES_CREDITO_FACO, USUARIO_CREA_FACO, FECHA_CREA_FACO
-    ) VALUES (
-        SEQ_COM_FACTURA_COMPRA.NEXTVAL, 1, 1, 1, 1,
-        'FAC-TEST-COM-01', SYSDATE, 50000, 6500, 56500,
-        'P', 'S', USER, SYSTIMESTAMP
-    ) RETURNING ID_FACTURA_COMPRA INTO v_id_compra;
-
-    -- Detalle de compra: debe aumentar existencias y registrar en kardex
-    INSERT INTO COM_FACTURA_COMPRA_DET (
-        ID_FACTURA_COMPRA_DET, ID_FACTURA_COMPRA, ID_PRODUCTO_PROD,
-        CANTIDAD_FCDE, COSTO_UNITARIO_FCDE, IMPUESTO_FCDE, TOTAL_LINEA_FCDE,
-        USUARIO_CREA_FCDE, FECHA_CREA_FCDE
-    ) VALUES (
-        SEQ_COM_FACTURA_COMPRA_DET.NEXTVAL, v_id_compra, 1,
-        25, 2000, 260, 56500,
-        USER, SYSTIMESTAMP
+    PKG_COM_OPERACION.PR_CREAR_FACTURA_COMPRA(
+        p_id_proveedor   => 1,
+        p_id_bodega      => 1,
+        p_id_usuario     => 1,
+        p_num_factura    => 'FAC-TEST-COM-' || TO_CHAR(SYSDATE, 'HH24MISS'),
+        p_es_credito     => 'S',
+        p_subtotal       => 50000,
+        p_descuento      => 0,
+        p_impuesto       => 6500,
+        p_id_factura_out => v_id_compra
     );
 
-    SELECT NVL(SALDO_ACTUAL_PROVE, 0) INTO v_saldo_prov_nue FROM PER_PROVEEDOR WHERE ID_PROVEEDOR_PROV = 1;
-    SELECT NVL(CANTIDAD_EXISTENCIA_EXIS, 0) INTO v_stock_nue FROM INV_EXISTENCIA WHERE ID_PRODUCTO_PROD = 1 AND ID_BODEGA_BODE = 1;
+    PKG_COM_OPERACION.PR_AGREGAR_DETALLE_COMPRA(
+        p_id_factura_compra => v_id_compra,
+        p_id_producto       => 1,
+        p_id_lote           => NULL,
+        p_linea             => 1,
+        p_cantidad          => 25,
+        p_costo_unitario    => 2000,
+        p_porc_descuento    => 0,
+        p_porc_impuesto     => 13
+    );
+
+    SELECT NVL(SALDO_ACTUAL_PROVE, 0) INTO v_saldo_prov_nue FROM PER_PROVEEDOR WHERE ID_PROVEEDOR = 1;
+    SELECT NVL(CANTIDAD_EXIS, 0) INTO v_stock_nue FROM INV_EXISTENCIA WHERE ID_PRODUCTO = 1 AND ID_BODEGA = 1;
 
     DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 4] Compra procesada #' || v_id_compra || 
                          ' -> Saldo Proveedor: de ' || v_saldo_prov_ant || ' a ' || v_saldo_prov_nue ||
@@ -399,32 +398,35 @@ BEGIN
     -- PRUEBA 5: VENTAS A CREDITO, LIMITE DE CREDITO, DESCUENTO DE STOCK Y ACCIONES
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 5] Registrando factura de venta a credito...');
-    SELECT NVL(SALDO_ACTUAL_CLI, 0) INTO v_saldo_cli_ant FROM PER_CLIENTE WHERE ID_CLIENTE_CLIE = 1;
+    SELECT NVL(SALDO_ACTUAL_CLI, 0) INTO v_saldo_cli_ant FROM PER_CLIENTE WHERE ID_CLIENTE = 3;
     v_stock_ant := v_stock_nue;
 
-    INSERT INTO VEN_FACTURA (
-        ID_FACTURA_FAVE, ID_SUCURSAL_SUCU, ID_CLIENTE_CLIE, ID_USUARIO_USUA,
-        NUMERO_FACTURA_FAVE, FECHA_FAVE, SUB_TOTAL_FAVE, IMPUESTO_FAVE, TOTAL_FAVE,
-        ESTADO_FAVE, ES_CREDITO_FAVE, USUARIO_CREA_FAVE, FECHA_CREA_FAVE
-    ) VALUES (
-        SEQ_VEN_FACTURA.NEXTVAL, 1, 1, 1,
-        'FAC-TEST-VEN-01', SYSDATE, 20000, 2600, 22600,
-        'P', 'S', USER, SYSTIMESTAMP
-    ) RETURNING ID_FACTURA_FAVE INTO v_id_factura;
-
-    -- Detalle de venta: debe disminuir existencias y registrar kardex
-    INSERT INTO VEN_FACTURA_DET (
-        ID_FACTURA_DETALLE_FADE, ID_FACTURA_FAVE, ID_PRODUCTO_PROD,
-        CANTIDAD_FADE, PRECIO_UNITARIO_FADE, IMPUESTO_FADE, SUBTOTAL_FADE, TOTAL_LINEA_FADE,
-        USUARIO_CREA_FADE, FECHA_CREA_FADE
-    ) VALUES (
-        SEQ_VEN_FACTURA_DET.NEXTVAL, v_id_factura, 1,
-        5, 4000, 520, 20000, 22600,
-        USER, SYSTIMESTAMP
+    PKG_VEN_OPERACION.PR_CREAR_FACTURA_VENTA(
+        p_id_cliente     => 3,
+        p_id_sucursal    => 1,
+        p_id_usuario     => 1,
+        p_num_factura    => 'FAC-TEST-VEN-' || TO_CHAR(SYSDATE, 'HH24MISS'),
+        p_es_credito     => 'S',
+        p_subtotal       => 20000,
+        p_descuento      => 0,
+        p_impuesto       => 2600,
+        p_id_factura_out => v_id_factura
     );
 
-    SELECT NVL(SALDO_ACTUAL_CLI, 0) INTO v_saldo_cli_nue FROM PER_CLIENTE WHERE ID_CLIENTE_CLIE = 1;
-    SELECT NVL(CANTIDAD_EXISTENCIA_EXIS, 0) INTO v_stock_nue FROM INV_EXISTENCIA WHERE ID_PRODUCTO_PROD = 1 AND ID_BODEGA_BODE = 1;
+    PKG_VEN_OPERACION.PR_AGREGAR_DETALLE_VENTA(
+        p_id_factura_venta => v_id_factura,
+        p_id_producto      => 1,
+        p_id_servicio      => NULL,
+        p_id_lote          => NULL,
+        p_linea            => 1,
+        p_cantidad         => 5,
+        p_precio_unitario  => 4000,
+        p_porc_descuento   => 0,
+        p_porc_impuesto    => 13
+    );
+
+    SELECT NVL(SALDO_ACTUAL_CLI, 0) INTO v_saldo_cli_nue FROM PER_CLIENTE WHERE ID_CLIENTE = 3;
+    SELECT NVL(CANTIDAD_EXIS, 0) INTO v_stock_nue FROM INV_EXISTENCIA WHERE ID_PRODUCTO = 1 AND ID_BODEGA = 1;
 
     DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 5] Venta procesada #' || v_id_factura || 
                          ' -> Saldo Cliente: de ' || v_saldo_cli_ant || ' a ' || v_saldo_cli_nue ||
@@ -434,20 +436,16 @@ BEGIN
     -- PRUEBA 6: ABONO Y CAMBIO AUTOMATICO DE ESTADO PENDIENTE ('P') A CANCELADA ('C')
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 6] Aplicando abonos totales para cancelacion automatica...');
-    SELECT ID_CUENTA_COBRAR INTO v_id_cuenta_co FROM VEN_CUENTA_COBRAR WHERE ID_FACTURA_FAVE = v_id_factura;
-
-    -- Aplicamos abono por el saldo total (C22,600)
-    INSERT INTO VEN_ABONO_COBRAR (
-        ID_ABONO_COBRAR, ID_CUENTA_COBRAR, ID_TIPO_PAGO,
-        FECHA_ABON, MONTO_ABON, NUMERO_RECIBO_ABON,
-        USUARIO_CREA_ABON, FECHA_CREA_ABON
-    ) VALUES (
-        SEQ_VEN_ABONO_COBRAR.NEXTVAL, v_id_cuenta_co, 1,
-        SYSDATE, 22600, 'REC-TEST-001',
-        USER, SYSTIMESTAMP
+    PKG_VEN_OPERACION.PR_REGISTRAR_ABONO_COBRAR(
+        p_id_factura_venta => v_id_factura,
+        p_id_usuario       => 1,
+        p_tipo_pago        => 'EFECTIVO',
+        p_num_recibo       => 'REC-TEST-' || TO_CHAR(SYSDATE, 'HH24MISS'),
+        p_monto_abono      => 22600,
+        p_referencia       => 'Liquidacion factura prueba'
     );
 
-    SELECT ESTADO_FAVE INTO v_estado_fac_fin FROM VEN_FACTURA WHERE ID_FACTURA_FAVE = v_id_factura;
+    SELECT ESTADO_FAVE INTO v_estado_fac_fin FROM VEN_FACTURA WHERE ID_FACTURA_VENTA = v_id_factura;
     DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 6] Abono liquidado. Estado final factura #' || v_id_factura || 
                          ': ' || v_estado_fac_fin || ' (Esperado: C = Cancelada)');
 
@@ -455,9 +453,9 @@ BEGIN
     -- PRUEBA 7: PKG_PRM_MERCADEO (Descuentos semanales y Premiacion semestral Top 10)
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 7] Ejecutando politicas de mercadeo y premiacion semestral...');
-    PKG_PRM_MERCADEO.PR_APLICAR_DESCUENTOS_SEMANA;
-    PKG_PRM_MERCADEO.PR_PREMIAR_TOP_CLIENTES_SEMESTRE(SYSDATE);
-    SELECT COUNT(*) INTO v_acciones_tot FROM PRM_ACCION;
+    PKG_PRM_MERCADEO.PR_VERIFICAR_DESCUENTOS_SEMANAL;
+    PKG_PRM_MERCADEO.PR_PREMIAR_MEJORES_CLIENTES('2026-S1');
+    SELECT COUNT(*) INTO v_acciones_tot FROM PRM_ACCION_CLIENTE;
     DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 7] Politicas aplicadas. Acciones promocionales registradas: ' || v_acciones_tot);
 
     -- ------------------------------------------------------------------------
