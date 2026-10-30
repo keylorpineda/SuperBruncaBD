@@ -1,31 +1,25 @@
-# UNIVERSIDAD NACIONAL
-## Sede Regional Brunca — Campus Pérez Zeledón
-### Escuela de Informática
-**Curso:** Administración de Bases de Datos (II Ciclo 2026 - Grupo 84)  
-**Profesores:** Hairol Romero Sandi — Jeremy Elizondo  
+<div align="center">
 
----
+# Sede Regional Brunca
+## Campus Pérez Zeledón
 
-<br>
+### Manual Técnico de Administración y Mantenimiento
 
-# MANUAL TÉCNICO DE ADMINISTRACIÓN Y MANTENIMIENTO
-## Sistema Integral de Cadena de Supermercados — Entregable #2
-
-<br>
+**Curso: Administración de bases de datos**  
+**Profesor: Hairol Romero Sandi**  
+**II Ciclo - Grupo 84**  
 
 **Estudiantes:**  
-* Diego Bonilla Mora  
-* Keylor Steven Pineda Álvarez  
+Diego Bonilla Mora  
+Pineda Alvarez Keylor Steven  
 
-**Fecha de Entrega:** Octubre del 2026  
-**Motor de Base de Datos:** Oracle Database 21c / 23ai / 26ai Free  
-**Esquema Propietario:** `CADENA_NEG`  
+Octubre del 2026
 
-<br>
+</div>
 
 ---
 
-## 1. Resumen Ejecutivo y Arquitectura del Sistema
+# 1. Resumen Ejecutivo y Arquitectura del Sistema
 
 El presente manual proporciona el fundamento técnico, las especificaciones de diseño, los algoritmos de seguridad, las directrices de mantenimiento y la documentación técnica detallada del **Sistema Integral de Cadena de Supermercados** para el Avance #2.
 

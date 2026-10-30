@@ -1,32 +1,25 @@
-# UNIVERSIDAD NACIONAL
-## Sede Regional Brunca — Campus Pérez Zeledón
-### Escuela de Informática
-**Curso:** Administración de Bases de Datos (II Ciclo 2026 - Grupo 84)  
-**Profesores:** Hairol Romero Sandi — Jeremy Elizondo  
+<div align="center">
 
----
+# Sede Regional Brunca
+## Campus Pérez Zeledón
 
-<br>
+### Manual de Administración del Standby y Alta Disponibilidad
 
-# MANUAL DE ADMINISTRACIÓN DEL STANDBY Y ALTA DISPONIBILIDAD
-## Sistema Integral de Cadena de Supermercados — Entregable #2
-
-<br>
+**Curso: Administración de bases de datos**  
+**Profesor: Hairol Romero Sandi**  
+**II Ciclo - Grupo 84**  
 
 **Estudiantes:**  
-* Diego Bonilla Mora  
-* Keylor Steven Pineda Álvarez  
+Diego Bonilla Mora  
+Pineda Alvarez Keylor Steven  
 
-**Fecha de Entrega:** Octubre del 2026  
-**Motor de Base de Datos:** Oracle Database 21c / 23ai / 26ai Free  
-**Esquema Propietario:** `CADENA_NEG`  
-**Ponderación del Rubro en Evaluación:** 35% de la Calificación Total  
+Octubre del 2026
 
-<br>
+</div>
 
 ---
 
-## 1. Alcance y Arquitectura de Alta Disponibilidad
+# 1. Alcance y Arquitectura de Alta Disponibilidad
 
 Este documento constituye el **Manual de Administración del Servidor Standby**, diseñado para garantizar la continuidad ininterrumpida de las operaciones comerciales de la cadena de supermercados (cajas, puntos de venta, almacén y compras) ante fallas de infraestructura, pérdida de energía o desastres mayores.
 

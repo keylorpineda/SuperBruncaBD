@@ -1,45 +1,47 @@
+import base64
 import os
 import subprocess
-import markdown_it
 from pathlib import Path
+import markdown_it
+import fitz
 
 BASE_DIR = Path(r"C:\Users\Keylo\Documents\UNA\II CICLO 2026\Admin BD\Proyecto")
-LOGO_PATH = (BASE_DIR / "logo_una_extraido.png").as_uri()
-
 EDGE_EXE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 
-def build_cover_html(title: str, subtitle: str = "Sistema Integral de Cadena de Supermercados — Entregable #2") -> str:
+# Cargar logo oficial de la UNA y codificar en base64 para evitar problemas de ruta en Edge
+logo_bytes = (BASE_DIR / "logo_una_extraido.png").read_bytes()
+logo_b64 = base64.b64encode(logo_bytes).decode("ascii")
+LOGO_DATA_URI = f"data:image/png;base64,{logo_b64}"
+
+def build_cover_html(title: str) -> str:
+    """
+    Construye la portada exactamente igual a Documentacion_Tecnica.pdf:
+    - Logo UNA centrado en la parte superior (189.4pt x 150.75pt).
+    - Sede Regional Brunca (Negrita 12pt).
+    - Campus Pérez Zeledón (Regular 12pt).
+    - Solo el Título en negrita 12pt (sin subtítulos, sin 'Entregable #2').
+    - Información del curso y profesor (Regular 12pt).
+    - Bloque de estudiantes: Diego Bonilla Mora y Pineda Alvarez Keylor Steven (Regular 12pt).
+    - Fecha: Octubre del 2026 (Regular 12pt).
+    Todo 100% centrado horizontalmente en Times New Roman.
+    """
     return f"""
     <div class="cover-page">
-        <div class="cover-logo-container">
-            <img class="cover-logo" src="{LOGO_PATH}" alt="Universidad Nacional de Costa Rica" />
-        </div>
-        
-        <div class="cover-sede">
-            <p class="sede-title">Sede Regional Brunca</p>
-            <p class="campus-title">Campus Pérez Zeledón</p>
-        </div>
-        
-        <div class="cover-doc-title">
-            <h1 class="main-title">{title}</h1>
-            <p class="doc-subtitle">{subtitle}</p>
-        </div>
-        
-        <div class="cover-course-info">
+        <img class="cover-logo" src="{LOGO_DATA_URI}" alt="Universidad Nacional de Costa Rica" />
+        <p class="p-sede-bold">Sede Regional Brunca</p>
+        <p class="p-campus">Campus Pérez Zeledón</p>
+        <p class="p-title">{title}</p>
+        <div class="p-course-block">
             <p>Curso: Administración de bases de datos</p>
             <p>Profesor: Hairol Romero Sandi</p>
-            <p>II Ciclo - Grupo 84</p>
+            <p style="margin-bottom: 0;">II Ciclo - Grupo 84</p>
         </div>
-        
-        <div class="cover-authors-info">
-            <p class="students-label">Estudiantes:</p>
-            <p class="student-name">Diego Bonilla Mora</p>
-            <p class="student-name">Pineda Alvarez Keylor Steven</p>
+        <div class="p-authors-block">
+            <p>Estudiantes:</p>
+            <p>Diego Bonilla Mora</p>
+            <p style="margin-bottom: 0;">Pineda Alvarez Keylor Steven</p>
         </div>
-        
-        <div class="cover-date">
-            <p>Octubre del 2026</p>
-        </div>
+        <p class="p-date">Octubre del 2026</p>
     </div>
     <div class="page-break"></div>
     """
@@ -63,97 +65,81 @@ CSS_STYLES = """
 
 body {
     font-family: 'Times New Roman', 'Nimbus Roman No9 L', 'FreeSerif', Times, serif;
-    font-size: 10pt;
-    line-height: 1.35;
-    color: #111;
+    font-size: 12pt;
+    line-height: 1.25;
+    color: #000000;
     margin: 0;
     padding: 0;
 }
 
-/* ================== PORTADA ================== */
+/* ================== PORTADA INSTITUCIONAL (1:1 Documentacion_Tecnica.pdf) ================== */
 .cover-page {
-    height: 90vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    align-items: center;
     text-align: center;
-    padding-top: 1.5cm;
-    padding-bottom: 1.5cm;
-}
-
-.cover-logo-container {
-    margin-bottom: 25px;
+    page-break-after: always;
+    break-after: page;
 }
 
 .cover-logo {
-    width: 210px;
-    height: auto;
+    width: 189.4pt;
+    height: 150.75pt;
+    margin: 18pt auto 24pt auto;
+    display: block;
 }
 
-.cover-sede {
-    margin-bottom: 35px;
-}
-
-.sede-title {
-    font-size: 12.5pt;
+.p-sede-bold {
+    font-family: 'Times New Roman', Times, serif;
     font-weight: bold;
-    margin: 0 0 4px 0;
+    font-size: 12pt;
+    margin: 0 0 10pt 0;
+    text-align: center;
 }
 
-.campus-title {
-    font-size: 11.5pt;
-    margin: 0;
+.p-campus {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
+    margin: 0 0 34pt 0;
+    text-align: center;
 }
 
-.cover-doc-title {
-    margin-bottom: 40px;
-}
-
-.main-title {
-    font-size: 15.5pt;
+.p-title {
+    font-family: 'Times New Roman', Times, serif;
     font-weight: bold;
-    margin: 0 0 8px 0;
-    line-height: 1.25;
+    font-size: 12pt;
+    margin: 0 0 24pt 0;
+    text-align: center;
 }
 
-.doc-subtitle {
-    font-size: 11.5pt;
-    color: #333;
+.p-course-block {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
+    margin: 0 0 34pt 0;
+    text-align: center;
+}
+
+.p-course-block p {
+    margin: 0 0 8pt 0;
+    text-align: center;
+    font-size: 12pt;
+}
+
+.p-authors-block {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
+    margin: 0 0 120pt 0;
+    text-align: center;
+}
+
+.p-authors-block p {
+    margin: 0 0 8pt 0;
+    text-align: center;
+    font-size: 12pt;
+}
+
+.p-date {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
     margin: 0;
-}
-
-.cover-course-info {
-    font-size: 11pt;
-    line-height: 1.5;
-    margin-bottom: 35px;
-}
-
-.cover-course-info p {
-    margin: 2px 0;
-}
-
-.cover-authors-info {
-    font-size: 11pt;
-    line-height: 1.5;
-    margin-bottom: 45px;
-}
-
-.students-label {
-    margin: 0 0 4px 0;
-}
-
-.student-name {
-    margin: 2px 0;
-}
-
-.cover-date {
-    font-size: 11pt;
-    margin-top: auto;
-}
-
-.cover-date p {
-    margin: 0;
+    text-align: center;
 }
 
 .page-break {
@@ -163,64 +149,74 @@ body {
 
 /* ================== CONTENIDO ================== */
 .content-body {
-    padding-top: 5px;
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
 }
 
 h1 {
-    font-size: 12.5pt;
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 14pt;
     font-weight: bold;
-    margin-top: 20px;
-    margin-bottom: 7px;
+    margin-top: 20pt;
+    margin-bottom: 6pt;
     page-break-after: avoid;
     break-after: avoid;
     color: #000;
 }
 
 h2 {
-    font-size: 11.5pt;
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
     font-weight: bold;
-    margin-top: 15px;
-    margin-bottom: 5px;
+    margin-top: 14pt;
+    margin-bottom: 4pt;
     page-break-after: avoid;
     break-after: avoid;
     color: #000;
 }
 
 h3 {
-    font-size: 10.5pt;
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
     font-weight: bold;
-    margin-top: 11px;
-    margin-bottom: 4px;
+    font-style: italic;
+    margin-top: 10pt;
+    margin-bottom: 3pt;
     page-break-after: avoid;
     break-after: avoid;
     color: #111;
 }
 
 p {
-    font-size: 9.8pt;
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
     text-align: justify;
+    line-height: 1.30;
     margin-top: 0;
-    margin-bottom: 7px;
+    margin-bottom: 9pt;
 }
 
 ul, ol {
-    margin-top: 3px;
-    margin-bottom: 7px;
-    padding-left: 22px;
+    margin-top: 0;
+    margin-bottom: 9pt;
+    padding-left: 24pt;
 }
 
 li {
-    margin-bottom: 3.5px;
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
     text-align: justify;
-    font-size: 9.8pt;
+    line-height: 1.30;
+    margin-bottom: 4pt;
 }
 
 /* Tablas con formato idéntico a Documentacion_Tecnica.pdf */
 table {
     width: 100%;
     border-collapse: collapse;
-    margin: 12px 0 16px 0;
-    font-size: 8.5pt;
+    margin: 14pt 0 16pt 0;
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 11pt;
     page-break-inside: auto;
 }
 
@@ -230,70 +226,70 @@ tr {
 }
 
 th {
-    border-top: 1.5px solid #222;
-    border-bottom: 1.2px solid #222;
-    padding: 4.5px 5px;
+    border-top: 1.5px solid #666;
+    border-bottom: 1.5px solid #666;
+    padding: 5pt 6pt;
     text-align: left;
     font-weight: bold;
-    text-transform: uppercase;
-    font-size: 8.2pt;
+    font-size: 11pt;
     background-color: transparent;
 }
 
 td {
-    padding: 4px 5px;
+    padding: 5pt 6pt;
     vertical-align: top;
-    border-bottom: 0.5px solid #dcdcdc;
-    font-size: 8.3pt;
+    border-bottom: 1px solid #d4d4d4;
+    font-size: 11pt;
 }
 
 table tr:last-child td {
-    border-bottom: 1.5px solid #222;
+    border-bottom: 1.5px solid #666;
 }
 
-/* Código y bloques preformateados */
+/* Código y bloques preformateados limpios */
 pre {
-    background-color: #f7f7f9;
-    border: 1px solid #d0d0d5;
-    border-left: 3px solid #8B0000;
-    padding: 7px 10px;
-    border-radius: 2px;
-    font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 7.8pt;
+    background-color: #f7f7f7;
+    border: 1px solid #cccccc;
+    padding: 8pt 10pt;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 8pt;
     line-height: 1.22;
-    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-width: 100%;
     page-break-inside: avoid;
     break-inside: avoid;
-    margin: 7px 0 10px 0;
+    margin: 8pt 0 12pt 0;
 }
 
 code {
-    font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 8.2pt;
-    background-color: #f2f2f5;
-    padding: 1px 3px;
-    border-radius: 2px;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 8.5pt;
+    background-color: #f0f0f0;
+    padding: 1pt 3pt;
+    word-break: break-word;
 }
 
 pre code {
     background-color: transparent;
     padding: 0;
-    border-radius: 0;
-    font-size: 7.8pt;
+    font-size: 8pt;
+    white-space: pre-wrap;
 }
 
 blockquote {
-    margin: 7px 0;
-    padding: 5px 10px;
+    margin: 8pt 0;
+    padding: 6pt 12pt;
     border-left: 3px solid #8B0000;
-    background-color: #fdfaf8;
-    font-size: 8.8pt;
+    background-color: #fcfcfc;
+    font-size: 11pt;
     page-break-inside: avoid;
     break-inside: avoid;
 }
 
 blockquote p {
     margin: 0;
+    font-size: 11pt;
 }
 """
 
@@ -307,13 +303,39 @@ def generate_pdf(md_filename: str, output_pdf_filename: str, doc_title: str):
     with open(md_path, "r", encoding="utf-8") as f:
         raw_text = f.read()
 
-    # Quitar el encabezado markdown previo hasta el primer separador "---"
-    parts = raw_text.split("---", 2)
-    if len(parts) >= 3:
-        body_md = parts[2].strip()
-    else:
-        body_md = raw_text.strip()
+    # Extraer el cuerpo eliminando encabezados previos informales
+    # Si contiene separador de metadatos o empieza en la primera sección numerada "1."
+    lines = raw_text.splitlines()
+    start_idx = 0
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("# 1.") or stripped.startswith("## 1.") or stripped.startswith("1."):
+            start_idx = idx
+            break
 
+    if start_idx > 0:
+        body_lines = lines[start_idx:]
+    else:
+        # Fallback split
+        parts = raw_text.split("---", 2)
+        if len(parts) >= 3:
+            body_lines = parts[2].splitlines()
+        else:
+            body_lines = raw_text.splitlines()
+
+    # Convertir títulos "## 1." a "# 1." para que sean H1 si venían con "##"
+    processed_lines = []
+    for l in body_lines:
+        # Si contiene "Sistema Integral de Cadena de Supermercados — Entregable #2" lo omitimos
+        if "Entregable #2" in l or "Sistema Integral de Cadena de Supermercados" in l:
+            continue
+        # Promover secciones numéricas principales "## 1." a "# 1."
+        if l.startswith("## 1. ") or l.startswith("## 2. ") or l.startswith("## 3. ") or l.startswith("## 4. ") or l.startswith("## 5. ") or l.startswith("## 6. ") or l.startswith("## 7. ") or l.startswith("## 8. "):
+            processed_lines.append(l[1:]) # Quita un '#' para volverlo H1
+        else:
+            processed_lines.append(l)
+
+    body_md = "\n".join(processed_lines).strip()
     body_html = markdown_to_clean_html(body_md)
     cover_html = build_cover_html(doc_title)
 
@@ -351,9 +373,22 @@ def generate_pdf(md_filename: str, output_pdf_filename: str, doc_title: str):
         file_uri
     ]
     
-    print(f"Generating PDF for {doc_title}...")
+    print(f"Generating PDF for: {doc_title}...")
     subprocess.run(cmd, check=True)
     print(f"Created: {pdf_out_path} (exists: {pdf_out_path.exists()})")
+
+    # Verificar portada con PyMuPDF
+    doc = fitz.open(str(pdf_out_path))
+    print(f"[{output_pdf_filename}] Total pages: {len(doc)}")
+    p0 = doc[0]
+    blocks = p0.get_text("blocks")
+    print(f"[{output_pdf_filename}] Cover Page text blocks:")
+    for b in blocks:
+        print(f"   y0={b[1]:.1f}, y1={b[3]:.1f}, x0={b[0]:.1f}: {repr(b[4].strip())}")
+    imgs = p0.get_images()
+    print(f"[{output_pdf_filename}] Cover Page images count: {len(imgs)}")
+    if imgs:
+        print(f"   Image rect: {p0.get_image_rects(imgs[0][0])}")
 
 if __name__ == "__main__":
     docs = [
@@ -376,4 +411,4 @@ if __name__ == "__main__":
     
     for md_f, pdf_f, title in docs:
         generate_pdf(md_f, pdf_f, title)
-    print("All PDFs successfully generated!")
+    print("\nAll PDFs successfully generated with exact Documentacion_Tecnica.pdf formatting!")

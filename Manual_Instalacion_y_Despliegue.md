@@ -1,32 +1,25 @@
-# UNIVERSIDAD NACIONAL
-## Sede Regional Brunca — Campus Pérez Zeledón
-### Escuela de Informática
-**Curso:** Administración de Bases de Datos (II Ciclo 2026 - Grupo 84)  
-**Profesores:** Hairol Romero Sandi — Jeremy Elizondo  
+<div align="center">
 
----
+# Sede Regional Brunca
+## Campus Pérez Zeledón
 
-<br>
+### Manual de Instalación y Despliegue
 
-# MANUAL DE INSTALACIÓN Y DESPLIEGUE
-## Sistema Integral de Cadena de Supermercados — Entregable #2
-
-<br>
+**Curso: Administración de bases de datos**  
+**Profesor: Hairol Romero Sandi**  
+**II Ciclo - Grupo 84**  
 
 **Estudiantes:**  
-* Diego Bonilla Mora  
-* Keylor Steven Pineda Álvarez  
+Diego Bonilla Mora  
+Pineda Alvarez Keylor Steven  
 
-**Fecha de Entrega:** Octubre del 2026  
-**Motor de Base de Datos:** Oracle Database 21c / 23ai / 26ai Free  
-**Pluggable Database:** `FREEPDB1` / `XEPDB1`  
-**Esquema Propietario:** `CADENA_NEG`  
+Octubre del 2026
 
-<br>
+</div>
 
 ---
 
-## 1. Alcance y Requisitos Previos del Entorno
+# 1. Alcance y Requisitos Previos del Entorno
 
 El presente manual describe paso a paso el procedimiento oficial para la instalación, compilación, aprovisionamiento y verificación integral del **Avance #2** del proyecto de curso.
 
