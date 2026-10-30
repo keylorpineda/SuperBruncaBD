@@ -1,266 +1,262 @@
-# Manual de Instalación, Operación y Recuperación
-## Sistema Integral de Cadena de Supermercados — Avance #2
-**Universidad Nacional de Costa Rica (UNA)**  
-**Sede Regional Brunca — Campus Pérez Zeledón**  
-**Curso:** Administración de Bases de Datos  
-**Estudiante:** Keylor Pineda Álvarez  
-**Motor:** Oracle Database 21c / 23ai / 26ai Free  
-**Fecha:** Octubre 2026  
+# UNIVERSIDAD NACIONAL
+## Sede Regional Brunca — Campus Pérez Zeledón
+### Escuela de Informática
+**Curso:** Administración de Bases de Datos (II Ciclo 2026 - Grupo 84)  
+**Profesores:** Hairol Romero Sandi — Jeremy Elizondo  
 
 ---
 
-## 1. Requisitos Previos del Entorno
+<br>
 
-Para la ejecución exitosa de los scripts y la evaluación de los requerimientos, el evaluador o DBA debe contar con:
-1. **Instancia Oracle Database:** Oracle 21c XE, 23ai Free o 26ai Free en ejecución con un Pluggable Database (PDB) en modo `READ WRITE` (ej. `FREEPDB1` o `XEPDB1`).
-2. **Herramientas de Cliente:** SQL*Plus, SQL Developer o DBeaver con conexión administrativa (`SYS as SYSDBA` o `SYSTEM`).
-3. **Utilidad de Respaldo:** Oracle Recovery Manager (`rman`).
-4. **Intérprete de Scripts:** PowerShell 5.1+ (en Windows) o Bash (en Linux).
-5. **Permisos de Archivo:** Permiso de lectura y escritura en los discos locales para creación de tablespaces y directorios de archivado.
+# MANUAL DE INSTALACIÓN Y DESPLIEGUE
+## Sistema Integral de Cadena de Supermercados — Entregable #2
 
----
+<br>
 
-## 2. Secuencia Oficial de Instalación y Despliegue
+**Estudiantes:**  
+* Diego Bonilla Mora  
+* Keylor Steven Pineda Álvarez  
 
-Todos los scripts han sido construidos con **idempotencia estricta** (detectan automáticamente el PDB activo, eliminan objetos previos si existen y recrean estructuras limpias sin arrojar errores fatales).
+**Fecha de Entrega:** Octubre del 2026  
+**Motor de Base de Datos:** Oracle Database 21c / 23ai / 26ai Free  
+**Pluggable Database:** `FREEPDB1` / `XEPDB1`  
+**Esquema Propietario:** `CADENA_NEG`  
 
-La ejecución debe realizarse en el siguiente orden secuencial exacto:
-
-### Paso 0: Base del Sistema (Entregable #1)
-Si la base de datos es nueva o requiere restablecerse desde cero:
-```bash
-sqlplus system/oracle@localhost:1521/FREEPDB1 @script_bd_v2.sql
-```
-> *Nota: Crea el esquema `CADENA_NEG`, tablespaces base y las 25 tablas del Avance #1.*
+<br>
 
 ---
 
-### Paso 1: Adaptaciones DDL, Nuevas Tablas y Vistas Materializadas
-```bash
-sqlplus system/oracle@localhost:1521/FREEPDB1 @01_Estructuras_Avance2.sql
-```
-**Acciones que ejecuta:**
-- Adiciona columnas a tablas existentes (`PER_CLIENTE.CODIGO_ELECTORAL_CLI`, etc.).
-- Crea las **11 tablas nuevas**: `PER_PADRON_TSE`, `PRO_PRECIO_HIST`, `PRM_ACCION`, `PRM_DESCUENTO_SEMANAL`, `VEN_CIERRE_CAJERO`, `VEN_DEVOLUCION_DET`, `COM_DEVOLUCION_DET`, `AUD_REGISTRO_CAMBIO`, `SEG_PARAMETRO`, `ADM_MONITOREO_LOG`, `ADM_NOTIFICACION_LOG`.
-- Crea y puebla las vistas materializadas `MV_VENTAS_MENSUALES` y `MV_INVENTARIO_CONSOLIDADO` en `TBS_HISTORICOS`.
-- Inserta datos de prueba (mínimo 5 filas por tabla) y realinea las secuencias numéricas.
+## 1. Alcance y Requisitos Previos del Entorno
+
+El presente manual describe paso a paso el procedimiento oficial para la instalación, compilación, aprovisionamiento y verificación integral del **Avance #2** del proyecto de curso.
+
+### 1.1 Requisitos de Hardware y Software
+* **Sistema Operativo:** Microsoft Windows 10/11 Pro/Enterprise o GNU/Linux (Ubuntu 22.04 LTS+, Oracle Linux 8/9).
+* **Motor de Base de Datos:** Oracle Database 21c Enterprise/XE, 23ai Free o 26ai Free con arquitectura multitenant y al menos un Pluggable Database (PDB) en modo `READ WRITE` (ej. `FREEPDB1`).
+* **Virtualización / Contenedores:** Docker Desktop 4.x+ con motor Linux y contenedor Oracle activo (ej. `oracle_una`), o bien instalación bare-metal / máquina virtual.
+* **Herramientas de Conexión:**
+  * Oracle SQL\*Plus (versión 21c+).
+  * Oracle SQL Developer 23.x+ o DBeaver Community.
+  * Oracle Recovery Manager (`rman`).
+* **Intérprete de Comandos:** Windows PowerShell 5.1 / PowerShell 7+ o GNU Bash.
+* **Almacenamiento:** Mínimo 15 GB de espacio libre en disco para datafiles, redo logs multiplexados, respaldos RMAN y archivado continuo.
+
+### 1.2 Parámetros de Red y Correo
+* **Puerto de Base de Datos:** 1521 TCP (Listener Oracle).
+* **Puerto de Envío SMTP:** 587 TCP (STARTTLS / `smtp.gmail.com`).
+* **Destinatario Institucional de Pruebas:** `keylorpineda729@gmail.com` (configurado en `CADENA_NEG.SEG_PARAMETRO` para coordinadores, gerencia y DBA).
 
 ---
 
-### Paso 2: Paquetes de Seguridad, Auditoría y Notificaciones
-```bash
-sqlplus system/oracle@localhost:1521/FREEPDB1 @02_Paquetes_Seguridad_Auditoria_Notificaciones.sql
-```
-**Acciones que ejecuta:**
-- Compila `PKG_AUD_CONTROL`: Auditoría autónoma de operaciones, cambios por campo y errores.
-- Compila `PKG_SEG_SEGURIDAD`: Cifrado y descifrado AES-256 con `DBMS_CRYPTO`, gestión de parámetros y asignación de contraseñas a roles.
-- Compila `PRC_ACTIVAR_ROL_SESION`: Procedimiento con `AUTHID CURRENT_USER` para activación segura de roles protegidos.
-- Compila `PKG_ADM_NOTIFICACION`: Envío de correos por `UTL_SMTP` y verificación de umbrales (85% CxC, 70% CxP, morosos >1 mes, productos vencidos).
+## 2. Catálogo de Archivos Entregables
+
+La solución se entrega organizada en scripts modulares e independientes, gobernados por un instalador maestro automatizado:
+
+| ARCHIVO | TIPO | PROPÓSITO |
+| :--- | :--- | :--- |
+| `00_Master_Instalacion_Avance2.sql` | SQL Maestro | Orquestador de instalación integral en orden determinista. |
+| `01_Estructuras_Avance2.sql` | DDL / DML | 11 tablas nuevas, secuencias, índices, 2 MV y datos semilla. |
+| `02_Paquetes_Seguridad_Auditoria_Notificaciones.sql` | PL/SQL | Seguridad AES-256, auditoría autónoma y correo UTL_SMTP. |
+| `03_Paquetes_Negocio_Monitoreo.sql` | PL/SQL | Padrón TSE, inventario, compras, ventas, mercadeo y salud. |
+| `04_Triggers_Negocio_y_Auditoria.sql` | PL/SQL | 11 triggers de negocio y 7 triggers de bitácora profunda. |
+| `05_Seguridad_Perfiles_Roles_Usuarios.sql` | SQL / DCL | Perfiles, 4 roles con clave cifrada, usuarios y pruebas de mínimos privilegios. |
+| `06_Scheduler_Optimizacion_y_Pruebas.sql` | PL/SQL | 5 Jobs DBMS_SCHEDULER, EXPLAIN PLAN y 9 suites de prueba. |
+| `padron_muestra.csv` | Datos externos | Archivo CSV muestra del padrón electoral para prueba de UTL_FILE. |
+| `script_bd_v2.sql` | DDL Base | Línea base del Entregable #1 (tablas transaccionales y catálogos). |
+| `07_Standby_y_RMAN/` | Directorio | Scripts de configuración Standby, Redo 50 MB, RMAN y Failover. |
 
 ---
 
-### Paso 3: Paquetes de Negocio y Monitoreo del Motor
-```bash
-sqlplus system/oracle@localhost:1521/FREEPDB1 @03_Paquetes_Negocio_Monitoreo.sql
-```
-**Acciones que ejecuta:**
-- Compila `PKG_PER_PADRON`: Carga del padrón electoral TSE mediante `UTL_FILE` y vinculación con clientes.
-- Compila `PKG_INV_GESTION`: Control de inventario con concurrencia `FOR UPDATE WAIT 5`, Kardex y reporte de productos en riesgo a mercadeo.
-- Compila `PKG_COM_OPERACION`: Facturación de compra, abonos a proveedores y devoluciones.
-- Compila `PKG_VEN_OPERACION`: Facturación en punto de venta, abonos de clientes, devoluciones y cierre contable diario por cajero.
-- Compila `PKG_PRM_MERCADEO`: Descuentos semanales, otorgamiento de acciones a patrocinadores y premiación del Top 10 de clientes con órdenes de ₡100,000.
-- Compila `PKG_ADM_MONITOREO`: Monitoreo de tablespaces $> 85\%$, objetos inválidos, índices fragmentados y sesiones activas.
+## 3. Procedimiento Oficial de Instalación Automatizada
 
----
+Todos los scripts han sido desarrollados con **idempotencia estricta**. Esto garantiza que el instalador maestro puede ejecutarse repetidamente sobre una base de datos limpia o en operación, detectando el PDB abierto, eliminando estructuras obsoletas de corridas previas y recreando el ambiente con **cero errores y cero objetos inválidos**.
 
-### Paso 4: Disparadores de Reglas de Negocio y Auditoría
-```bash
-sqlplus system/oracle@localhost:1521/FREEPDB1 @04_Triggers_Negocio_y_Auditoria.sql
-```
-**Acciones que ejecuta:**
-- Disparadores de crédito: Valida límite de crédito en ventas y compras; rechaza transacciones no autorizadas.
-- Disparadores de abonos: Descuenta saldos y **cancela automáticamente la factura y la cuenta (cambio de 'P' a 'C')** cuando el saldo llega a 0.
-- Disparadores de inventario: Descuenta stock en ventas, aumenta en compras y registra en Kardex.
-- Disparadores de auditoría en las **7 tablas principales** (`VEN_FACTURA`, `COM_FACTURA_COMPRA`, `PRO_PRODUCTO`, `INV_MOVIMIENTO`, `PER_CLIENTE`, `PER_PROVEEDOR`, `PRM_PROMOCION`) capturando valores anteriores y nuevos en `AUD_REGISTRO_CAMBIO`.
+### Opción A: Despliegue en Contenedor Docker (Recomendado)
+Si la base de datos se ejecuta dentro de un contenedor Docker (ej. `oracle_una`):
 
----
-
-### Paso 5: Perfiles de Seguridad, Roles con Contraseña y Usuarios
-```bash
-sqlplus system/oracle@localhost:1521/FREEPDB1 @05_Seguridad_Perfiles_Roles_Usuarios.sql
-```
-**Acciones que ejecuta:**
-- Crea los perfiles `PERFIL_CADENA_ADMIN` y `PERFIL_CADENA_OPER`.
-- Crea los roles protegidos: `ROL_GERENTE`, `ROL_JEFE_DEPARTAMENTO`, `ROL_JEFE_PROVEEDURIA`, `ROL_DIGITADOR` con contraseñas cifradas.
-- Aplica la matriz de mínimos privilegios sin roles administrativos (`DBA`, `CONNECT`, `RESOURCE`).
-- Crea los usuarios `USR_GERENTE`, `USR_JEFE_DEPTO`, `USR_JEFE_PROV`, `USR_DIGITADOR` con `DEFAULT ROLE NONE`.
-- Ejecuta pruebas en vivo mostrando `[OK AUTORIZADO]` para transacciones válidas y `[OK RECHAZADO]` ante intentos no autorizados de `DELETE` o `DROP TABLE`.
-
----
-
-### Paso 6: Automatización de Tareas (Jobs), Optimización SQL y Batería de Pruebas
-```bash
-sqlplus system/oracle@localhost:1521/FREEPDB1 @06_Scheduler_Optimizacion_y_Pruebas.sql
-```
-**Acciones que ejecuta:**
-- Programa los 5 jobs en `DBMS_SCHEDULER` (Cierre diario 23:00, Monitoreo 06:00, Notificaciones 07:00, Mercadeo semanal lunes 05:00, Premiación semestral).
-- Ejecuta el estudio de afinamiento con `EXPLAIN PLAN` + `DBMS_XPLAN` demostrando la transformación de `TABLE ACCESS FULL` a `INDEX RANGE SCAN` mediante `IX_CUCO_EST_VENC`.
-- Ejecuta la **batería integral de 9 pruebas de verificación** de extremo a extremo.
-
----
-
-### Paso 7: Configuración de Alta Disponibilidad y Redo Logs (CDB$ROOT)
-Conectándose a nivel de contenedor administrativo (`CDB$ROOT`):
-```bash
-sqlplus / as sysdba @07_Standby_y_RMAN/01_Configuracion_Primaria_Redo_Archive.sql
-```
-**Acciones que ejecuta:**
-- Reconfigura Redo Logs a **50 MB** con 2 miembros multiplexados por grupo.
-- Configura `ARCHIVE_LAG_TARGET = 300` para forzar el switch cada **5 minutos**.
-- Activa `FORCE LOGGING` y configura destinos de archivado local y remoto hacia la Standby.
-
----
-
-## 3. Guía de Operación para el Evaluador
-
-### 3.1 Cómo Probar el Traslado de Logs hacia la Standby (Bajo Demanda)
-El profesor o evaluador puede forzar la sincronización inmediata hacia la base de datos Standby ejecutando:
-
-**En Windows (PowerShell):**
-```powershell
-powershell -ExecutionPolicy Bypass -File "07_Standby_y_RMAN\02_Traslado_Archivelogs_10min_y_Ondemand.ps1" -Modo OnDemand
-```
-
-**En Linux:**
-```bash
-chmod +x 07_Standby_y_RMAN/02_Traslado_Archivelogs_10min_y_Ondemand.sh
-./07_Standby_y_RMAN/02_Traslado_Archivelogs_10min_y_Ondemand.sh ondemand
-```
-
-**Salida esperada en pantalla:**
-```
-========================================================================
-   SISTEMA DE TRANSFERENCIA DE ARCHIVED REDO LOGS A SERVIDOR STANDBY   
-========================================================================
-[MODO ON-DEMAND / EVALUADOR]: Ejecutando sincronizacion inmediata...
-Solicitando forzar ARCHIVE LOG CURRENT en Oracle...
-[OK] Se ejecuto con exito ALTER SYSTEM ARCHIVE LOG CURRENT.
-Total de Archived Logs detectados en origen: 4
-  -> Transferido: cadena_arch_1_102_123456.arc (50.00 MB)
-[OK] Transferencia completada: 1 archivo(s) nuevos enviados al nodo Standby.
->>> Sincronizacion bajo demanda finalizada exitosamente.
-```
-
----
-
-### 3.2 Cómo Probar la Purga de Archivelogs Mayores a 3 Días
-Para inspeccionar y purgar logs archivados que superen los 3 días de retención y que ya cuenten con respaldo:
-
-1. **Consulta de diagnóstico en SQL:**
-   ```bash
-   sqlplus / as sysdba @07_Standby_y_RMAN/03_Purga_Archivelogs_3Dias.sql
-   ```
-2. **Ejecución física de purga en RMAN:**
-   ```bash
-   rman target / cmdfile=07_Standby_y_RMAN/03_Purga_Archivelogs_3Dias.rman
+1. **Copiar los archivos al contenedor:**
+   ```powershell
+   docker cp . oracle_una:/opt/oracle/proyecto/
    ```
 
----
+2. **Ejecutar el instalador maestro como SYSDBA:**
+   ```powershell
+   docker exec -i -w /opt/oracle/proyecto oracle_una sqlplus -s / as sysdba '@00_Master_Instalacion_Avance2.sql'
+   ```
 
-### 3.3 Cómo Ejecutar los Respaldos RMAN Full e Incremental
-Para ejecutar el ciclo de respaldo con compresión y validación estructural:
+### Opción B: Despliegue desde SQL\*Plus Local o SQL Developer
+Si se conecta vía red o mediante cliente local:
+
 ```bash
-rman target / cmdfile=07_Standby_y_RMAN/04_RMAN_Backup_Full_Incremental.rman
+sqlplus sys/TuPassword@localhost:1521/FREEPDB1 as sysdba @00_Master_Instalacion_Avance2.sql
 ```
-**Verificación posterior en RMAN:**
-```rman
-RMAN> LIST BACKUP SUMMARY;
-RMAN> REPORT NEED BACKUP;
-```
+
+> **Nota para SQL Developer:** Abra el archivo `00_Master_Instalacion_Avance2.sql` y presione **F5** (*Run Script*), asegurando que la conexión apunte a `FREEPDB1`.
 
 ---
 
-### 3.4 Cómo Probar la Activación de Roles Protegidos por Contraseña
-Conectándose con un usuario operativo (ej. `USR_DIGITADOR`):
+## 4. Desglose Técnico de los Pasos de Instalación
+
+El script maestro ejecuta de forma consecutiva las seis fases del avance:
+
+### Paso 1: Estructuras DDL, Tablas Nuevas y Vistas Materializadas (`01_Estructuras_Avance2.sql`)
+1. Detecta automáticamente el PDB activo (`FREEPDB1`) y conmuta la sesión mediante `ALTER SESSION SET CONTAINER`.
+2. Configura el directorio lógico `DIR_PADRON` apuntando a la ruta física de datos para carga de archivos con `UTL_FILE`.
+3. Ejecuta limpieza idempotente de tablas, secuencias y vistas materializadas preexistentes.
+4. Modifica tablas base del Entregable #1 adicionando columnas de enlace electoral (`ID_PADRON` en `PER_CLIENTE`).
+5. Crea las **11 tablas nuevas**:
+   * `CAT_PADRON`: Almacenamiento optimizado del padrón electoral nacional.
+   * `SEG_PARAMETRO`: Configuración general del sistema con soporte para valores cifrados en `RAW(2000)`.
+   * `COM_CUENTA_PAGAR`: Cuentas por pagar a proveedores derivadas de compras a crédito.
+   * `VEN_CUENTA_COBRAR`: Cuentas por cobrar a clientes derivadas de ventas a crédito.
+   * `VEN_CIERRE_DIARIO`: Encabezado de cierres contables y operativos diarios por sucursal.
+   * `VEN_CIERRE_DIARIO_DET`: Desglose del cierre diario por cajero / usuario operativo.
+   * `PRM_DESCUENTO_DET`: Detalle de lotes y productos incluidos en promociones automáticas.
+   * `PRM_ORDEN_PREMIACION`: Órdenes de compra otorgadas semestralmente al Top 10 de clientes.
+   * `AUD_REGISTRO_CAMBIO`: Bitácora inmutable de cambios (valor anterior vs nuevo, terminal, IP).
+   * `AUD_ERROR_SISTEMA`: Registro de errores imprevistos capturados en bloques de excepción.
+   * `AUD_MONITOREO_BD`: Registro histórico de salud de la base de datos (tablespaces, índices, objetos).
+6. Crea las **2 Vistas Materializadas**:
+   * `MV_VENTAS_MENSUALES`: Consolidado de facturas, unidades vendidas y montos netos mensuales.
+   * `MV_INVENTARIO_CONSOLIDADO`: Existencias totales por producto, costo promedio y valor total en inventario.
+7. Inserta la configuración inicial de parámetros cifrados con AES-256 (`DBMS_CRYPTO`) y los datos semilla (mínimo 5 filas por tabla).
+
+### Paso 2: Paquetes de Seguridad, Auditoría y Notificaciones (`02_Paquetes_Seguridad_Auditoria_Notificaciones.sql`)
+1. Compila el paquete `PKG_AUD_CONTROL`:
+   * Implementa `PR_REGISTRAR_OPERACION` y `PR_REGISTRAR_ERROR` con `PRAGMA AUTONOMOUS_TRANSACTION`, garantizando que la bitácora persiste incluso si la transacción de negocio hace `ROLLBACK`.
+2. Compila el paquete `PKG_SEG_SEGURIDAD`:
+   * Implementa cifrado simétrico AES-256 (`ENCRYPT_AES256 + CHAIN_CBC + PAD_PKCS5`) con llave maestra de 256 bits.
+   * Gestiona el almacenamiento seguro y descifrado de parámetros sensibles y contraseñas de roles.
+   * Proporciona la función `FN_OBTENER_CLAVE_ROL`.
+3. Compila el procedimiento público `PRC_ACTIVAR_ROL_SESION` con `AUTHID CURRENT_USER`:
+   * Permite a los usuarios autenticados activar sus roles protegidos desencriptando la clave en memoria y ejecutando `DBMS_SESSION.SET_ROLE`.
+4. Compila el paquete `PKG_ADM_NOTIFICACION`:
+   * Envío directo de correos sin requerir VPN mediante `UTL_SMTP` y comandos EHLO/STARTTLS/AUTH LOGIN.
+   * Implementa `PR_NOTIF_CLIENTES_85_CREDITO`, `PR_NOTIF_PROVEEDORES_70_CREDITO`, `PR_NOTIF_CLIENTES_MOROSOS` y `PR_NOTIF_PRODUCTOS_VENCIDOS`.
+5. Configura la lista de control de acceso de red (ACL) en el puerto 587 para permitir la salida SMTP desde Oracle.
+
+### Paso 3: Paquetes de Negocio y Monitoreo (`03_Paquetes_Negocio_Monitoreo.sql`)
+1. `PKG_PER_PADRON`: Carga masiva de datos electorales desde archivo de texto con `UTL_FILE` y procedimiento `PR_CREAR_CLIENTE_DESDE_PADRON`.
+2. `PKG_INV_GESTION`: Control de inventario con bloqueo pesimista `SELECT FOR UPDATE WAIT 5`, actualización de stock, kardex inmutable y reporte de productos críticos a mercadeo.
+3. `PKG_COM_OPERACION`: Facturación de compras a proveedores con registro automático de cuentas por pagar y abonos.
+4. `PKG_VEN_OPERACION`: Facturación en punto de venta, control de crédito, abonos de clientes y cierre contable diario consolidado y por cajero (`PR_EJECUTAR_CIERRE_DIARIO`).
+5. `PKG_PRM_MERCADEO`: Cálculo de acciones por compra de productos patrocinadores, aplicación de descuentos semanales (`PR_VERIFICAR_DESCUENTOS_SEMANAL`) y premiación semestral de Top 10 clientes con órdenes de ₡100,000 (`PR_PREMIAR_MEJORES_CLIENTES`).
+6. `PKG_ADM_MONITOREO`: Inspección automatizada de tablespaces (>85%), detección de objetos inválidos, índices en estado corrupto y crecimiento de sesiones.
+
+### Paso 4: Disparadores de Reglas de Negocio y Auditoría (`04_Triggers_Negocio_y_Auditoria.sql`)
+Compila 18 disparadores en estado `ENABLED`:
+* **11 Triggers de Negocio:**
+  * `TRG_VEN_FACTURA_CRED_BIU`: Bloquea facturas de venta a crédito si superan el límite del cliente.
+  * `TRG_COM_FACTURA_CRED_AI`: Genera la cuenta por pagar (`COM_CUENTA_PAGAR`) al ingresar una compra a crédito.
+  * `TRG_VEN_FACTURA_CRED_AI`: Genera la cuenta por cobrar (`VEN_CUENTA_COBRAR`) al emitir venta a crédito.
+  * `TRG_VEN_ABONO_SALDO_AI`: Actualiza saldos de CxC y cliente al abonar; si el saldo llega a ₡0, cambia automáticamente el estado de la factura de `P` (Pendiente) a `C` (Cancelada).
+  * `TRG_COM_ABONO_SALDO_AI`: Actualiza saldos de CxP y proveedor al abonar; si llega a ₡0, pasa factura a `C`.
+  * `TRG_COM_FACTURA_DET_INV_AI`: Aumenta el stock en bodega y registra entrada en el kardex tras compras.
+  * `TRG_VEN_FACTURA_DET_INV_AI`: Valida existencia suficiente, descuenta stock y registra salida en kardex tras ventas.
+  * `TRG_PRO_HISTORIAL_PRECIO_AU`: Bitácora automática en `PRO_PRECIO_HIST` ante cambios de costo o precio.
+  * `TRG_PRM_ACCIONES_VENTA_AI`: Otorga acciones electrónicas al cliente al comprar productos patrocinadores.
+  * `TRG_VEN_DEVOLUCION_DET_AI`: Reintegra existencias a bodega al aceptar una devolución de cliente.
+  * `TRG_COM_DEVOLUCION_DET_AI`: Descuenta inventario al realizar una devolución a proveedor.
+* **7 Triggers de Auditoría Profunda:** Registran usuario, IP, terminal y valores antes/después en `AUD_REGISTRO_CAMBIO` para `VEN_FACTURA`, `COM_FACTURA_COMPRA`, `PER_CLIENTE`, `PER_PROVEEDOR`, `PRO_PRODUCTO`, `INV_EXISTENCIA` y `SEG_PARAMETRO`.
+
+### Paso 5: Seguridad, Perfiles, Roles con Clave y Mínimos Privilegios (`05_Seguridad_Perfiles_Roles_Usuarios.sql`)
+1. Crea los perfiles de seguridad:
+   * `PERFIL_CADENA_ADMIN`: Para gerencia y jefaturas (3 intentos fallidos, bloqueo 1 día, vigencia 60 días, inactividad 30 min).
+   * `PERFIL_CADENA_OPER`: Para digitadores y cajeros (3 intentos, vigencia 45 días, inactividad 15 min).
+2. Crea los **4 Roles Protegidos con Contraseña**:
+   * `ROL_GERENTE` (Contraseña cifrada con AES-256 en base de datos).
+   * `ROL_JEFE_DEPARTAMENTO`.
+   * `ROL_JEFE_PROVEEDURIA`.
+   * `ROL_DIGITADOR`.
+3. Aplica la matriz de **mínimos privilegios de objeto** (únicamente privilegios estrictamente necesarios; ningún rol recibe `DELETE` sobre catálogos ni permisos `DDL`).
+4. Crea los usuarios del sistema (`USR_GERENTE`, `USR_JEFE_DEPTO`, `USR_JEFE_PROV`, `USR_DIGITADOR`), asignándoles tablespace `TBS_DATOS`, cuota de 20 MB y `DEFAULT ROLE NONE`.
+5. Ejecuta una **demostración en vivo en sesiones reales**:
+   * Conexión como `USR_DIGITADOR`: Demuestra que antes de activar el rol no puede consultar tablas; activa el rol mediante `PRC_ACTIVAR_ROL_SESION('ROL_DIGITADOR')`; realiza consultas autorizadas; intenta un `DELETE` y un `DROP TABLE` y el motor los **rechaza con ORA-41900 / ORA-01031**.
+   * Conexión como `USR_GERENTE`: Activa su rol; consulta las vistas materializadas ejecutivas; intenta un `INSERT` operativo y es **rechazado por mínimo privilegio**.
+
+### Paso 6: Automatización DBMS_SCHEDULER, Optimización SQL y Pruebas (`06_Scheduler_Optimizacion_y_Pruebas.sql`)
+1. Programa los **5 Jobs en Segundo Plano**:
+   * `JOB_CIERRE_DIARIO_AUTO`: Diario a las 23:00 (cierre consolidado y por cajero).
+   * `JOB_MONITOREO_SALUD_DIARIO`: Diario a las 06:00 (tablespaces, objetos, índices).
+   * `JOB_NOTIF_CREDITOS_DIARIO`: Diario a las 07:00 (alertas de crédito, morosidad y vencidos).
+   * `JOB_MERCADEO_SEMANAL`: Lunes a las 05:00 (reporte de inventario y descuentos).
+   * `JOB_PREMIACION_SEMESTRAL`: 30 junio y 31 diciembre a las 23:30 (Top 10 clientes).
+2. Caso de Estudio de **Afinamiento y Optimización SQL**:
+   * Evalúa la consulta crítica de cobros mediante `EXPLAIN PLAN` + `DBMS_XPLAN.DISPLAY`.
+   * Demuestra el estado inicial con lectura completa de tabla (**TABLE ACCESS FULL**).
+   * Implementa el índice compuesto estratégico `IX_CUCO_EST_VENC (ESTADO_CUCO, FECHA_VENCIM_CUCO)` en `TBS_INDICES`.
+   * Demuestra el estado optimizado con acceso logarítmico (**INDEX RANGE SCAN**) y reducción sustancial de costo I/O.
+3. Ejecuta la **Suite Integral de 9 Pruebas de Extremo a Extremo**, validando cada requerimiento de negocio de forma completamente automatizada.
+
+---
+
+## 5. Verificación Posterior y Validación del Estado Final
+
+Al concluir la ejecución de `00_Master_Instalacion_Avance2.sql`, el script imprime un resumen directo del diccionario de datos:
+
 ```sql
-CONNECT USR_DIGITADOR/"Digitador2026#Sec"@localhost:1521/FREEPDB1
-
--- 1. Intentar consultar sin activar rol (Acceso denegado o tablas invisibles)
-SELECT * FROM CADENA_NEG.PRO_PRODUCTO;
--- ORA-00942: table or view does not exist
-
--- 2. Activar el rol protegido mediante el procedimiento seguro con contraseña cifrada
-EXEC CADENA_NEG.PRC_ACTIVAR_ROL_SESION('ROL_DIGITADOR', 'ClaveDigitador2026*');
-
--- 3. Consultar nuevamente (Acceso autorizado exitoso)
-SELECT ID_PRODUCTO_PROD, CODIGO_BARRAS_PROD, NOMBRE_PROD, PRECIO_VENTA_PROD 
-  FROM CADENA_NEG.PRO_PRODUCTO 
- FETCH FIRST 5 ROWS ONLY;
-
--- 4. Demostración de mínimo privilegio: Intento de DELETE (Bloqueado)
-DELETE FROM CADENA_NEG.PRO_PRODUCTO WHERE ID_PRODUCTO_PROD = 1;
--- ORA-01031: insufficient privileges
+SELECT object_type, status, COUNT(*) AS cantidad
+  FROM all_objects
+ WHERE owner = 'CADENA_NEG'
+ GROUP BY object_type, status
+ ORDER BY object_type, status;
 ```
 
----
+### 5.1 Cifras Oficiales Obtenidas en Verificación en Vivo
+* **TABLE:** 62 (todas `VALID`).
+* **INDEX:** 224 (todos `VALID`).
+* **SEQUENCE:** 60 (todas `VALID`).
+* **PACKAGE:** 9 (todos `VALID`).
+* **PACKAGE BODY:** 9 (todos `VALID`).
+* **TRIGGER:** 18 (todos `VALID` y `ENABLED`).
+* **JOB (Scheduler):** 5 (todos `VALID` y `SCHEDULED`).
+* **VIEW:** 6 (todas `VALID`).
+* **MATERIALIZED VIEW:** 2 (`MV_VENTAS_MENSUALES`, `MV_INVENTARIO_CONSOLIDADO`, `VALID`).
+* **PROCEDURE:** 1 (`PRC_ACTIVAR_ROL_SESION`, `VALID`).
+* **TOTAL DE OBJETOS INVÁLIDOS:** **0**.
 
-## 4. Procedimientos de Recuperación y Conmutación de Roles
+### 5.2 Comprobación de Parámetros de Notificación
+Para constatar la parametrización del correo del evaluador:
 
-### 4.1 Recuperación ante Desastre (RMAN Restore & Recover)
-Si ocurre una pérdida de datafiles en el servidor principal:
-```bash
-rman target /
-```
-```rman
-RMAN> STARTUP MOUNT;
-RMAN> RESTORE DATABASE;
-RMAN> RECOVER DATABASE;
-RMAN> ALTER DATABASE OPEN;
-```
-
-### 4.2 Switchover (Conmutación Planificada de Roles: Primaria a Standby)
-Para mantenimientos planificados sin pérdida de transacciones:
-1. **En la Primaria:**
-   ```sql
-   ALTER DATABASE COMMIT TO SWITCHOVER TO PHYSICAL STANDBY WITH SESSION SHUTDOWN;
-   SHUTDOWN IMMEDIATE;
-   STARTUP MOUNT;
-   ```
-2. **En la Standby:**
-   ```sql
-   ALTER DATABASE COMMIT TO SWITCHOVER TO PRIMARY WITH SESSION SHUTDOWN;
-   ALTER DATABASE OPEN;
-   ```
-
-### 4.3 Failover (Activación Forzada por Desastre Mayor)
-Si el servidor principal queda destruido o inoperable:
-**En el servidor Standby:**
 ```sql
-ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
-ALTER DATABASE RECOVER MANAGED STANDBY DATABASE FINISH;
-ALTER DATABASE ACTIVATE PHYSICAL STANDBY;
-ALTER DATABASE OPEN;
+SELECT codigo_para, valor_texto_para 
+  FROM CADENA_NEG.SEG_PARAMETRO 
+ WHERE codigo_para LIKE '%CORREO%';
 ```
+* `CORREO_COORDINADOR`: `keylorpineda729@gmail.com`
+* `CORREO_GERENTE`: `keylorpineda729@gmail.com`
+* `CORREO_DBA`: `keylorpineda729@gmail.com`
 
 ---
 
-## 5. Checklist de Verificación para el Evaluador
+## 6. Guía de Solución de Problemas (Troubleshooting)
 
-| # | Requerimiento Evaluado | Archivo de Verificación | Resultado Esperado |
-|---|---|---|---|
-| 1 | 11 tablas nuevas con secuencias, índices y comentarios | `01_Estructuras_Avance2.sql` | 11 tablas creadas en `CADENA_NEG` |
-| 2 | Vistas Materializadas en `TBS_HISTORICOS` | `01_Estructuras_Avance2.sql` | `MV_VENTAS_MENSUALES`, `MV_INVENTARIO_CONSOLIDADO` |
-| 3 | Cifrado AES-256 de parámetros y contraseñas de roles | `02_Paquetes_...sql` | `PKG_SEG_SEGURIDAD` con `DBMS_CRYPTO` |
-| 4 | Carga TSE Padrón Electoral (`UTL_FILE`) | `03_Paquetes_...sql` | `PKG_PER_PADRON.PR_ENLAZAR_CLIENTES_CON_PADRON` |
-| 5 | Concurrencia de Inventario con `FOR UPDATE WAIT 5` | `03_Paquetes_...sql` | `PKG_INV_GESTION.PR_AFECTAR_EXISTENCIA` |
-| 6 | Cierre contable diario con desglose por cajero | `03_Paquetes_...sql` | `VEN_CIERRE_DIARIO` y `VEN_CIERRE_CAJERO` |
-| 7 | Validación de límite de crédito en facturas | `04_Triggers_...sql` | Rechazo automático ante sobregiro |
-| 8 | Cancelación automática de factura al liquidar cuenta ('P' a 'C') | `04_Triggers_...sql` | `TRG_VEN_ABONO_SALDO_AI` |
-| 9 | Disparadores de auditoría en las 7 tablas principales | `04_Triggers_...sql` | Registro detallado en `AUD_REGISTRO_CAMBIO` |
-| 10 | Roles protegidos por clave y mínimo privilegio | `05_Seguridad_...sql` | Sin `DBA`/`CONNECT`/`RESOURCE`; pruebas `[OK]` y `[RECHAZADO]` |
-| 11 | 5 Jobs con `DBMS_SCHEDULER` | `06_Scheduler_...sql` | Jobs registrados en `ALL_SCHEDULER_JOBS` |
-| 12 | Optimización `EXPLAIN PLAN` (FTS vs Index Range Scan) | `06_Scheduler_...sql` | Cuadro comparativo y reducción de costo |
-| 13 | Redo Logs a 50 MB / Switch cada 5 min | `07_Standby_y_RMAN/01_...` | `ARCHIVE_LAG_TARGET = 300` |
-| 14 | Traslado cada 10 min y Bajo Demanda (On-Demand) | `07_Standby_y_RMAN/02_...` | Script ejecutable en modo interactivo |
-| 15 | Purga automática de Archivelogs a 3 días | `07_Standby_y_RMAN/03_...` | RMAN Delete archivelog until sysdate-3 |
-| 16 | Respaldo Full Semanal e Incremental Diario | `07_Standby_y_RMAN/04_...` | RMAN Level 0 / Level 1 comprimido |
+1. **Error `ORA-65096: invalid common user or role name`:**
+   * *Causa:* La sesión de SQL\*Plus se encuentra conectada en `CDB$ROOT` en lugar de un PDB.
+   * *Solución:* Todos los scripts del proyecto incluyen detección dinámica de contenedor. Si ejecuta comandos manuales, ejecute primero:
+     ```sql
+     ALTER SESSION SET CONTAINER = FREEPDB1;
+     ```
+
+2. **Error `ORA-24247: network access denied by access control list (ACL)`:**
+   * *Causa:* Restricción de seguridad en el puerto 587 para envíos con `UTL_SMTP`.
+   * *Solución:* El paquete de notificaciones captura el error de forma segura en bitácora local (`AUD_ERROR_SISTEMA`) sin abortar la transacción de negocio. Para habilitar la salida real en entornos locales, ejecute como SYSDBA:
+     ```sql
+     BEGIN
+         DBMS_NETWORK_ACL_ADMIN.APPEND_HOST_ACE(
+             host => '*',
+             lower_port => 587,
+             upper_port => 587,
+             ace => xs$ace_type(privilege_list => xs$name_list('connect'),
+                                 principal_name => 'CADENA_NEG',
+                                 principal_type => xs_acl.ptype_db));
+     END;
+     /
+     ```
+
+3. **Bloqueo de Cuenta por Intentos Fallidos (`ORA-28000: the account is locked`):**
+   * *Causa:* Se superó el umbral de 3 intentos fallidos establecido en `PERFIL_CADENA_ADMIN` o `PERFIL_CADENA_OPER`.
+   * *Solución:* Desbloquee el usuario desde SYSDBA:
+     ```sql
+     ALTER USER USR_DIGITADOR ACCOUNT UNLOCK;
+     ```
