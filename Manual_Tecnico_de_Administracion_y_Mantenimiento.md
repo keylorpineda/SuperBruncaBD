@@ -241,7 +241,7 @@ EXEC DBMS_STATS.GATHER_TABLE_STATS('CADENA_NEG', 'VEN_CUENTA_COBRAR', CASCADE =>
 | **Indice Empleado** | Ninguno (Full Scan) | `IX_CUCO_EST_VENC` | Indexación balanceada en `TBS_INDICES` |
 | **Tipo de Predicado** | Post-Filtro (Lee todo el bloque) | Access Predicate (Nivel raíz/rama) | Cero lecturas de bloques irrelevantes |
 | **Consumo de I/O (Buffers)** | Recorre todos los bloques asignados | Lee únicamente bloques del rango | **Reducción de I/O > 70%** |
-| **Complejidad Algorítmica** | Lineal $O(N)$ | Logarítmica $O(\log N)$ | Alta escalabilidad para millones de filas |
+| **Complejidad Algorítmica** | Lineal O(N) | Logarítmica O(log N) | Alta escalabilidad para millones de filas |
 
 ---
 
