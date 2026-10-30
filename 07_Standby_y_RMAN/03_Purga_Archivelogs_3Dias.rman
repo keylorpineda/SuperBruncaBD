@@ -1,0 +1,29 @@
+# ==============================================================================
+# PROYECTO: Sistema Integral de Cadena de Supermercados
+# MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
+# ARCHIVO:  07_Standby_y_RMAN/03_Purga_Archivelogs_3Dias.rman
+# AUTOR:    Keylor Pineda Alvarez
+# CURSO:    Administracion de Bases de Datos
+# DESCRIPCION:
+#   Script RMAN para la depuracion y purga automatica de Archived Redo Logs
+#   que superen los 3 dias de antiguedad y que ya hayan sido respaldados
+#   o transferidos al servidor Standby.
+# ==============================================================================
+
+# Conectar al catalogo/target
+CONNECT TARGET /;
+
+# 1. Realineacion de metadatos en memoria y disco
+CROSSCHECK ARCHIVELOG ALL;
+
+# 2. Eliminar referencias a archivos que ya no existan fisicamente en disco
+DELETE NOPROMPT EXPIRED ARCHIVELOG ALL;
+
+# 3. Eliminar logs archivados con mas de 3 dias de antiguedad
+# Se garantiza que hayan sido respaldados al menos una vez antes de su eliminacion
+DELETE NOPROMPT ARCHIVELOG UNTIL TIME 'SYSDATE-3' 
+    BACKED UP 1 TIMES TO DEVICE TYPE DISK;
+
+# 4. Reporte de espacio liberado en el Fast Recovery Area
+SHOW ALL;
+EXIT;

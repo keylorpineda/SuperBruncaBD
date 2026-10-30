@@ -1,0 +1,101 @@
+# ==============================================================================
+# PROYECTO: Sistema Integral de Cadena de Supermercados
+# MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
+# ARCHIVO:  07_Standby_y_RMAN/04_RMAN_Backup_Full_Incremental.rman
+# AUTOR:    Keylor Pineda Alvarez
+# CURSO:    Administracion de Bases de Datos
+# DESCRIPCION:
+#   Estrategia integral de respaldo con Oracle Recovery Manager (RMAN):
+#   - Configuracion de politicas de retencion y compresion BZIP2/ZLIB.
+#   - Respaldo Nivel 0 (Full Semanal) con Controlfile y Archivelogs.
+#   - Respaldo Nivel 1 (Incremental Diario) diferencial/acumulativo.
+#   - Validacion de integridad fisica y logica de los respaldos.
+# ==============================================================================
+
+CONNECT TARGET /;
+
+# ------------------------------------------------------------------------------
+# 1. CONFIGURACION DE PARAMETROS PERSISTENTES DE RMAN
+# ------------------------------------------------------------------------------
+CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 14 DAYS;
+CONFIGURE BACKUP OPTIMIZATION ON;
+CONFIGURE DEFAULT DEVICE TYPE TO DISK;
+CONFIGURE CONTROLFILE AUTOBACKUP ON;
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '%F';
+CONFIGURE DEVICE TYPE DISK BACKUP TYPE TO COMPRESSED BACKUPSET PARALLELISM 2;
+CONFIGURE ENCRYPTION FOR DATABASE OFF;
+
+# ------------------------------------------------------------------------------
+# 2. BLOQUE A: RESPALDO FULL SEMANAL (INCREMENTAL NIVEL 0)
+# Se ejecuta semanalmente (los domingos a medianoche)
+# ------------------------------------------------------------------------------
+RUN {
+    ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
+    ALLOCATE CHANNEL ch2 DEVICE TYPE DISK;
+
+    # Forzar generacion de log previo
+    SQL 'ALTER SYSTEM ARCHIVE LOG CURRENT';
+
+    # Respaldo completo Nivel 0 de la base de datos completa y PDBs
+    BACKUP AS COMPRESSED BACKUPSET
+        INCREMENTAL LEVEL 0
+        DATABASE
+        TAG 'CADENA_FULL_LVL0'
+        FORMAT 'bkp_lvl0_%d_%T_%s_%p.bkp';
+
+    # Respaldo de los Archived Redo Logs generados durante el proceso
+    BACKUP AS COMPRESSED BACKUPSET
+        ARCHIVELOG ALL
+        TAG 'CADENA_ARCH_LVL0'
+        FORMAT 'bkp_arch_%d_%T_%s_%p.bkp';
+
+    # Respaldo de controlfile actual y spfile
+    BACKUP CURRENT CONTROLFILE
+        TAG 'CADENA_CTRL_LVL0'
+        FORMAT 'bkp_ctrl_%d_%T_%s_%p.bkp';
+
+    RELEASE CHANNEL ch1;
+    RELEASE CHANNEL ch2;
+}
+
+# ------------------------------------------------------------------------------
+# 3. BLOQUE B: RESPALDO INCREMENTAL DIARIO (INCREMENTAL NIVEL 1)
+# Se ejecuta diariamente (lunes a sabado a las 22:00)
+# Solo respalda los bloques modificados desde el ultimo Nivel 0 o Nivel 1
+# ------------------------------------------------------------------------------
+RUN {
+    ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
+
+    SQL 'ALTER SYSTEM ARCHIVE LOG CURRENT';
+
+    BACKUP AS COMPRESSED BACKUPSET
+        INCREMENTAL LEVEL 1
+        DATABASE
+        TAG 'CADENA_INCR_LVL1'
+        FORMAT 'bkp_lvl1_%d_%T_%s_%p.bkp';
+
+    BACKUP AS COMPRESSED BACKUPSET
+        ARCHIVELOG ALL
+        TAG 'CADENA_ARCH_LVL1'
+        FORMAT 'bkp_arch_lvl1_%d_%T_%s_%p.bkp';
+
+    BACKUP CURRENT CONTROLFILE
+        TAG 'CADENA_CTRL_LVL1'
+        FORMAT 'bkp_ctrl_lvl1_%d_%T_%s_%p.bkp';
+
+    RELEASE CHANNEL ch1;
+}
+
+# ------------------------------------------------------------------------------
+# 4. MANTENIMIENTO, PURGA DE OBSOLETOS Y VALIDACION DE INTEGRIDAD
+# ------------------------------------------------------------------------------
+CROSSCHECK BACKUP;
+CROSSCHECK ARCHIVELOG ALL;
+DELETE NOPROMPT EXPIRED BACKUP;
+DELETE NOPROMPT OBSOLETE;
+
+# Validacion estructural sin restaurar datos fisicos
+RESTORE VALIDATE DATABASE;
+RESTORE VALIDATE CONTROLFILE;
+
+EXIT;

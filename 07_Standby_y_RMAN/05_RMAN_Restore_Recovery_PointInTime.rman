@@ -1,0 +1,69 @@
+# ==============================================================================
+# PROYECTO: Sistema Integral de Cadena de Supermercados
+# MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
+# ARCHIVO:  07_Standby_y_RMAN/05_RMAN_Restore_Recovery_PointInTime.rman
+# AUTOR:    Keylor Pineda Alvarez
+# CURSO:    Administracion de Bases de Datos
+# DESCRIPCION:
+#   Procedimientos de Restauracion y Recuperacion con RMAN:
+#   1. Recuperacion completa hasta el ultimo segundo (Complete Recovery).
+#   2. Recuperacion puntual en el tiempo (Point-In-Time Recovery - DBRITP).
+#   3. Restauracion granular de Datafile o PDB especifica.
+# ==============================================================================
+
+CONNECT TARGET /;
+
+# ------------------------------------------------------------------------------
+# ESCENARIO 1: RECUPERACION COMPLETA ANTE PERDIDA DE DATAFILES
+# (Base de datos montada, recuperacion hasta el ultimo commit)
+# ------------------------------------------------------------------------------
+# STARTUP MOUNT;
+RUN {
+    ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
+    ALLOCATE CHANNEL ch2 DEVICE TYPE DISK;
+
+    # Restaurar datafiles a partir de las piezas de respaldo
+    RESTORE DATABASE;
+
+    # Aplicar respaldos incrementales y archived redo logs disponibles
+    RECOVER DATABASE;
+
+    RELEASE CHANNEL ch1;
+    RELEASE CHANNEL ch2;
+}
+# ALTER DATABASE OPEN;
+
+# ------------------------------------------------------------------------------
+# ESCENARIO 2: POINT-IN-TIME RECOVERY (RECUPERACION PUNTUAL EN EL TIEMPO)
+# Utilizado ante errores humanos catastroficos (ej. DROP TABLE o TRUNCATE masivo)
+# Se recupera el estado exacto de la base de datos hasta un minuto antes del error.
+# ------------------------------------------------------------------------------
+# STARTUP MOUNT;
+RUN {
+    # Definir la estampa de tiempo limite de recuperacion
+    SET UNTIL TIME "TO_DATE('2026-10-29 14:30:00', 'YYYY-MM-DD HH24:MI:SS')";
+
+    ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
+
+    RESTORE DATABASE;
+    RECOVER DATABASE;
+
+    RELEASE CHANNEL ch1;
+}
+# Apertura obligatoria con RESETLOGS al hacer recuperacion incompleta
+# ALTER DATABASE OPEN RESETLOGS;
+
+# ------------------------------------------------------------------------------
+# ESCENARIO 3: RESTAURACION ESPECIFICA DE UN PLUGGABLE DATABASE (PDB)
+# Sin necesidad de bajar la base de datos contenedora (CDB) completa
+# ------------------------------------------------------------------------------
+# ALTER PLUGGABLE DATABASE FREEPDB1 CLOSE;
+RUN {
+    ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
+    RESTORE PLUGGABLE DATABASE FREEPDB1;
+    RECOVER PLUGGABLE DATABASE FREEPDB1;
+    RELEASE CHANNEL ch1;
+}
+# ALTER PLUGGABLE DATABASE FREEPDB1 OPEN;
+
+EXIT;
