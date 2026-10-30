@@ -1,0 +1,1162 @@
+--------------------------------------------------------------------------------
+-- UNIVERSIDAD NACIONAL - SEDE REGIONAL BRUNCA
+-- ADMINISTRACION DE BASES DE DATOS - II CICLO 2026
+-- PROYECTO: BASE DE DATOS PARA UNA CADENA DE NEGOCIOS
+-- ESTUDIANTE: KEYLOR PINEDA ALVAREZ
+-- ENTREGABLE #2 - ARCHIVO 01: ADAPTACIONES DDL, TABLAS NUEVAS Y VISTAS MAT.
+--
+-- REQUISITO PREVIO: Haber ejecutado script_bd_v2.sql (Entregable #1).
+-- ORDEN DE EJECUCION: 01 -> 02 -> 03 -> 04 -> 05 -> 06
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- PASO PREVIO: Contenedor PDB y privilegios adicionales para CADENA_NEG
+--------------------------------------------------------------------------------
+SET SERVEROUTPUT ON SIZE UNLIMITED
+SET DEFINE OFF
+WHENEVER SQLERROR CONTINUE
+
+DECLARE
+    v_contenedor VARCHAR2(128);
+    v_pdb        VARCHAR2(128);
+BEGIN
+    v_contenedor := SYS_CONTEXT('USERENV', 'CON_NAME');
+    DBMS_OUTPUT.PUT_LINE('Contenedor actual: ' || v_contenedor);
+
+    IF v_contenedor = 'CDB$ROOT' THEN
+        SELECT name INTO v_pdb
+          FROM v$pdbs
+         WHERE open_mode LIKE 'READ WRITE%'
+           AND name <> 'PDB$SEED'
+           AND ROWNUM = 1;
+
+        EXECUTE IMMEDIATE 'ALTER SESSION SET CONTAINER = ' || v_pdb;
+        DBMS_OUTPUT.PUT_LINE('Sesion cambiada al PDB: ' || v_pdb);
+    END IF;
+END;
+/
+
+-- Privilegios requeridos por el esquema CADENA_NEG para el Entregable #2
+-- (DBMS_CRYPTO, UTL_SMTP, UTL_FILE, DBMS_SCHEDULER, Roles y Diccionario de Monitoreo)
+DECLARE
+    PROCEDURE otorgar(p_sql IN VARCHAR2) IS
+    BEGIN
+        EXECUTE IMMEDIATE p_sql;
+    EXCEPTION
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('Aviso en privilegio (' || p_sql || '): ' || SQLERRM);
+    END;
+BEGIN
+    otorgar('GRANT CREATE JOB TO CADENA_NEG');
+    otorgar('GRANT CREATE ROLE TO CADENA_NEG');
+    otorgar('GRANT ALTER ANY ROLE TO CADENA_NEG');
+    otorgar('GRANT CREATE ANY DIRECTORY TO CADENA_NEG');
+    otorgar('GRANT EXECUTE ON SYS.DBMS_CRYPTO TO CADENA_NEG');
+    otorgar('GRANT EXECUTE ON SYS.UTL_SMTP TO CADENA_NEG');
+    otorgar('GRANT EXECUTE ON SYS.UTL_TCP TO CADENA_NEG');
+    otorgar('GRANT EXECUTE ON SYS.UTL_FILE TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.DBA_TABLESPACES TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.DBA_DATA_FILES TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.DBA_FREE_SPACE TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.DBA_TABLESPACE_USAGE_METRICS TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.DBA_OBJECTS TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.DBA_INDEXES TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.DBA_SEGMENTS TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.DBA_ROLES TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.V_$SESSION TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.V_$DATABASE TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.V_$LOG TO CADENA_NEG');
+    otorgar('GRANT SELECT ON SYS.V_$ARCHIVED_LOG TO CADENA_NEG');
+END;
+/
+
+-- Directorio logico DIR_PADRON para la carga automatica del Padron Nacional
+DECLARE
+    v_ruta VARCHAR2(512);
+    v_arch VARCHAR2(512);
+    v_pos  NUMBER;
+BEGIN
+    SELECT file_name INTO v_arch FROM dba_data_files WHERE ROWNUM = 1;
+    v_pos  := GREATEST(INSTR(v_arch, '/', -1), INSTR(v_arch, '\', -1));
+    v_ruta := SUBSTR(v_arch, 1, v_pos - 1);
+
+    EXECUTE IMMEDIATE 'CREATE OR REPLACE DIRECTORY DIR_PADRON AS ''' || v_ruta || '''';
+    EXECUTE IMMEDIATE 'GRANT READ, WRITE ON DIRECTORY DIR_PADRON TO CADENA_NEG';
+    DBMS_OUTPUT.PUT_LINE('Directorio DIR_PADRON configurado en: ' || v_ruta);
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Aviso creando DIR_PADRON: ' || SQLERRM);
+END;
+/
+
+ALTER SESSION SET CURRENT_SCHEMA = CADENA_NEG;
+
+--------------------------------------------------------------------------------
+-- SECCION 1: LIMPIEZA IDEMPOTENTE DE OBJETOS DEL AVANCE #2
+--------------------------------------------------------------------------------
+DECLARE
+    PROCEDURE borrar_mv(p_nombre IN VARCHAR2) IS
+    BEGIN
+        EXECUTE IMMEDIATE 'DROP MATERIALIZED VIEW ' || p_nombre;
+        DBMS_OUTPUT.PUT_LINE('Vista materializada ' || p_nombre || ' eliminada.');
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLCODE != -12003 THEN RAISE; END IF;
+    END;
+
+    PROCEDURE borrar_tabla(p_nombre IN VARCHAR2) IS
+    BEGIN
+        EXECUTE IMMEDIATE 'DROP TABLE ' || p_nombre || ' CASCADE CONSTRAINTS PURGE';
+        DBMS_OUTPUT.PUT_LINE('Tabla ' || p_nombre || ' eliminada.');
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLCODE != -942 THEN RAISE; END IF;
+    END;
+
+    PROCEDURE borrar_seq(p_nombre IN VARCHAR2) IS
+    BEGIN
+        EXECUTE IMMEDIATE 'DROP SEQUENCE ' || p_nombre;
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLCODE != -2289 THEN RAISE; END IF;
+    END;
+BEGIN
+    borrar_mv('MV_VENTAS_MENSUALES');
+    borrar_mv('MV_INVENTARIO_CONSOLIDADO');
+
+    -- Quitar FK e indice de PER_CLIENTE a CAT_PADRON si ya existian de una corrida previa
+    BEGIN
+        EXECUTE IMMEDIATE 'ALTER TABLE PER_CLIENTE DROP CONSTRAINT FK_CLI_PADR';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+        EXECUTE IMMEDIATE 'DROP INDEX IX_CLI_PADR';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+
+    borrar_tabla('AUD_MONITOREO_BD');
+    borrar_tabla('AUD_ERROR_SISTEMA');
+    borrar_tabla('AUD_REGISTRO_CAMBIO');
+    borrar_tabla('PRM_ORDEN_PREMIACION');
+    borrar_tabla('PRM_DESCUENTO_DET');
+    borrar_tabla('VEN_CIERRE_DIARIO_DET');
+    borrar_tabla('VEN_CIERRE_DIARIO');
+    borrar_tabla('VEN_CUENTA_COBRAR');
+    borrar_tabla('COM_CUENTA_PAGAR');
+    borrar_tabla('SEG_PARAMETRO');
+    borrar_tabla('CAT_PADRON');
+
+    borrar_seq('SEQ_AUD_MONITOREO_BD');
+    borrar_seq('SEQ_AUD_ERROR_SISTEMA');
+    borrar_seq('SEQ_AUD_REGISTRO_CAMBIO');
+    borrar_seq('SEQ_PRM_ORDEN_PREMIACION');
+    borrar_seq('SEQ_PRM_DESCUENTO_DET');
+    borrar_seq('SEQ_VEN_CIERRE_DIARIO_DET');
+    borrar_seq('SEQ_VEN_CIERRE_DIARIO');
+    borrar_seq('SEQ_VEN_CUENTA_COBRAR');
+    borrar_seq('SEQ_COM_CUENTA_PAGAR');
+    borrar_seq('SEQ_SEG_PARAMETRO');
+    borrar_seq('SEQ_CAT_PADRON');
+END;
+/
+
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+
+--------------------------------------------------------------------------------
+-- SECCION 2: ADAPTACIONES A TABLAS EXISTENTES DEL ENTREGABLE #1
+--------------------------------------------------------------------------------
+-- 2.1 Agregar SALDO_ACTUAL_CLI e ID_PADRON a PER_CLIENTE
+--     y SALDO_ACTUAL_PROVE a PER_PROVEEDOR, mas estados P (Pendiente) y C (Cancelada)
+--     en VEN_FACTURA y COM_FACTURA_COMPRA.
+DECLARE
+    v_existe NUMBER;
+BEGIN
+    -- Columna SALDO_ACTUAL_CLI en PER_CLIENTE
+    SELECT COUNT(*) INTO v_existe
+      FROM all_tab_columns
+     WHERE owner = 'CADENA_NEG'
+       AND table_name = 'PER_CLIENTE'
+       AND column_name = 'SALDO_ACTUAL_CLI';
+
+    IF v_existe = 0 THEN
+        EXECUTE IMMEDIATE 'ALTER TABLE PER_CLIENTE ADD (
+            SALDO_ACTUAL_CLI NUMBER(14,2) DEFAULT 0 NOT NULL,
+            CONSTRAINT CK_CLI_SALDO_ACTUAL CHECK (SALDO_ACTUAL_CLI >= 0)
+        )';
+        EXECUTE IMMEDIATE 'COMMENT ON COLUMN PER_CLIENTE.SALDO_ACTUAL_CLI IS ''Saldo acumulado pendiente de pago que debe el cliente en cuentas por cobrar.''';
+    END IF;
+
+    -- Columna ID_PADRON en PER_CLIENTE (enlace al Padron Nacional)
+    SELECT COUNT(*) INTO v_existe
+      FROM all_tab_columns
+     WHERE owner = 'CADENA_NEG'
+       AND table_name = 'PER_CLIENTE'
+       AND column_name = 'ID_PADRON';
+
+    IF v_existe = 0 THEN
+        EXECUTE IMMEDIATE 'ALTER TABLE PER_CLIENTE ADD (ID_PADRON NUMBER(10))';
+        EXECUTE IMMEDIATE 'COMMENT ON COLUMN PER_CLIENTE.ID_PADRON IS ''Enlace al registro del Padron Nacional (CAT_PADRON) para clientes nacionales.''';
+    END IF;
+
+    -- Columna SALDO_ACTUAL_PROVE en PER_PROVEEDOR
+    SELECT COUNT(*) INTO v_existe
+      FROM all_tab_columns
+     WHERE owner = 'CADENA_NEG'
+       AND table_name = 'PER_PROVEEDOR'
+       AND column_name = 'SALDO_ACTUAL_PROVE';
+
+    IF v_existe = 0 THEN
+        EXECUTE IMMEDIATE 'ALTER TABLE PER_PROVEEDOR ADD (
+            SALDO_ACTUAL_PROVE NUMBER(14,2) DEFAULT 0 NOT NULL,
+            CONSTRAINT CK_PROVE_SALDO_ACTUAL CHECK (SALDO_ACTUAL_PROVE >= 0)
+        )';
+        EXECUTE IMMEDIATE 'COMMENT ON COLUMN PER_PROVEEDOR.SALDO_ACTUAL_PROVE IS ''Saldo acumulado pendiente de pago que el negocio le debe al proveedor en cuentas por pagar.''';
+    END IF;
+
+    -- Ampliar CK_FAVE_ESTADO en VEN_FACTURA para admitir P=Pendiente y C=Cancelada
+    BEGIN
+        EXECUTE IMMEDIATE 'ALTER TABLE VEN_FACTURA DROP CONSTRAINT CK_FAVE_ESTADO';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    EXECUTE IMMEDIATE 'ALTER TABLE VEN_FACTURA ADD CONSTRAINT CK_FAVE_ESTADO CHECK (ESTADO_FAVE IN (''P'',''C'',''A'',''N''))';
+    EXECUTE IMMEDIATE 'COMMENT ON COLUMN VEN_FACTURA.ESTADO_FAVE IS ''Estado de la factura: P=Pendiente de cancelar, C=Cancelada, A=Activa (contado), N=Anulada.''';
+
+    -- Ampliar CK_FACO_ESTADO en COM_FACTURA_COMPRA para admitir P=Pendiente y C=Cancelada
+    BEGIN
+        EXECUTE IMMEDIATE 'ALTER TABLE COM_FACTURA_COMPRA DROP CONSTRAINT CK_FACO_ESTADO';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    EXECUTE IMMEDIATE 'ALTER TABLE COM_FACTURA_COMPRA ADD CONSTRAINT CK_FACO_ESTADO CHECK (ESTADO_FACO IN (''P'',''C'',''A'',''N''))';
+    EXECUTE IMMEDIATE 'COMMENT ON COLUMN COM_FACTURA_COMPRA.ESTADO_FACO IS ''Estado de la factura de compra: P=Pendiente de pago, C=Cancelada, A=Activa (contado), N=Anulada.''';
+END;
+/
+
+-- Actualizar las vistas V_CUENTA_PAGAR y V_CUENTA_COBRAR para considerar los estados P, C y A
+CREATE OR REPLACE VIEW V_CUENTA_PAGAR AS
+SELECT f.ID_FACTURA_COMPRA,
+       f.ID_PROVEEDOR,
+       f.NUM_FACTURA_FACO,
+       f.FECHA_FACO                                               AS FECHA_EMISION,
+       f.FECHA_VENCIM_FACO                                        AS FECHA_VENCIMIENTO,
+       f.TOTAL_FACO                                               AS MONTO_ORIGINAL,
+       NVL(a.ABONADO, 0)                                          AS MONTO_ABONADO,
+       f.TOTAL_FACO - NVL(a.ABONADO, 0)                           AS SALDO,
+       a.ULTIMO_ABONO                                             AS FECHA_ULTIMO_ABONO,
+       CASE WHEN f.TOTAL_FACO - NVL(a.ABONADO, 0) <= 0 THEN 'CANCELADA'
+            WHEN NVL(a.ABONADO, 0) > 0                 THEN 'ABONADA'
+            ELSE 'PENDIENTE' END                                  AS ESTADO
+  FROM COM_FACTURA_COMPRA f
+       LEFT JOIN (SELECT ID_FACTURA_COMPRA,
+                         SUM(MONTO_ABPA) AS ABONADO,
+                         MAX(FECHA_ABPA) AS ULTIMO_ABONO
+                    FROM COM_ABONO_PAGAR
+                   WHERE ESTADO_ABPA = 'A'
+                   GROUP BY ID_FACTURA_COMPRA) a ON a.ID_FACTURA_COMPRA = f.ID_FACTURA_COMPRA
+ WHERE f.ES_CREDITO_FACO = 'S'
+   AND f.ESTADO_FACO <> 'N';
+
+CREATE OR REPLACE VIEW V_CUENTA_COBRAR AS
+SELECT f.ID_FACTURA_VENTA,
+       f.ID_CLIENTE,
+       f.ID_SUCURSAL,
+       f.NUM_FACTURA_FAVE,
+       f.FECHA_FAVE                                               AS FECHA_EMISION,
+       f.FECHA_VENCIM_FAVE                                        AS FECHA_VENCIMIENTO,
+       f.TOTAL_FAVE                                               AS MONTO_ORIGINAL,
+       NVL(a.ABONADO, 0)                                          AS MONTO_ABONADO,
+       f.TOTAL_FAVE - NVL(a.ABONADO, 0)                           AS SALDO,
+       a.ULTIMO_ABONO                                             AS FECHA_ULTIMO_ABONO,
+       CASE WHEN f.TOTAL_FAVE - NVL(a.ABONADO, 0) <= 0 THEN 'CANCELADA'
+            WHEN NVL(a.ABONADO, 0) > 0                 THEN 'ABONADA'
+            ELSE 'PENDIENTE' END                                  AS ESTADO
+  FROM VEN_FACTURA f
+       LEFT JOIN (SELECT ID_FACTURA_VENTA,
+                         SUM(MONTO_ABCO) AS ABONADO,
+                         MAX(FECHA_ABCO) AS ULTIMO_ABONO
+                    FROM VEN_ABONO_COBRAR
+                   WHERE ESTADO_ABCO = 'A'
+                   GROUP BY ID_FACTURA_VENTA) a ON a.ID_FACTURA_VENTA = f.ID_FACTURA_VENTA
+ WHERE f.ES_CREDITO_FAVE = 'S'
+   AND f.ESTADO_FAVE <> 'N';
+
+--------------------------------------------------------------------------------
+-- SECCION 3: CREACION DE SECUENCIAS Y TABLAS NUEVAS DEL AVANCE #2
+--------------------------------------------------------------------------------
+
+-- 3.1 SECUENCIAS NUEVAS
+CREATE SEQUENCE SEQ_CAT_PADRON            START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_SEG_PARAMETRO         START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_COM_CUENTA_PAGAR      START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_VEN_CUENTA_COBRAR     START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_VEN_CIERRE_DIARIO     START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_VEN_CIERRE_DIARIO_DET START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_PRM_DESCUENTO_DET     START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_PRM_ORDEN_PREMIACION  START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_AUD_REGISTRO_CAMBIO   START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_AUD_ERROR_SISTEMA     START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_AUD_MONITOREO_BD      START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+
+-- 3.2 TABLA: CAT_PADRON (Modulo CAT_ - Padron Electoral Nacional TSE)
+CREATE TABLE CAT_PADRON (
+    ID_PADRON             NUMBER(10)    DEFAULT SEQ_CAT_PADRON.NEXTVAL NOT NULL,
+    ID_DISTRITO           NUMBER(10),
+    CEDULA_PADR           VARCHAR2(15)  NOT NULL,
+    COD_ELECTORAL_PADR    VARCHAR2(6)   NOT NULL,
+    SEXO_PADR             VARCHAR2(1)   DEFAULT 'M' NOT NULL,
+    FECHA_VENC_CED_PADR   DATE          NOT NULL,
+    JUNTA_RECEPTORA_PADR  VARCHAR2(5)   DEFAULT '00000' NOT NULL,
+    NOMBRE_PADR           VARCHAR2(40)  NOT NULL,
+    APELLIDO1_PADR        VARCHAR2(40)  NOT NULL,
+    APELLIDO2_PADR        VARCHAR2(40),
+    ESTADO_PADR           VARCHAR2(1)   DEFAULT 'A' NOT NULL,
+    USUARIO_CREA_PADR     VARCHAR2(30)  DEFAULT USER NOT NULL,
+    FECHA_CREA_PADR       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+    USUARIO_MOD_PADR      VARCHAR2(30),
+    FECHA_MOD_PADR        TIMESTAMP,
+    CONSTRAINT PK_PADR PRIMARY KEY (ID_PADRON)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT FK_PADR_DIST FOREIGN KEY (ID_DISTRITO)
+        REFERENCES CAT_DISTRITO (ID_DISTRITO),
+    CONSTRAINT UK_PADR_CEDULA UNIQUE (CEDULA_PADR)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT CK_PADR_CEDULA CHECK (REGEXP_LIKE(CEDULA_PADR, '^[1-9][0-9]{8}$')),
+    CONSTRAINT CK_PADR_SEXO CHECK (SEXO_PADR IN ('M','F','O')),
+    CONSTRAINT CK_PADR_ESTADO CHECK (ESTADO_PADR IN ('A','I'))
+) TABLESPACE TBS_DATOS;
+
+COMMENT ON TABLE  CAT_PADRON                      IS 'Padron Nacional Electoral (TSE). Se enlaza con PER_CLIENTE para obtener automaticamente los datos basicos de las personas.';
+COMMENT ON COLUMN CAT_PADRON.ID_PADRON            IS 'Identificador unico del registro en el padron.';
+COMMENT ON COLUMN CAT_PADRON.ID_DISTRITO          IS 'Distrito electoral asociado. FK a CAT_DISTRITO.';
+COMMENT ON COLUMN CAT_PADRON.CEDULA_PADR          IS 'Numero de cedula de identidad costarricense (9 digitos).';
+COMMENT ON COLUMN CAT_PADRON.COD_ELECTORAL_PADR   IS 'Codigo electoral de 6 digitos del TSE (Provincia-Canton-Distrito).';
+COMMENT ON COLUMN CAT_PADRON.SEXO_PADR            IS 'Sexo registrado: M=Masculino, F=Femenino, O=Otro.';
+COMMENT ON COLUMN CAT_PADRON.FECHA_VENC_CED_PADR  IS 'Fecha de vencimiento de la cedula de identidad.';
+COMMENT ON COLUMN CAT_PADRON.JUNTA_RECEPTORA_PADR IS 'Numero de junta receptora de votos.';
+COMMENT ON COLUMN CAT_PADRON.NOMBRE_PADR          IS 'Nombre de pila oficial segun el TSE.';
+COMMENT ON COLUMN CAT_PADRON.APELLIDO1_PADR       IS 'Primer apellido oficial segun el TSE.';
+COMMENT ON COLUMN CAT_PADRON.APELLIDO2_PADR       IS 'Segundo apellido oficial segun el TSE.';
+COMMENT ON COLUMN CAT_PADRON.ESTADO_PADR          IS 'Estado del registro: A=Activo, I=Inactivo.';
+COMMENT ON COLUMN CAT_PADRON.USUARIO_CREA_PADR    IS 'Usuario de base de datos que inserto el registro.';
+COMMENT ON COLUMN CAT_PADRON.FECHA_CREA_PADR      IS 'Fecha y hora de creacion del registro.';
+COMMENT ON COLUMN CAT_PADRON.USUARIO_MOD_PADR     IS 'Usuario de base de datos que realizo la ultima modificacion.';
+COMMENT ON COLUMN CAT_PADRON.FECHA_MOD_PADR       IS 'Fecha y hora de la ultima modificacion.';
+
+-- Enlazar PER_CLIENTE con CAT_PADRON
+ALTER TABLE PER_CLIENTE
+    ADD CONSTRAINT FK_CLI_PADR FOREIGN KEY (ID_PADRON)
+        REFERENCES CAT_PADRON (ID_PADRON);
+
+-- 3.3 TABLA: SEG_PARAMETRO (Modulo SEG_ - Parametrizacion y Cifrado DBMS_CRYPTO)
+CREATE TABLE SEG_PARAMETRO (
+    ID_PARAMETRO       NUMBER(10)     DEFAULT SEQ_SEG_PARAMETRO.NEXTVAL NOT NULL,
+    CODIGO_PARA        VARCHAR2(40)   NOT NULL,
+    MODULO_PARA        VARCHAR2(20)   NOT NULL,
+    NOMBRE_PARA        VARCHAR2(100)  NOT NULL,
+    DESCRIPCION_PARA   VARCHAR2(250)  NOT NULL,
+    ES_CIFRADO_PARA    VARCHAR2(1)    DEFAULT 'N' NOT NULL,
+    VALOR_TEXTO_PARA   VARCHAR2(500),
+    VALOR_NUM_PARA     NUMBER(14,4),
+    VALOR_RAW_PARA     RAW(2000),
+    ESTADO_PARA        VARCHAR2(1)    DEFAULT 'A' NOT NULL,
+    USUARIO_CREA_PARA  VARCHAR2(30)   DEFAULT USER NOT NULL,
+    FECHA_CREA_PARA    TIMESTAMP      DEFAULT SYSTIMESTAMP NOT NULL,
+    USUARIO_MOD_PARA   VARCHAR2(30),
+    FECHA_MOD_PARA     TIMESTAMP,
+    CONSTRAINT PK_PARA PRIMARY KEY (ID_PARAMETRO)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT UK_PARA_CODIGO UNIQUE (CODIGO_PARA)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT CK_PARA_MODULO CHECK (MODULO_PARA IN ('CORREO','SEGURIDAD','NEGOCIO','MONITOREO','STANDBY')),
+    CONSTRAINT CK_PARA_CIFRADO CHECK (ES_CIFRADO_PARA IN ('S','N')),
+    CONSTRAINT CK_PARA_ESTADO CHECK (ESTADO_PARA IN ('A','I'))
+) TABLESPACE TBS_DATOS;
+
+COMMENT ON TABLE  SEG_PARAMETRO                   IS 'Tabla central de parametros del sistema. Almacena umbrales, correos y claves cifradas mediante DBMS_CRYPTO.';
+COMMENT ON COLUMN SEG_PARAMETRO.ID_PARAMETRO      IS 'Identificador unico del parametro.';
+COMMENT ON COLUMN SEG_PARAMETRO.CODIGO_PARA       IS 'Codigo unico del parametro consultado por los paquetes PL/SQL.';
+COMMENT ON COLUMN SEG_PARAMETRO.MODULO_PARA       IS 'Categoria del parametro: CORREO, SEGURIDAD, NEGOCIO, MONITOREO o STANDBY.';
+COMMENT ON COLUMN SEG_PARAMETRO.NOMBRE_PARA       IS 'Nombre descriptivo corto del parametro.';
+COMMENT ON COLUMN SEG_PARAMETRO.DESCRIPCION_PARA  IS 'Explicacion detallada del uso del parametro.';
+COMMENT ON COLUMN SEG_PARAMETRO.ES_CIFRADO_PARA   IS 'Indica si el valor sensible se almacena cifrado en VALOR_RAW_PARA: S=Si, N=No.';
+COMMENT ON COLUMN SEG_PARAMETRO.VALOR_TEXTO_PARA  IS 'Valor en texto plano cuando ES_CIFRADO_PARA = N.';
+COMMENT ON COLUMN SEG_PARAMETRO.VALOR_NUM_PARA    IS 'Valor numerico parametrizado (porcentajes, dias, meses, montos, MB, minutos).';
+COMMENT ON COLUMN SEG_PARAMETRO.VALOR_RAW_PARA    IS 'Valor binario cifrado con DBMS_CRYPTO (AES-256) para claves de correo y de roles.';
+COMMENT ON COLUMN SEG_PARAMETRO.ESTADO_PARA       IS 'Estado del parametro: A=Activo, I=Inactivo.';
+COMMENT ON COLUMN SEG_PARAMETRO.USUARIO_CREA_PARA IS 'Usuario de base de datos que inserto el registro.';
+COMMENT ON COLUMN SEG_PARAMETRO.FECHA_CREA_PARA   IS 'Fecha y hora de creacion del registro.';
+COMMENT ON COLUMN SEG_PARAMETRO.USUARIO_MOD_PARA  IS 'Usuario de base de datos que realizo la ultima modificacion.';
+COMMENT ON COLUMN SEG_PARAMETRO.FECHA_MOD_PARA    IS 'Fecha y hora de la ultima modificacion.';
+
+-- 3.4 TABLA: COM_CUENTA_PAGAR (Modulo COM_ - Detalle de Cuentas por Pagar)
+CREATE TABLE COM_CUENTA_PAGAR (
+    ID_CUENTA_PAGAR       NUMBER(12)    DEFAULT SEQ_COM_CUENTA_PAGAR.NEXTVAL NOT NULL,
+    ID_FACTURA_COMPRA     NUMBER(12)    NOT NULL,
+    ID_PROVEEDOR          NUMBER(10)    NOT NULL,
+    FECHA_EMISION_CUPA    DATE          DEFAULT SYSDATE NOT NULL,
+    FECHA_VENCIM_CUPA     DATE          NOT NULL,
+    MONTO_ORIGINAL_CUPA   NUMBER(14,2)  NOT NULL,
+    MONTO_ABONADO_CUPA    NUMBER(14,2)  DEFAULT 0 NOT NULL,
+    SALDO_CUPA            NUMBER(14,2)   NOT NULL,
+    FECHA_ULT_ABONO_CUPA  DATE,
+    ESTADO_CUPA           VARCHAR2(1)   DEFAULT 'P' NOT NULL,
+    USUARIO_CREA_CUPA     VARCHAR2(30)  DEFAULT USER NOT NULL,
+    FECHA_CREA_CUPA       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+    USUARIO_MOD_CUPA      VARCHAR2(30),
+    FECHA_MOD_CUPA        TIMESTAMP,
+    CONSTRAINT PK_CUPA PRIMARY KEY (ID_CUENTA_PAGAR)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT FK_CUPA_FACO FOREIGN KEY (ID_FACTURA_COMPRA)
+        REFERENCES COM_FACTURA_COMPRA (ID_FACTURA_COMPRA),
+    CONSTRAINT FK_CUPA_PROVE FOREIGN KEY (ID_PROVEEDOR)
+        REFERENCES PER_PROVEEDOR (ID_PROVEEDOR),
+    CONSTRAINT UK_CUPA_FACO UNIQUE (ID_FACTURA_COMPRA)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT CK_CUPA_ORIGINAL CHECK (MONTO_ORIGINAL_CUPA > 0),
+    CONSTRAINT CK_CUPA_ABONADO CHECK (MONTO_ABONADO_CUPA >= 0 AND MONTO_ABONADO_CUPA <= MONTO_ORIGINAL_CUPA),
+    CONSTRAINT CK_CUPA_SALDO CHECK (SALDO_CUPA >= 0 AND SALDO_CUPA <= MONTO_ORIGINAL_CUPA),
+    CONSTRAINT CK_CUPA_ESTADO CHECK (ESTADO_CUPA IN ('P','A','C','N'))
+) TABLESPACE TBS_DATOS;
+
+COMMENT ON TABLE  COM_CUENTA_PAGAR                      IS 'Detalle fisico de cuentas por pagar originadas por facturas de compra en estado pendiente de pago.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.ID_CUENTA_PAGAR      IS 'Identificador unico de la cuenta por pagar.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.ID_FACTURA_COMPRA    IS 'Factura de compra pendiente. FK a COM_FACTURA_COMPRA.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.ID_PROVEEDOR         IS 'Proveedor acreedor. FK a PER_PROVEEDOR.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.FECHA_EMISION_CUPA   IS 'Fecha de emision de la obligacion.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.FECHA_VENCIM_CUPA    IS 'Fecha limite de pago otorgada por el proveedor.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.MONTO_ORIGINAL_CUPA  IS 'Monto original de la factura a credito.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.MONTO_ABONADO_CUPA   IS 'Suma acumulada de los abonos aplicados.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.SALDO_CUPA           IS 'Saldo pendiente por cancelar al proveedor.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.FECHA_ULT_ABONO_CUPA IS 'Fecha en que se registro el ultimo abono.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.ESTADO_CUPA          IS 'Estado: P=Pendiente, A=Abonada parcialmente, C=Cancelada totalmente, N=Anulada.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.USUARIO_CREA_CUPA    IS 'Usuario de base de datos que inserto el registro.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.FECHA_CREA_CUPA      IS 'Fecha y hora de creacion del registro.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.USUARIO_MOD_CUPA     IS 'Usuario de base de datos que realizo la ultima modificacion.';
+COMMENT ON COLUMN COM_CUENTA_PAGAR.FECHA_MOD_CUPA       IS 'Fecha y hora de la ultima modificacion.';
+
+-- 3.5 TABLA: VEN_CUENTA_COBRAR (Modulo VEN_ - Detalle de Cuentas por Cobrar)
+CREATE TABLE VEN_CUENTA_COBRAR (
+    ID_CUENTA_COBRAR      NUMBER(12)    DEFAULT SEQ_VEN_CUENTA_COBRAR.NEXTVAL NOT NULL,
+    ID_FACTURA_VENTA      NUMBER(12)    NOT NULL,
+    ID_CLIENTE            NUMBER(10)    NOT NULL,
+    FECHA_EMISION_CUCO    DATE          DEFAULT SYSDATE NOT NULL,
+    FECHA_VENCIM_CUCO     DATE          NOT NULL,
+    MONTO_ORIGINAL_CUCO   NUMBER(14,2)  NOT NULL,
+    MONTO_ABONADO_CUCO    NUMBER(14,2)  DEFAULT 0 NOT NULL,
+    SALDO_CUCO            NUMBER(14,2)  NOT NULL,
+    FECHA_ULT_ABONO_CUCO  DATE,
+    ESTADO_CUCO           VARCHAR2(1)   DEFAULT 'P' NOT NULL,
+    USUARIO_CREA_CUCO     VARCHAR2(30)  DEFAULT USER NOT NULL,
+    FECHA_CREA_CUCO       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+    USUARIO_MOD_CUCO      VARCHAR2(30),
+    FECHA_MOD_CUCO        TIMESTAMP,
+    CONSTRAINT PK_CUCO PRIMARY KEY (ID_CUENTA_COBRAR)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT FK_CUCO_FAVE FOREIGN KEY (ID_FACTURA_VENTA)
+        REFERENCES VEN_FACTURA (ID_FACTURA_VENTA),
+    CONSTRAINT FK_CUCO_CLI FOREIGN KEY (ID_CLIENTE)
+        REFERENCES PER_CLIENTE (ID_CLIENTE),
+    CONSTRAINT UK_CUCO_FAVE UNIQUE (ID_FACTURA_VENTA)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT CK_CUCO_ORIGINAL CHECK (MONTO_ORIGINAL_CUCO > 0),
+    CONSTRAINT CK_CUCO_ABONADO CHECK (MONTO_ABONADO_CUCO >= 0 AND MONTO_ABONADO_CUCO <= MONTO_ORIGINAL_CUCO),
+    CONSTRAINT CK_CUCO_SALDO CHECK (SALDO_CUCO >= 0 AND SALDO_CUCO <= MONTO_ORIGINAL_CUCO),
+    CONSTRAINT CK_CUCO_ESTADO CHECK (ESTADO_CUCO IN ('P','A','C','N'))
+) TABLESPACE TBS_DATOS;
+
+COMMENT ON TABLE  VEN_CUENTA_COBRAR                      IS 'Detalle fisico de cuentas por cobrar originadas por facturas de venta en estado pendiente de cancelar.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.ID_CUENTA_COBRAR     IS 'Identificador unico de la cuenta por cobrar.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.ID_FACTURA_VENTA     IS 'Factura de venta pendiente. FK a VEN_FACTURA.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.ID_CLIENTE           IS 'Cliente deudor. FK a PER_CLIENTE.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.FECHA_EMISION_CUCO   IS 'Fecha de emision de la factura a credito.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.FECHA_VENCIM_CUCO    IS 'Fecha de vencimiento del credito.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.MONTO_ORIGINAL_CUCO  IS 'Monto original facturado a credito.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.MONTO_ABONADO_CUCO   IS 'Suma acumulada de los abonos recibidos.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.SALDO_CUCO           IS 'Saldo pendiente por cobrar al cliente.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.FECHA_ULT_ABONO_CUCO IS 'Fecha del ultimo abono realizado por el cliente.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.ESTADO_CUCO          IS 'Estado: P=Pendiente, A=Abonada parcialmente, C=Cancelada totalmente, N=Anulada.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.USUARIO_CREA_CUCO    IS 'Usuario de base de datos que inserto el registro.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.FECHA_CREA_CUCO      IS 'Fecha y hora de creacion del registro.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.USUARIO_MOD_CUCO     IS 'Usuario de base de datos que realizo la ultima modificacion.';
+COMMENT ON COLUMN VEN_CUENTA_COBRAR.FECHA_MOD_CUCO       IS 'Fecha y hora de la ultima modificacion.';
+
+-- 3.6 TABLA: VEN_CIERRE_DIARIO (Modulo VEN_ - Encabezado de Cierres Diarios)
+CREATE TABLE VEN_CIERRE_DIARIO (
+    ID_CIERRE_DIARIO    NUMBER(12)     DEFAULT SEQ_VEN_CIERRE_DIARIO.NEXTVAL NOT NULL,
+    ID_SUCURSAL         NUMBER(10)     NOT NULL,
+    FECHA_CIDI          DATE           DEFAULT TRUNC(SYSDATE) NOT NULL,
+    CANT_FACTURAS_CIDI  NUMBER(10)     DEFAULT 0 NOT NULL,
+    CANT_VENDIDA_CIDI   NUMBER(14,3)   DEFAULT 0 NOT NULL,
+    MONTO_VENTAS_CIDI   NUMBER(14,2)   DEFAULT 0 NOT NULL,
+    CANT_DEVOL_CIDI     NUMBER(14,3)   DEFAULT 0 NOT NULL,
+    MONTO_DEVOL_CIDI    NUMBER(14,2)   DEFAULT 0 NOT NULL,
+    TOTAL_NETO_CIDI     NUMBER(14,2)   GENERATED ALWAYS AS (MONTO_VENTAS_CIDI - MONTO_DEVOL_CIDI) VIRTUAL,
+    OBSERVACION_CIDI    VARCHAR2(250),
+    ESTADO_CIDI         VARCHAR2(1)    DEFAULT 'A' NOT NULL,
+    USUARIO_CREA_CIDI   VARCHAR2(30)   DEFAULT USER NOT NULL,
+    FECHA_CREA_CIDI     TIMESTAMP      DEFAULT SYSTIMESTAMP NOT NULL,
+    USUARIO_MOD_CIDI    VARCHAR2(30),
+    FECHA_MOD_CIDI      TIMESTAMP,
+    CONSTRAINT PK_CIDI PRIMARY KEY (ID_CIERRE_DIARIO)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT FK_CIDI_SUC FOREIGN KEY (ID_SUCURSAL)
+        REFERENCES SEG_SUCURSAL (ID_SUCURSAL),
+    CONSTRAINT UK_CIDI_SUC_FECHA UNIQUE (ID_SUCURSAL, FECHA_CIDI)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT CK_CIDI_CANT_FAC CHECK (CANT_FACTURAS_CIDI >= 0),
+    CONSTRAINT CK_CIDI_CANT_VEN CHECK (CANT_VENDIDA_CIDI >= 0),
+    CONSTRAINT CK_CIDI_MONTO_VEN CHECK (MONTO_VENTAS_CIDI >= 0),
+    CONSTRAINT CK_CIDI_CANT_DEV CHECK (CANT_DEVOL_CIDI >= 0),
+    CONSTRAINT CK_CIDI_MONTO_DEV CHECK (MONTO_DEVOL_CIDI >= 0),
+    CONSTRAINT CK_CIDI_ESTADO CHECK (ESTADO_CIDI IN ('A','N'))
+) TABLESPACE TBS_DATOS;
+
+COMMENT ON TABLE  VEN_CIERRE_DIARIO                    IS 'Encabezado de cierres diarios automaticos por sucursal con fecha, cantidad vendida, devoluciones y total.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.ID_CIERRE_DIARIO   IS 'Identificador unico del cierre diario.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.ID_SUCURSAL        IS 'Sucursal a la que corresponde el cierre. FK a SEG_SUCURSAL.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.FECHA_CIDI         IS 'Fecha operativa cerrada.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.CANT_FACTURAS_CIDI IS 'Cantidad de facturas emitidas en el dia.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.CANT_VENDIDA_CIDI  IS 'Cantidad total de unidades vendidas en el dia.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.MONTO_VENTAS_CIDI  IS 'Monto bruto total facturado en el dia.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.CANT_DEVOL_CIDI    IS 'Cantidad total de unidades devueltas por clientes en el dia.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.MONTO_DEVOL_CIDI   IS 'Monto total correspondiente a devoluciones del dia.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.TOTAL_NETO_CIDI    IS 'Columna virtual: monto vendido menos monto de devoluciones.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.OBSERVACION_CIDI   IS 'Observaciones generadas por el proceso automatico.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.ESTADO_CIDI        IS 'Estado del cierre: A=Activo, N=Anulado.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.USUARIO_CREA_CIDI  IS 'Usuario de base de datos que inserto el registro.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.FECHA_CREA_CIDI    IS 'Fecha y hora de creacion del registro.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.USUARIO_MOD_CIDI   IS 'Usuario de base de datos que realizo la ultima modificacion.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO.FECHA_MOD_CIDI     IS 'Fecha y hora de la ultima modificacion.';
+
+-- 3.7 TABLA: VEN_CIERRE_DIARIO_DET (Modulo VEN_ - Detalle de Cierre Diario por Cajero)
+CREATE TABLE VEN_CIERRE_DIARIO_DET (
+    ID_CIERRE_DIARIO_DET  NUMBER(12)    DEFAULT SEQ_VEN_CIERRE_DIARIO_DET.NEXTVAL NOT NULL,
+    ID_CIERRE_DIARIO      NUMBER(12)    NOT NULL,
+    ID_USUARIO            NUMBER(10)    NOT NULL,
+    CANT_FACTURAS_CIDE    NUMBER(10)    DEFAULT 0 NOT NULL,
+    CANT_VENDIDA_CIDE     NUMBER(14,3)  DEFAULT 0 NOT NULL,
+    MONTO_VENTAS_CIDE     NUMBER(14,2)  DEFAULT 0 NOT NULL,
+    CANT_DEVOL_CIDE       NUMBER(14,3)  DEFAULT 0 NOT NULL,
+    MONTO_DEVOL_CIDE      NUMBER(14,2)  DEFAULT 0 NOT NULL,
+    TOTAL_NETO_CIDE       NUMBER(14,2)  GENERATED ALWAYS AS (MONTO_VENTAS_CIDE - MONTO_DEVOL_CIDE) VIRTUAL,
+    USUARIO_CREA_CIDE     VARCHAR2(30)  DEFAULT USER NOT NULL,
+    FECHA_CREA_CIDE       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+    USUARIO_MOD_CIDE      VARCHAR2(30),
+    FECHA_MOD_CIDE        TIMESTAMP,
+    CONSTRAINT PK_CIDE PRIMARY KEY (ID_CIERRE_DIARIO_DET)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT FK_CIDE_CIDI FOREIGN KEY (ID_CIERRE_DIARIO)
+        REFERENCES VEN_CIERRE_DIARIO (ID_CIERRE_DIARIO),
+    CONSTRAINT FK_CIDE_USU FOREIGN KEY (ID_USUARIO)
+        REFERENCES SEG_USUARIO (ID_USUARIO),
+    CONSTRAINT UK_CIDE_CIDI_USU UNIQUE (ID_CIERRE_DIARIO, ID_USUARIO)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT CK_CIDE_CANT_FAC CHECK (CANT_FACTURAS_CIDE >= 0),
+    CONSTRAINT CK_CIDE_CANT_VEN CHECK (CANT_VENDIDA_CIDE >= 0),
+    CONSTRAINT CK_CIDE_MONTO_VEN CHECK (MONTO_VENTAS_CIDE >= 0),
+    CONSTRAINT CK_CIDE_CANT_DEV CHECK (CANT_DEVOL_CIDE >= 0),
+    CONSTRAINT CK_CIDE_MONTO_DEV CHECK (MONTO_DEVOL_CIDE >= 0)
+) TABLESPACE TBS_DATOS;
+
+COMMENT ON TABLE  VEN_CIERRE_DIARIO_DET                      IS 'Detalle del cierre diario por cajero, incluyendo cantidad vendida, devoluciones y total neto.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.ID_CIERRE_DIARIO_DET IS 'Identificador unico de la linea de detalle del cierre.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.ID_CIERRE_DIARIO     IS 'Encabezado de cierre al que pertenece. FK a VEN_CIERRE_DIARIO.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.ID_USUARIO           IS 'Cajero (usuario) evaluado en el cierre. FK a SEG_USUARIO.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.CANT_FACTURAS_CIDE   IS 'Cantidad de facturas emitidas por el cajero.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.CANT_VENDIDA_CIDE    IS 'Cantidad de unidades vendidas por el cajero.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.MONTO_VENTAS_CIDE    IS 'Monto total vendido por el cajero.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.CANT_DEVOL_CIDE      IS 'Cantidad de unidades devueltas asociadas al cajero.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.MONTO_DEVOL_CIDE     IS 'Monto de devoluciones asociadas al cajero.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.TOTAL_NETO_CIDE      IS 'Columna virtual: monto vendido por el cajero menos sus devoluciones.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.USUARIO_CREA_CIDE    IS 'Usuario de base de datos que inserto el registro.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.FECHA_CREA_CIDE      IS 'Fecha y hora de creacion del registro.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.USUARIO_MOD_CIDE     IS 'Usuario de base de datos que realizo la ultima modificacion.';
+COMMENT ON COLUMN VEN_CIERRE_DIARIO_DET.FECHA_MOD_CIDE       IS 'Fecha y hora de la ultima modificacion.';
+
+-- 3.8 TABLA: PRM_DESCUENTO_DET (Modulo PRM_ - Productos incluidos automaticamente en descuentos)
+CREATE TABLE PRM_DESCUENTO_DET (
+    ID_DESCUENTO_DET       NUMBER(12)     DEFAULT SEQ_PRM_DESCUENTO_DET.NEXTVAL NOT NULL,
+    ID_DESCUENTO           NUMBER(10)     NOT NULL,
+    ID_PRODUCTO            NUMBER(10)     NOT NULL,
+    ID_LOTE                NUMBER(12),
+    MOTIVO_INCLUSION_DSDE  VARCHAR2(200)  NOT NULL,
+    FECHA_INCLUSION_DSDE   DATE           DEFAULT SYSDATE NOT NULL,
+    ESTADO_DSDE            VARCHAR2(1)    DEFAULT 'A' NOT NULL,
+    USUARIO_CREA_DSDE      VARCHAR2(30)   DEFAULT USER NOT NULL,
+    FECHA_CREA_DSDE        TIMESTAMP      DEFAULT SYSTIMESTAMP NOT NULL,
+    USUARIO_MOD_DSDE       VARCHAR2(30),
+    FECHA_MOD_DSDE         TIMESTAMP,
+    CONSTRAINT PK_DSDE PRIMARY KEY (ID_DESCUENTO_DET)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT FK_DSDE_DSCT FOREIGN KEY (ID_DESCUENTO)
+        REFERENCES PRM_DESCUENTO (ID_DESCUENTO),
+    CONSTRAINT FK_DSDE_PROD FOREIGN KEY (ID_PRODUCTO)
+        REFERENCES PRO_PRODUCTO (ID_PRODUCTO),
+    CONSTRAINT FK_DSDE_LOTE FOREIGN KEY (ID_LOTE, ID_PRODUCTO)
+        REFERENCES PRO_LOTE (ID_LOTE, ID_PRODUCTO),
+    CONSTRAINT UK_DSDE_DSCT_PROD_LOTE UNIQUE (ID_DESCUENTO, ID_PRODUCTO, ID_LOTE)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT CK_DSDE_ESTADO CHECK (ESTADO_DSDE IN ('A','I'))
+) TABLESPACE TBS_DATOS;
+
+COMMENT ON TABLE  PRM_DESCUENTO_DET                       IS 'Detalle de productos y lotes incluidos automaticamente por el job semanal de descuentos planeados (pronto vencimiento o antiguedad).';
+COMMENT ON COLUMN PRM_DESCUENTO_DET.ID_DESCUENTO_DET      IS 'Identificador unico del detalle de descuento.';
+COMMENT ON COLUMN PRM_DESCUENTO_DET.ID_DESCUENTO          IS 'Descuento planeado al que se asocia el producto. FK a PRM_DESCUENTO.';
+COMMENT ON COLUMN PRM_DESCUENTO_DET.ID_PRODUCTO           IS 'Producto incluido en el descuento. FK a PRO_PRODUCTO.';
+COMMENT ON COLUMN PRM_DESCUENTO_DET.ID_LOTE               IS 'Lote especifico incluido. FK compuesta a PRO_LOTE junto con ID_PRODUCTO.';
+COMMENT ON COLUMN PRM_DESCUENTO_DET.MOTIVO_INCLUSION_DSDE IS 'Razon por la que fue incluido (ej. Proximo a vencer o Antiguedad en bodega).';
+COMMENT ON COLUMN PRM_DESCUENTO_DET.FECHA_INCLUSION_DSDE  IS 'Fecha en que el proceso semanal incluyo el producto.';
+COMMENT ON COLUMN PRM_DESCUENTO_DET.ESTADO_DSDE           IS 'Estado del registro: A=Activo, I=Inactivo.';
+COMMENT ON COLUMN PRM_DESCUENTO_DET.USUARIO_CREA_DSDE     IS 'Usuario de base de datos que inserto el registro.';
+COMMENT ON COLUMN PRM_DESCUENTO_DET.FECHA_CREA_DSDE       IS 'Fecha y hora de creacion del registro.';
+COMMENT ON COLUMN PRM_DESCUENTO_DET.USUARIO_MOD_DSDE      IS 'Usuario de base de datos que realizo la ultima modificacion.';
+COMMENT ON COLUMN PRM_DESCUENTO_DET.FECHA_MOD_DSDE        IS 'Fecha y hora de la ultima modificacion.';
+
+-- 3.9 TABLA: PRM_ORDEN_PREMIACION (Modulo PRM_ - Ordenes de compra a los 10 mejores clientes)
+CREATE TABLE PRM_ORDEN_PREMIACION (
+    ID_ORDEN_PREMIACION  NUMBER(12)    DEFAULT SEQ_PRM_ORDEN_PREMIACION.NEXTVAL NOT NULL,
+    ID_CLIENTE           NUMBER(10)    NOT NULL,
+    PERIODO_ORPR         VARCHAR2(20)  NOT NULL,
+    POSICION_RANK_ORPR   NUMBER(3)     NOT NULL,
+    TOTAL_COMPRADO_ORPR  NUMBER(14,2)  NOT NULL,
+    MONTO_ORDEN_ORPR     NUMBER(14,2)  NOT NULL,
+    FECHA_EMISION_ORPR   DATE          DEFAULT SYSDATE NOT NULL,
+    FECHA_VENCIM_ORPR    DATE          NOT NULL,
+    ESTADO_ORPR          VARCHAR2(1)   DEFAULT 'D' NOT NULL,
+    USUARIO_CREA_ORPR    VARCHAR2(30)  DEFAULT USER NOT NULL,
+    FECHA_CREA_ORPR      TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+    USUARIO_MOD_ORPR     VARCHAR2(30),
+    FECHA_MOD_ORPR       TIMESTAMP,
+    CONSTRAINT PK_ORPR PRIMARY KEY (ID_ORDEN_PREMIACION)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT FK_ORPR_CLI FOREIGN KEY (ID_CLIENTE)
+        REFERENCES PER_CLIENTE (ID_CLIENTE),
+    CONSTRAINT UK_ORPR_CLI_PERIODO UNIQUE (ID_CLIENTE, PERIODO_ORPR)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT CK_ORPR_POSICION CHECK (POSICION_RANK_ORPR > 0),
+    CONSTRAINT CK_ORPR_COMPRADO CHECK (TOTAL_COMPRADO_ORPR >= 0),
+    CONSTRAINT CK_ORPR_MONTO CHECK (MONTO_ORDEN_ORPR > 0),
+    CONSTRAINT CK_ORPR_FECHAS CHECK (FECHA_VENCIM_ORPR >= FECHA_EMISION_ORPR),
+    CONSTRAINT CK_ORPR_ESTADO CHECK (ESTADO_ORPR IN ('D','C','V','N'))
+) TABLESPACE TBS_DATOS;
+
+COMMENT ON TABLE  PRM_ORDEN_PREMIACION                     IS 'Ordenes de compra otorgadas cada 6 meses (parametrizado) a los 10 clientes que mas compren en la empresa.';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.ID_ORDEN_PREMIACION IS 'Identificador unico de la orden de premiacion.';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.ID_CLIENTE          IS 'Cliente premiado. FK a PER_CLIENTE.';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.PERIODO_ORPR        IS 'Codigo del semestre o periodo evaluado (ej. 2026-S1, 2026-S2).';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.POSICION_RANK_ORPR  IS 'Posicion obtenida en el ranking de compras del periodo.';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.TOTAL_COMPRADO_ORPR IS 'Monto acumulado de compras del cliente en el periodo.';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.MONTO_ORDEN_ORPR    IS 'Monto de la orden de compra otorgada (parametrizado en 100,000 colones).';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.FECHA_EMISION_ORPR  IS 'Fecha de generacion del beneficio.';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.FECHA_VENCIM_ORPR   IS 'Fecha limite para canjear la orden de compra.';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.ESTADO_ORPR         IS 'Estado: D=Disponible, C=Canjeada, V=Vencida, N=Anulada.';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.USUARIO_CREA_ORPR   IS 'Usuario de base de datos que inserto el registro.';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.FECHA_CREA_ORPR     IS 'Fecha y hora de creacion del registro.';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.USUARIO_MOD_ORPR    IS 'Usuario de base de datos que realizo la ultima modificacion.';
+COMMENT ON COLUMN PRM_ORDEN_PREMIACION.FECHA_MOD_ORPR      IS 'Fecha y hora de la ultima modificacion.';
+
+-- 3.10 TABLA: AUD_REGISTRO_CAMBIO (Modulo AUD_ - Bitacora detallada de cambios en TBS_AUDITORIA)
+--      Sin columnas de modificacion porque la auditoria es inmutable por definicion.
+CREATE TABLE AUD_REGISTRO_CAMBIO (
+    ID_REGISTRO_CAMBIO     NUMBER(12)     DEFAULT SEQ_AUD_REGISTRO_CAMBIO.NEXTVAL NOT NULL,
+    TABLA_RECA             VARCHAR2(30)   NOT NULL,
+    MODULO_RECA            VARCHAR2(30)   NOT NULL,
+    OPERACION_RECA         VARCHAR2(10)   NOT NULL,
+    LLAVE_PRIMARIA_RECA    VARCHAR2(50)   NOT NULL,
+    CAMPO_MODIFICADO_RECA  VARCHAR2(50)   NOT NULL,
+    VALOR_ANTERIOR_RECA    VARCHAR2(500),
+    VALOR_NUEVO_RECA       VARCHAR2(500),
+    TERMINAL_RECA          VARCHAR2(64),
+    DIRECCION_IP_RECA      VARCHAR2(45),
+    USUARIO_CREA_RECA      VARCHAR2(30)   DEFAULT USER NOT NULL,
+    FECHA_CREA_RECA        TIMESTAMP      DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT PK_RECA PRIMARY KEY (ID_REGISTRO_CAMBIO)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT CK_RECA_OPERACION CHECK (OPERACION_RECA IN ('INSERT','UPDATE','DELETE'))
+) TABLESPACE TBS_AUDITORIA;
+
+COMMENT ON TABLE  AUD_REGISTRO_CAMBIO                       IS 'Bitacora inmutable de cambios (valor anterior y nuevo) disparada por triggers sobre las 7 tablas principales del negocio.';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.ID_REGISTRO_CAMBIO    IS 'Identificador unico del detalle de cambio auditado.';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.TABLA_RECA            IS 'Nombre de la tabla principal afectada.';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.MODULO_RECA           IS 'Area funcional: FACTURACION, PRECIOS, INVENTARIO, CLIENTES, PROVEEDORES, PROMOCIONES o DESCUENTOS.';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.OPERACION_RECA        IS 'Tipo de sentencia DML ejecutada: INSERT, UPDATE o DELETE.';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.LLAVE_PRIMARIA_RECA   IS 'Identificador del registro afectado en la tabla auditada.';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.CAMPO_MODIFICADO_RECA IS 'Nombre de la columna modificada o REGISTRO_COMPLETO.';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.VALOR_ANTERIOR_RECA   IS 'Valor previo antes del cambio (:OLD).';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.VALOR_NUEVO_RECA      IS 'Valor nuevo despues del cambio (:NEW).';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.TERMINAL_RECA         IS 'Terminal del cliente que ejecuto la sentencia.';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.DIRECCION_IP_RECA     IS 'Direccion IP de la sesion.';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.USUARIO_CREA_RECA     IS 'Usuario de base de datos que ejecuto la operacion.';
+COMMENT ON COLUMN AUD_REGISTRO_CAMBIO.FECHA_CREA_RECA       IS 'Marca de tiempo exacta del cambio.';
+
+-- 3.11 TABLA: AUD_ERROR_SISTEMA (Modulo AUD_ - Bitacora de errores en TBS_AUDITORIA)
+CREATE TABLE AUD_ERROR_SISTEMA (
+    ID_ERROR_SISTEMA    NUMBER(12)     DEFAULT SEQ_AUD_ERROR_SISTEMA.NEXTVAL NOT NULL,
+    PAQUETE_ERSI        VARCHAR2(30)   NOT NULL,
+    SUBPROGRAMA_ERSI    VARCHAR2(50)   NOT NULL,
+    CODIGO_SQL_ERSI     NUMBER(10)     NOT NULL,
+    MENSAJE_ERROR_ERSI  VARCHAR2(500)  NOT NULL,
+    PILA_ERROR_ERSI     VARCHAR2(2000),
+    TERMINAL_ERSI       VARCHAR2(64),
+    USUARIO_CREA_ERSI   VARCHAR2(30)   DEFAULT USER NOT NULL,
+    FECHA_CREA_ERSI     TIMESTAMP      DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT PK_ERSI PRIMARY KEY (ID_ERROR_SISTEMA)
+        USING INDEX TABLESPACE TBS_INDICES
+) TABLESPACE TBS_AUDITORIA;
+
+COMMENT ON TABLE  AUD_ERROR_SISTEMA                    IS 'Bitacora inmutable de excepciones y errores capturados en los paquetes PL/SQL.';
+COMMENT ON COLUMN AUD_ERROR_SISTEMA.ID_ERROR_SISTEMA   IS 'Identificador unico del error.';
+COMMENT ON COLUMN AUD_ERROR_SISTEMA.PAQUETE_ERSI       IS 'Nombre del paquete o trigger donde se produjo la excepcion.';
+COMMENT ON COLUMN AUD_ERROR_SISTEMA.SUBPROGRAMA_ERSI   IS 'Procedimiento o funcion especifica.';
+COMMENT ON COLUMN AUD_ERROR_SISTEMA.CODIGO_SQL_ERSI    IS 'Codigo numerico del error Oracle (SQLCODE).';
+COMMENT ON COLUMN AUD_ERROR_SISTEMA.MENSAJE_ERROR_ERSI IS 'Mensaje descriptivo del error (SQLERRM).';
+COMMENT ON COLUMN AUD_ERROR_SISTEMA.PILA_ERROR_ERSI    IS 'Rastro de la linea exacta del error (FORMAT_ERROR_BACKTRACE).';
+COMMENT ON COLUMN AUD_ERROR_SISTEMA.TERMINAL_ERSI      IS 'Terminal desde donde se ejecuto el proceso.';
+COMMENT ON COLUMN AUD_ERROR_SISTEMA.USUARIO_CREA_ERSI  IS 'Usuario de la sesion activa.';
+COMMENT ON COLUMN AUD_ERROR_SISTEMA.FECHA_CREA_ERSI    IS 'Fecha y hora exacta de la excepcion.';
+
+-- 3.12 TABLA: AUD_MONITOREO_BD (Modulo AUD_ - Historial de monitoreo en TBS_AUDITORIA)
+CREATE TABLE AUD_MONITOREO_BD (
+    ID_MONITOREO_BD        NUMBER(12)     DEFAULT SEQ_AUD_MONITOREO_BD.NEXTVAL NOT NULL,
+    TIPO_VERIF_MOBD        VARCHAR2(20)   NOT NULL,
+    NOMBRE_OBJETO_MOBD     VARCHAR2(128)  NOT NULL,
+    VALOR_ACTUAL_MOBD      NUMBER(14,2),
+    UMBRAL_MAX_MOBD        NUMBER(14,2),
+    ES_INCONSISTENTE_MOBD  VARCHAR2(1)    DEFAULT 'N' NOT NULL,
+    DETALLE_MOBD           VARCHAR2(500)  NOT NULL,
+    USUARIO_CREA_MOBD      VARCHAR2(30)   DEFAULT USER NOT NULL,
+    FECHA_CREA_MOBD        TIMESTAMP      DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT PK_MOBD PRIMARY KEY (ID_MONITOREO_BD)
+        USING INDEX TABLESPACE TBS_INDICES,
+    CONSTRAINT CK_MOBD_TIPO CHECK (TIPO_VERIF_MOBD IN ('TABLESPACE','OBJETO_INVALIDO','INDICE','SESION','CRECIMIENTO')),
+    CONSTRAINT CK_MOBD_INCONSIST CHECK (ES_INCONSISTENTE_MOBD IN ('S','N'))
+) TABLESPACE TBS_AUDITORIA;
+
+COMMENT ON TABLE  AUD_MONITOREO_BD                       IS 'Bitacora del paquete de monitoreo (uso de tablespaces, objetos invalidos, estado de indices, sesiones y crecimiento).';
+COMMENT ON COLUMN AUD_MONITOREO_BD.ID_MONITOREO_BD       IS 'Identificador unico del chequeo de monitoreo.';
+COMMENT ON COLUMN AUD_MONITOREO_BD.TIPO_VERIF_MOBD       IS 'Tipo de verificacion: TABLESPACE, OBJETO_INVALIDO, INDICE, SESION o CRECIMIENTO.';
+COMMENT ON COLUMN AUD_MONITOREO_BD.NOMBRE_OBJETO_MOBD    IS 'Nombre del tablespace, indice, objeto o sesion inspeccionada.';
+COMMENT ON COLUMN AUD_MONITOREO_BD.VALOR_ACTUAL_MOBD     IS 'Valor medido (porcentaje de uso, MB ocupados o cantidad de bloqueos).';
+COMMENT ON COLUMN AUD_MONITOREO_BD.UMBRAL_MAX_MOBD       IS 'Limite maximo permitido segun SEG_PARAMETRO (ej. 85%).';
+COMMENT ON COLUMN AUD_MONITOREO_BD.ES_INCONSISTENTE_MOBD IS 'Indica si requiere alerta al DBA: S=Si, N=No.';
+COMMENT ON COLUMN AUD_MONITOREO_BD.DETALLE_MOBD          IS 'Resultado detallado de la verificacion.';
+COMMENT ON COLUMN AUD_MONITOREO_BD.USUARIO_CREA_MOBD     IS 'Usuario que ejecuto el monitoreo.';
+COMMENT ON COLUMN AUD_MONITOREO_BD.FECHA_CREA_MOBD       IS 'Fecha y hora de la revision.';
+
+--------------------------------------------------------------------------------
+-- SECCION 4: INDICES SECUNDARIOS DE LAS TABLAS NUEVAS (EN TBS_INDICES)
+--------------------------------------------------------------------------------
+-- 4.1 Indices sobre llaves foraneas
+CREATE INDEX IX_PADR_DIST     ON CAT_PADRON (ID_DISTRITO)            TABLESPACE TBS_INDICES;
+CREATE INDEX IX_CLI_PADR      ON PER_CLIENTE (ID_PADRON)             TABLESPACE TBS_INDICES;
+CREATE INDEX IX_CUPA_PROVE    ON COM_CUENTA_PAGAR (ID_PROVEEDOR)     TABLESPACE TBS_INDICES;
+CREATE INDEX IX_CUCO_CLI      ON VEN_CUENTA_COBRAR (ID_CLIENTE)      TABLESPACE TBS_INDICES;
+CREATE INDEX IX_CIDE_USU      ON VEN_CIERRE_DIARIO_DET (ID_USUARIO)  TABLESPACE TBS_INDICES;
+CREATE INDEX IX_DSDE_PROD     ON PRM_DESCUENTO_DET (ID_PRODUCTO)     TABLESPACE TBS_INDICES;
+CREATE INDEX IX_DSDE_LOTE     ON PRM_DESCUENTO_DET (ID_LOTE, ID_PRODUCTO) TABLESPACE TBS_INDICES;
+
+-- 4.2 Indices compuestos de busqueda para las consultas del Entregable #2
+CREATE INDEX IX_PADR_APELLIDOS     ON CAT_PADRON (APELLIDO1_PADR, APELLIDO2_PADR, NOMBRE_PADR) TABLESPACE TBS_INDICES;
+CREATE INDEX IX_PARA_MODULO        ON SEG_PARAMETRO (MODULO_PARA, ESTADO_PARA)                TABLESPACE TBS_INDICES;
+CREATE INDEX IX_CUPA_ESTADO_VENCIM ON COM_CUENTA_PAGAR (ESTADO_CUPA, FECHA_VENCIM_CUPA)       TABLESPACE TBS_INDICES;
+CREATE INDEX IX_CUCO_ESTADO_VENCIM ON VEN_CUENTA_COBRAR (ESTADO_CUCO, FECHA_VENCIM_CUCO)      TABLESPACE TBS_INDICES;
+CREATE INDEX IX_CIDI_FECHA         ON VEN_CIERRE_DIARIO (FECHA_CIDI)                          TABLESPACE TBS_INDICES;
+CREATE INDEX IX_ORPR_PERIODO_POS   ON PRM_ORDEN_PREMIACION (PERIODO_ORPR, POSICION_RANK_ORPR) TABLESPACE TBS_INDICES;
+CREATE INDEX IX_RECA_TABLA_FECHA   ON AUD_REGISTRO_CAMBIO (TABLA_RECA, FECHA_CREA_RECA)       TABLESPACE TBS_INDICES;
+CREATE INDEX IX_ERSI_FECHA         ON AUD_ERROR_SISTEMA (FECHA_CREA_ERSI)                     TABLESPACE TBS_INDICES;
+CREATE INDEX IX_MOBD_TIPO_FECHA    ON AUD_MONITOREO_BD (TIPO_VERIF_MOBD, FECHA_CREA_MOBD)     TABLESPACE TBS_INDICES;
+
+--------------------------------------------------------------------------------
+-- SECCION 5: VISTAS MATERIALIZADAS (REQUERIMIENTO #9)
+--------------------------------------------------------------------------------
+-- 5.1 Vista Materializada a: Ventas mensuales
+CREATE MATERIALIZED VIEW MV_VENTAS_MENSUALES
+    TABLESPACE TBS_DATOS
+    BUILD IMMEDIATE
+    REFRESH COMPLETE ON DEMAND
+AS
+SELECT TRUNC(f.FECHA_FAVE, 'MM')                          AS MES_VENTA,
+       TO_CHAR(f.FECHA_FAVE, 'YYYY-MM')                   AS PERIODO_MENSUAL,
+       f.ID_SUCURSAL,
+       s.CODIGO_SUC,
+       s.NOMBRE_SUC,
+       COUNT(DISTINCT f.ID_FACTURA_VENTA)                 AS TOTAL_FACTURAS,
+       SUM(CASE WHEN f.ES_CREDITO_FAVE = 'S' THEN 1 ELSE 0 END) AS FACTURAS_CREDITO,
+       SUM(CASE WHEN f.ES_CREDITO_FAVE = 'N' THEN 1 ELSE 0 END) AS FACTURAS_CONTADO,
+       SUM(f.SUBTOTAL_FAVE)                               AS SUBTOTAL_MENSUAL,
+       SUM(f.DESCUENTO_FAVE)                              AS DESCUENTO_MENSUAL,
+       SUM(f.IMPUESTO_FAVE)                               AS IMPUESTO_MENSUAL,
+       SUM(f.TOTAL_FAVE)                                  AS TOTAL_VENTAS_MENSUAL
+  FROM VEN_FACTURA f
+       JOIN SEG_SUCURSAL s ON s.ID_SUCURSAL = f.ID_SUCURSAL
+ WHERE f.ESTADO_FAVE <> 'N'
+ GROUP BY TRUNC(f.FECHA_FAVE, 'MM'),
+          TO_CHAR(f.FECHA_FAVE, 'YYYY-MM'),
+          f.ID_SUCURSAL,
+          s.CODIGO_SUC,
+          s.NOMBRE_SUC;
+
+CREATE INDEX IX_MVVM_MES_SUC ON MV_VENTAS_MENSUALES (MES_VENTA, ID_SUCURSAL) TABLESPACE TBS_INDICES;
+
+COMMENT ON MATERIALIZED VIEW MV_VENTAS_MENSUALES IS 'Vista materializada de ventas mensuales por sucursal (Requerimiento 9.a).';
+
+-- 5.2 Vista Materializada b: Inventario consolidado
+CREATE MATERIALIZED VIEW MV_INVENTARIO_CONSOLIDADO
+    TABLESPACE TBS_DATOS
+    BUILD IMMEDIATE
+    REFRESH COMPLETE ON DEMAND
+AS
+SELECT b.ID_BODEGA,
+       b.CODIGO_BODE,
+       b.NOMBRE_BODE,
+       b.ES_CENTRAL_BODE,
+       p.ID_PRODUCTO,
+       p.CODIGO_PROD,
+       p.NOMBRE_PROD,
+       fp.NOMBRE_FAMI                                     AS FAMILIA_PRODUCTO,
+       p.UNIDAD_MEDIDA_PROD,
+       p.PRECIO_COSTO_PROD,
+       p.STOCK_MINIMO_PROD,
+       COUNT(e.ID_EXISTENCIA)                             AS CANTIDAD_LOTES,
+       NVL(SUM(e.CANTIDAD_EXIS), 0)                       AS EXISTENCIA_TOTAL,
+       NVL(SUM(e.CANTIDAD_RESERV_EXIS), 0)                AS EXISTENCIA_RESERVADA,
+       NVL(SUM(e.CANTIDAD_EXIS - e.CANTIDAD_RESERV_EXIS), 0) AS EXISTENCIA_DISPONIBLE,
+       ROUND(NVL(SUM(e.CANTIDAD_EXIS), 0) * p.PRECIO_COSTO_PROD, 2) AS VALOR_TOTAL_COSTO,
+       MIN(l.FECHA_VENCIM_LOTE)                           AS PROXIMO_VENCIMIENTO,
+       MIN(l.FECHA_INGRESO_LOTE)                          AS INGRESO_MAS_ANTIGUO
+  FROM INV_BODEGA b
+       JOIN INV_EXISTENCIA e       ON e.ID_BODEGA           = b.ID_BODEGA
+       JOIN PRO_PRODUCTO p         ON p.ID_PRODUCTO         = e.ID_PRODUCTO
+       JOIN PRO_FAMILIA_PRODUCTO fp ON fp.ID_FAMILIA_PRODUCTO = p.ID_FAMILIA_PRODUCTO
+       LEFT JOIN PRO_LOTE l        ON l.ID_LOTE             = e.ID_LOTE
+                                  AND l.ID_PRODUCTO         = e.ID_PRODUCTO
+ WHERE b.ESTADO_BODE = 'A'
+   AND p.ESTADO_PROD = 'A'
+ GROUP BY b.ID_BODEGA,
+          b.CODIGO_BODE,
+          b.NOMBRE_BODE,
+          b.ES_CENTRAL_BODE,
+          p.ID_PRODUCTO,
+          p.CODIGO_PROD,
+          p.NOMBRE_PROD,
+          fp.NOMBRE_FAMI,
+          p.UNIDAD_MEDIDA_PROD,
+          p.PRECIO_COSTO_PROD,
+          p.STOCK_MINIMO_PROD;
+
+CREATE INDEX IX_MVIC_BODE_PROD ON MV_INVENTARIO_CONSOLIDADO (ID_BODEGA, ID_PRODUCTO) TABLESPACE TBS_INDICES;
+
+COMMENT ON MATERIALIZED VIEW MV_INVENTARIO_CONSOLIDADO IS 'Vista materializada de inventario consolidado por bodega y producto (Requerimiento 9.b).';
+
+--------------------------------------------------------------------------------
+-- SECCION 6: DATOS INICIALES Y SINCRONIZACION (MINIMO 5 FILAS POR TABLA)
+--------------------------------------------------------------------------------
+
+-- 6.1 CAT_PADRON (10 registros del Padron Electoral Nacional)
+INSERT INTO CAT_PADRON (ID_PADRON, ID_DISTRITO, CEDULA_PADR, COD_ELECTORAL_PADR, SEXO_PADR, FECHA_VENC_CED_PADR, JUNTA_RECEPTORA_PADR, NOMBRE_PADR, APELLIDO1_PADR, APELLIDO2_PADR)
+VALUES (1, 1, '118540236', '119001', 'O', TO_DATE('2030-02-10','YYYY-MM-DD'), '00001', 'CLIENTE', 'CONTADO', 'GENERICO');
+INSERT INTO CAT_PADRON (ID_PADRON, ID_DISTRITO, CEDULA_PADR, COD_ELECTORAL_PADR, SEXO_PADR, FECHA_VENC_CED_PADR, JUNTA_RECEPTORA_PADR, NOMBRE_PADR, APELLIDO1_PADR, APELLIDO2_PADR)
+VALUES (2, 1, '603780145', '119001', 'F', TO_DATE('2032-06-14','YYYY-MM-DD'), '00102', 'MARISOL', 'VARGAS', 'CHINCHILLA');
+INSERT INTO CAT_PADRON (ID_PADRON, ID_DISTRITO, CEDULA_PADR, COD_ELECTORAL_PADR, SEXO_PADR, FECHA_VENC_CED_PADR, JUNTA_RECEPTORA_PADR, NOMBRE_PADR, APELLIDO1_PADR, APELLIDO2_PADR)
+VALUES (3, 1, '110230458', '119001', 'M', TO_DATE('2031-03-08','YYYY-MM-DD'), '00105', 'KEYLOR', 'JIMENEZ', 'SANABRIA');
+INSERT INTO CAT_PADRON (ID_PADRON, ID_DISTRITO, CEDULA_PADR, COD_ELECTORAL_PADR, SEXO_PADR, FECHA_VENC_CED_PADR, JUNTA_RECEPTORA_PADR, NOMBRE_PADR, APELLIDO1_PADR, APELLIDO2_PADR)
+VALUES (4, 1, '604120389', '119001', 'M', TO_DATE('2033-09-17','YYYY-MM-DD'), '00110', 'HAIROL', 'ROMERO', 'SEGURA');
+INSERT INTO CAT_PADRON (ID_PADRON, ID_DISTRITO, CEDULA_PADR, COD_ELECTORAL_PADR, SEXO_PADR, FECHA_VENC_CED_PADR, JUNTA_RECEPTORA_PADR, NOMBRE_PADR, APELLIDO1_PADR, APELLIDO2_PADR)
+VALUES (5, 2, '113450672', '610001', 'M', TO_DATE('2034-12-02','YYYY-MM-DD'), '00201', 'JEREMY', 'ELIZONDO', 'MORA');
+INSERT INTO CAT_PADRON (ID_PADRON, ID_DISTRITO, CEDULA_PADR, COD_ELECTORAL_PADR, SEXO_PADR, FECHA_VENC_CED_PADR, JUNTA_RECEPTORA_PADR, NOMBRE_PADR, APELLIDO1_PADR, APELLIDO2_PADR)
+VALUES (6, 2, '602890134', '610001', 'F', TO_DATE('2031-07-21','YYYY-MM-DD'), '00204', 'GABRIELA', 'URENA', 'SOLIS');
+INSERT INTO CAT_PADRON (ID_PADRON, ID_DISTRITO, CEDULA_PADR, COD_ELECTORAL_PADR, SEXO_PADR, FECHA_VENC_CED_PADR, JUNTA_RECEPTORA_PADR, NOMBRE_PADR, APELLIDO1_PADR, APELLIDO2_PADR)
+VALUES (7, 3, '117760245', '607001', 'M', TO_DATE('2030-04-05','YYYY-MM-DD'), '00301', 'LUIS', 'CASTRO', 'FALLAS');
+INSERT INTO CAT_PADRON (ID_PADRON, ID_DISTRITO, CEDULA_PADR, COD_ELECTORAL_PADR, SEXO_PADR, FECHA_VENC_CED_PADR, JUNTA_RECEPTORA_PADR, NOMBRE_PADR, APELLIDO1_PADR, APELLIDO2_PADR)
+VALUES (8, 4, '605230917', '603001', 'F', TO_DATE('2035-10-30','YYYY-MM-DD'), '00402', 'DANIELA', 'ROJAS', 'CECILIANO');
+INSERT INTO CAT_PADRON (ID_PADRON, ID_DISTRITO, CEDULA_PADR, COD_ELECTORAL_PADR, SEXO_PADR, FECHA_VENC_CED_PADR, JUNTA_RECEPTORA_PADR, NOMBRE_PADR, APELLIDO1_PADR, APELLIDO2_PADR)
+VALUES (9, 1, '115670891', '119001', 'F', TO_DATE('2033-05-19','YYYY-MM-DD'), '00112', 'VALERIA', 'MONTERO', 'QUESADA');
+INSERT INTO CAT_PADRON (ID_PADRON, ID_DISTRITO, CEDULA_PADR, COD_ELECTORAL_PADR, SEXO_PADR, FECHA_VENC_CED_PADR, JUNTA_RECEPTORA_PADR, NOMBRE_PADR, APELLIDO1_PADR, APELLIDO2_PADR)
+VALUES (10, 5, '109870654', '101001', 'M', TO_DATE('2032-11-11','YYYY-MM-DD'), '00501', 'ESTEBAN', 'SOLANO', 'BRENES');
+
+-- Enlazar clientes nacionales existentes con su registro en CAT_PADRON
+UPDATE PER_CLIENTE SET ID_PADRON = 1 WHERE ID_CLIENTE = 1;
+UPDATE PER_CLIENTE SET ID_PADRON = 2 WHERE ID_CLIENTE = 2;
+UPDATE PER_CLIENTE SET ID_PADRON = 3 WHERE ID_CLIENTE = 4;
+
+-- 6.2 SEG_PARAMETRO (21 parametros de correo, seguridad, negocio, monitoreo y standby)
+--     Nota: Las claves sensibles se cifran con DBMS_CRYPTO (AES-256) usando la llave maestra del sistema.
+DECLARE
+    c_llave RAW(32) := UTL_I18N.STRING_TO_RAW('CADENA_NEG_AES256_KEY_UNA_2026!!', 'AL32UTF8');
+    c_tipo  PLS_INTEGER := DBMS_CRYPTO.ENCRYPT_AES256 + DBMS_CRYPTO.CHAIN_CBC + DBMS_CRYPTO.PAD_PKCS5;
+
+    FUNCTION cifrar(p_texto IN VARCHAR2) RETURN RAW IS
+    BEGIN
+        RETURN DBMS_CRYPTO.ENCRYPT(
+            src => UTL_I18N.STRING_TO_RAW(p_texto, 'AL32UTF8'),
+            typ => c_tipo,
+            key => c_llave
+        );
+    END;
+BEGIN
+    -- Parametros de Correo y Notificaciones
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_TEXTO_PARA)
+    VALUES (1, 'SMTP_HOST', 'CORREO', 'Servidor SMTP', 'Servidor de correo saliente para envio directo desde Oracle sin VPN.', 'N', 'smtp.gmail.com');
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (2, 'SMTP_PORT', 'CORREO', 'Puerto SMTP', 'Puerto TCP del servidor SMTP.', 'N', 587);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_TEXTO_PARA)
+    VALUES (3, 'CORREO_EMISOR', 'CORREO', 'Correo emisor del sistema', 'Cuenta remitente de las notificaciones automaticas.', 'N', 'notificaciones@superbrunca.cr');
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_RAW_PARA)
+    VALUES (4, 'CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', cifrar('SmtpSuperBrunca2026#'));
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_TEXTO_PARA)
+    VALUES (5, 'CORREO_COORDINADOR', 'CORREO', 'Correo del coordinador', 'Destinatario de alertas de mercadeo, clientes 85%, vencidos y cierres.', 'N', 'coordinador@superbrunca.cr');
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_TEXTO_PARA)
+    VALUES (6, 'CORREO_GERENTE', 'CORREO', 'Correo del gerente', 'Destinatario de alertas de proveedores 70%, morosidad y cierres diarios.', 'N', 'gerente@superbrunca.cr');
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_TEXTO_PARA)
+    VALUES (7, 'CORREO_DBA', 'CORREO', 'Correo del administrador BD', 'Destinatario de alertas de tablespaces, objetos invalidos e indices danados.', 'N', 'dba@superbrunca.cr');
+
+    -- Parametros de Claves Cifradas de Roles de BD
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_RAW_PARA)
+    VALUES (8, 'CLAVE_ROL_GERENTE', 'SEGURIDAD', 'Clave cifrada ROL_GERENTE', 'Contrasena del rol Gerente cifrada con DBMS_CRYPTO.', 'S', cifrar('RolGerente2026#'));
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_RAW_PARA)
+    VALUES (9, 'CLAVE_ROL_JEFE_DEPTO', 'SEGURIDAD', 'Clave cifrada ROL_JEFE_DEPARTAMENTO', 'Contrasena del rol Jefe de Departamento cifrada con DBMS_CRYPTO.', 'S', cifrar('RolJefeDepto2026#'));
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_RAW_PARA)
+    VALUES (10, 'CLAVE_ROL_JEFE_PROV', 'SEGURIDAD', 'Clave cifrada ROL_JEFE_PROVEEDURIA', 'Contrasena del rol Jefe de Proveeduria cifrada con DBMS_CRYPTO.', 'S', cifrar('RolJefeProv2026#'));
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_RAW_PARA)
+    VALUES (11, 'CLAVE_ROL_DIGITADOR', 'SEGURIDAD', 'Clave cifrada ROL_DIGITADOR', 'Contrasena del rol Digitador cifrada con DBMS_CRYPTO.', 'S', cifrar('RolDigitador2026#'));
+
+    -- Parametros de Reglas de Negocio
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (12, 'PORC_ALERTA_CREDITO_CLI', 'NEGOCIO', 'Porcentaje alerta credito clientes', 'Umbral porcentual (85%) del limite de credito en cuentas por cobrar.', 'N', 85);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (13, 'PORC_ALERTA_CREDITO_PROV', 'NEGOCIO', 'Porcentaje alerta credito proveedores', 'Umbral porcentual (70%) del limite permitido en cuentas por pagar.', 'N', 70);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (14, 'MESES_MOROSIDAD_CLIENTE', 'NEGOCIO', 'Meses de antiguedad ultimo pago', 'Cantidad de meses sin abono para considerar moroso a un cliente con saldo.', 'N', 1);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (15, 'DIAS_ALERTA_POR_VENCER', 'NEGOCIO', 'Dias de alerta productos por vencer', 'Rango en dias (7 dias = 1 semana) para reportar productos proximos a vencer.', 'N', 7);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (16, 'MESES_ANTIGUEDAD_BODEGA', 'NEGOCIO', 'Meses de antiguedad en bodega', 'Cantidad de meses (6 meses) para reportar lotes antiguos en bodega.', 'N', 6);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (17, 'TOP_CLIENTES_PREMIADOS', 'NEGOCIO', 'Cantidad de mejores clientes a premiar', 'Cantidad de clientes seleccionados en el ranking de compras (Top 10).', 'N', 10);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (18, 'MONTO_ORDEN_PREMIACION', 'NEGOCIO', 'Monto de orden de compra para premiados', 'Valor en colones de la orden de compra para los mejores clientes (100,000).', 'N', 100000);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (19, 'MESES_FRECUENCIA_PREMIACION', 'NEGOCIO', 'Frecuencia en meses de premiacion', 'Cada cuantos meses se ejecuta la premiacion de mejores clientes (6 meses).', 'N', 6);
+
+    -- Parametros de Monitoreo y Standby
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (20, 'PORC_MAX_TABLESPACE', 'MONITOREO', 'Porcentaje maximo de uso de tablespace', 'Limite porcentual (85%) antes de emitir alerta de capacidad de tablespace.', 'N', 85);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA, VALOR_TEXTO_PARA)
+    VALUES (21, 'STANDBY_CONFIG_PARAMS', 'STANDBY', 'Parametros de sincronizacion Standby', 'Switch: 5 min / 50 MB | Traslado: 10 min | Retencion purga: 3 dias.', 'N', 10, 'SWITCH_MIN=5;SWITCH_MB=50;SYNC_MIN=10;RETENCION_DIAS=3');
+END;
+/
+
+-- 6.3 COM_CUENTA_PAGAR (5 registros sincronizados con las facturas de compra a credito de script_bd_v2.sql)
+--     Facturas a credito en COM_FACTURA_COMPRA: ID 2, 3, 5, 6 (ya pagada totalmente) y 7.
+INSERT INTO COM_CUENTA_PAGAR (ID_CUENTA_PAGAR, ID_FACTURA_COMPRA, ID_PROVEEDOR, FECHA_EMISION_CUPA, FECHA_VENCIM_CUPA, MONTO_ORIGINAL_CUPA, MONTO_ABONADO_CUPA, SALDO_CUPA, FECHA_ULT_ABONO_CUPA, ESTADO_CUPA)
+VALUES (1, 2, 2, TO_DATE('2026-08-15','YYYY-MM-DD'), TO_DATE('2026-09-15','YYYY-MM-DD'), 29380, 10000, 19380, TO_DATE('2026-09-05','YYYY-MM-DD'), 'A');
+INSERT INTO COM_CUENTA_PAGAR (ID_CUENTA_PAGAR, ID_FACTURA_COMPRA, ID_PROVEEDOR, FECHA_EMISION_CUPA, FECHA_VENCIM_CUPA, MONTO_ORIGINAL_CUPA, MONTO_ABONADO_CUPA, SALDO_CUPA, FECHA_ULT_ABONO_CUPA, ESTADO_CUPA)
+VALUES (2, 3, 3, TO_DATE('2026-08-20','YYYY-MM-DD'), TO_DATE('2026-09-05','YYYY-MM-DD'), 13635, 8000, 5635, TO_DATE('2026-09-01','YYYY-MM-DD'), 'A');
+INSERT INTO COM_CUENTA_PAGAR (ID_CUENTA_PAGAR, ID_FACTURA_COMPRA, ID_PROVEEDOR, FECHA_EMISION_CUPA, FECHA_VENCIM_CUPA, MONTO_ORIGINAL_CUPA, MONTO_ABONADO_CUPA, SALDO_CUPA, FECHA_ULT_ABONO_CUPA, ESTADO_CUPA)
+VALUES (3, 5, 5, TO_DATE('2026-08-25','YYYY-MM-DD'), TO_DATE('2026-09-10','YYYY-MM-DD'), 47460, 0, 47460, NULL, 'P');
+INSERT INTO COM_CUENTA_PAGAR (ID_CUENTA_PAGAR, ID_FACTURA_COMPRA, ID_PROVEEDOR, FECHA_EMISION_CUPA, FECHA_VENCIM_CUPA, MONTO_ORIGINAL_CUPA, MONTO_ABONADO_CUPA, SALDO_CUPA, FECHA_ULT_ABONO_CUPA, ESTADO_CUPA)
+VALUES (4, 6, 1, TO_DATE('2026-08-28','YYYY-MM-DD'), TO_DATE('2026-09-28','YYYY-MM-DD'), 22600, 22600, 0, TO_DATE('2026-09-20','YYYY-MM-DD'), 'C');
+INSERT INTO COM_CUENTA_PAGAR (ID_CUENTA_PAGAR, ID_FACTURA_COMPRA, ID_PROVEEDOR, FECHA_EMISION_CUPA, FECHA_VENCIM_CUPA, MONTO_ORIGINAL_CUPA, MONTO_ABONADO_CUPA, SALDO_CUPA, FECHA_ULT_ABONO_CUPA, ESTADO_CUPA)
+VALUES (5, 7, 2, TO_DATE('2026-08-29','YYYY-MM-DD'), TO_DATE('2026-09-29','YYYY-MM-DD'), 16950, 5000, 11950, TO_DATE('2026-09-02','YYYY-MM-DD'), 'A');
+
+-- Actualizar ESTADO_FACO y SALDO_ACTUAL_PROVE coherentes con las cuentas por pagar
+UPDATE COM_FACTURA_COMPRA SET ESTADO_FACO = 'P' WHERE ID_FACTURA_COMPRA IN (2, 3, 5, 7);
+UPDATE COM_FACTURA_COMPRA SET ESTADO_FACO = 'C' WHERE ID_FACTURA_COMPRA IN (1, 4, 6);
+
+UPDATE PER_PROVEEDOR pr
+   SET SALDO_ACTUAL_PROVE = NVL((SELECT SUM(SALDO_CUPA)
+                                   FROM COM_CUENTA_PAGAR cp
+                                  WHERE cp.ID_PROVEEDOR = pr.ID_PROVEEDOR
+                                    AND cp.ESTADO_CUPA IN ('P','A')), 0);
+
+-- 6.4 VEN_CUENTA_COBRAR (5 registros sincronizados con las facturas de venta a credito de script_bd_v2.sql)
+--     Facturas a credito en VEN_FACTURA: ID 3, 5, 7, 8 (ya cancelada totalmente) y 9.
+INSERT INTO VEN_CUENTA_COBRAR (ID_CUENTA_COBRAR, ID_FACTURA_VENTA, ID_CLIENTE, FECHA_EMISION_CUCO, FECHA_VENCIM_CUCO, MONTO_ORIGINAL_CUCO, MONTO_ABONADO_CUCO, SALDO_CUCO, FECHA_ULT_ABONO_CUCO, ESTADO_CUCO)
+VALUES (1, 3, 3, TO_DATE('2026-09-03','YYYY-MM-DD'), TO_DATE('2026-10-03','YYYY-MM-DD'), 39550, 10000, 29550, TO_DATE('2026-09-20','YYYY-MM-DD'), 'A');
+INSERT INTO VEN_CUENTA_COBRAR (ID_CUENTA_COBRAR, ID_FACTURA_VENTA, ID_CLIENTE, FECHA_EMISION_CUCO, FECHA_VENCIM_CUCO, MONTO_ORIGINAL_CUCO, MONTO_ABONADO_CUCO, SALDO_CUCO, FECHA_ULT_ABONO_CUCO, ESTADO_CUCO)
+VALUES (2, 5, 5, TO_DATE('2026-09-05','YYYY-MM-DD'), TO_DATE('2026-10-05','YYYY-MM-DD'), 64410, 30000, 34410, TO_DATE('2026-09-15','YYYY-MM-DD'), 'A');
+INSERT INTO VEN_CUENTA_COBRAR (ID_CUENTA_COBRAR, ID_FACTURA_VENTA, ID_CLIENTE, FECHA_EMISION_CUCO, FECHA_VENCIM_CUCO, MONTO_ORIGINAL_CUCO, MONTO_ABONADO_CUCO, SALDO_CUCO, FECHA_ULT_ABONO_CUCO, ESTADO_CUCO)
+VALUES (3, 7, 3, TO_DATE('2026-09-06','YYYY-MM-DD'), TO_DATE('2026-10-06','YYYY-MM-DD'), 16950, 5000, 11950, TO_DATE('2026-09-12','YYYY-MM-DD'), 'A');
+INSERT INTO VEN_CUENTA_COBRAR (ID_CUENTA_COBRAR, ID_FACTURA_VENTA, ID_CLIENTE, FECHA_EMISION_CUCO, FECHA_VENCIM_CUCO, MONTO_ORIGINAL_CUCO, MONTO_ABONADO_CUCO, SALDO_CUCO, FECHA_ULT_ABONO_CUCO, ESTADO_CUCO)
+VALUES (4, 8, 5, TO_DATE('2026-09-07','YYYY-MM-DD'), TO_DATE('2026-10-07','YYYY-MM-DD'), 85880, 85880, 0, TO_DATE('2026-09-25','YYYY-MM-DD'), 'C');
+INSERT INTO VEN_CUENTA_COBRAR (ID_CUENTA_COBRAR, ID_FACTURA_VENTA, ID_CLIENTE, FECHA_EMISION_CUCO, FECHA_VENCIM_CUCO, MONTO_ORIGINAL_CUCO, MONTO_ABONADO_CUCO, SALDO_CUCO, FECHA_ULT_ABONO_CUCO, ESTADO_CUCO)
+VALUES (5, 9, 5, TO_DATE('2026-09-10','YYYY-MM-DD'), TO_DATE('2026-10-10','YYYY-MM-DD'), 28250, 0, 28250, NULL, 'P');
+
+-- Actualizar ESTADO_FAVE y SALDO_ACTUAL_CLI coherentes con las cuentas por cobrar
+UPDATE VEN_FACTURA SET ESTADO_FAVE = 'P' WHERE ID_FACTURA_VENTA IN (3, 5, 7, 9);
+UPDATE VEN_FACTURA SET ESTADO_FAVE = 'C' WHERE ID_FACTURA_VENTA IN (1, 2, 4, 6, 8);
+
+UPDATE PER_CLIENTE c
+   SET SALDO_ACTUAL_CLI = NVL((SELECT SUM(SALDO_CUCO)
+                                 FROM VEN_CUENTA_COBRAR cc
+                                WHERE cc.ID_CLIENTE = c.ID_CLIENTE
+                                  AND cc.ESTADO_CUCO IN ('P','A')), 0);
+
+-- 6.5 VEN_CIERRE_DIARIO (5 registros)
+INSERT INTO VEN_CIERRE_DIARIO (ID_CIERRE_DIARIO, ID_SUCURSAL, FECHA_CIDI, CANT_FACTURAS_CIDI, CANT_VENDIDA_CIDI, MONTO_VENTAS_CIDI, CANT_DEVOL_CIDI, MONTO_DEVOL_CIDI, OBSERVACION_CIDI)
+VALUES (1, 1, TO_DATE('2026-09-01','YYYY-MM-DD'), 1, 10, 5650, 0, 0, 'Cierre diario automatico sucursal San Isidro.');
+INSERT INTO VEN_CIERRE_DIARIO (ID_CIERRE_DIARIO, ID_SUCURSAL, FECHA_CIDI, CANT_FACTURAS_CIDI, CANT_VENDIDA_CIDI, MONTO_VENTAS_CIDI, CANT_DEVOL_CIDI, MONTO_DEVOL_CIDI, OBSERVACION_CIDI)
+VALUES (2, 1, TO_DATE('2026-09-02','YYYY-MM-DD'), 1, 20, 12204, 1, 565, 'Cierre diario con devolucion parcial.');
+INSERT INTO VEN_CIERRE_DIARIO (ID_CIERRE_DIARIO, ID_SUCURSAL, FECHA_CIDI, CANT_FACTURAS_CIDI, CANT_VENDIDA_CIDI, MONTO_VENTAS_CIDI, CANT_DEVOL_CIDI, MONTO_DEVOL_CIDI, OBSERVACION_CIDI)
+VALUES (3, 2, TO_DATE('2026-09-03','YYYY-MM-DD'), 1, 10, 39550, 0, 0, 'Cierre diario sucursal Ciudad Neily.');
+INSERT INTO VEN_CIERRE_DIARIO (ID_CIERRE_DIARIO, ID_SUCURSAL, FECHA_CIDI, CANT_FACTURAS_CIDI, CANT_VENDIDA_CIDI, MONTO_VENTAS_CIDI, CANT_DEVOL_CIDI, MONTO_DEVOL_CIDI, OBSERVACION_CIDI)
+VALUES (4, 3, TO_DATE('2026-09-04','YYYY-MM-DD'), 1, 40, 8080, 0, 0, 'Cierre diario sucursal Golfito.');
+INSERT INTO VEN_CIERRE_DIARIO (ID_CIERRE_DIARIO, ID_SUCURSAL, FECHA_CIDI, CANT_FACTURAS_CIDI, CANT_VENDIDA_CIDI, MONTO_VENTAS_CIDI, CANT_DEVOL_CIDI, MONTO_DEVOL_CIDI, OBSERVACION_CIDI)
+VALUES (5, 1, TO_DATE('2026-09-05','YYYY-MM-DD'), 1, 80, 64410, 0, 0, 'Cierre diario sucursal San Isidro.');
+
+-- 6.6 VEN_CIERRE_DIARIO_DET (5 registros por cajero)
+INSERT INTO VEN_CIERRE_DIARIO_DET (ID_CIERRE_DIARIO_DET, ID_CIERRE_DIARIO, ID_USUARIO, CANT_FACTURAS_CIDE, CANT_VENDIDA_CIDE, MONTO_VENTAS_CIDE, CANT_DEVOL_CIDE, MONTO_DEVOL_CIDE)
+VALUES (1, 1, 1, 1, 10, 5650, 0, 0);
+INSERT INTO VEN_CIERRE_DIARIO_DET (ID_CIERRE_DIARIO_DET, ID_CIERRE_DIARIO, ID_USUARIO, CANT_FACTURAS_CIDE, CANT_VENDIDA_CIDE, MONTO_VENTAS_CIDE, CANT_DEVOL_CIDE, MONTO_DEVOL_CIDE)
+VALUES (2, 2, 1, 1, 20, 12204, 1, 565);
+INSERT INTO VEN_CIERRE_DIARIO_DET (ID_CIERRE_DIARIO_DET, ID_CIERRE_DIARIO, ID_USUARIO, CANT_FACTURAS_CIDE, CANT_VENDIDA_CIDE, MONTO_VENTAS_CIDE, CANT_DEVOL_CIDE, MONTO_DEVOL_CIDE)
+VALUES (3, 3, 3, 1, 10, 39550, 0, 0);
+INSERT INTO VEN_CIERRE_DIARIO_DET (ID_CIERRE_DIARIO_DET, ID_CIERRE_DIARIO, ID_USUARIO, CANT_FACTURAS_CIDE, CANT_VENDIDA_CIDE, MONTO_VENTAS_CIDE, CANT_DEVOL_CIDE, MONTO_DEVOL_CIDE)
+VALUES (4, 4, 4, 1, 40, 8080, 0, 0);
+INSERT INTO VEN_CIERRE_DIARIO_DET (ID_CIERRE_DIARIO_DET, ID_CIERRE_DIARIO, ID_USUARIO, CANT_FACTURAS_CIDE, CANT_VENDIDA_CIDE, MONTO_VENTAS_CIDE, CANT_DEVOL_CIDE, MONTO_DEVOL_CIDE)
+VALUES (5, 5, 1, 1, 80, 64410, 0, 0);
+
+-- 6.7 PRM_DESCUENTO_DET (5 registros de productos incluidos en descuentos programados)
+INSERT INTO PRM_DESCUENTO_DET (ID_DESCUENTO_DET, ID_DESCUENTO, ID_PRODUCTO, ID_LOTE, MOTIVO_INCLUSION_DSDE, FECHA_INCLUSION_DSDE)
+VALUES (1, 1, 2, 2, 'Lote L2026-101 proximo a vencer segun regla de caducidad.', TO_DATE('2026-09-15','YYYY-MM-DD'));
+INSERT INTO PRM_DESCUENTO_DET (ID_DESCUENTO_DET, ID_DESCUENTO, ID_PRODUCTO, ID_LOTE, MOTIVO_INCLUSION_DSDE, FECHA_INCLUSION_DSDE)
+VALUES (2, 1, 2, 3, 'Lote L2026-102 proximo a vencer segun regla de caducidad.', TO_DATE('2026-09-20','YYYY-MM-DD'));
+INSERT INTO PRM_DESCUENTO_DET (ID_DESCUENTO_DET, ID_DESCUENTO, ID_PRODUCTO, ID_LOTE, MOTIVO_INCLUSION_DSDE, FECHA_INCLUSION_DSDE)
+VALUES (3, 1, 5, 4, 'Lote L2026-201 de tomate fresco proximo a vencer.', TO_DATE('2026-09-10','YYYY-MM-DD'));
+INSERT INTO PRM_DESCUENTO_DET (ID_DESCUENTO_DET, ID_DESCUENTO, ID_PRODUCTO, ID_LOTE, MOTIVO_INCLUSION_DSDE, FECHA_INCLUSION_DSDE)
+VALUES (4, 4, 1, 1, 'Lote L2026-001 supera los dias de antiguedad en bodega.', TO_DATE('2026-10-05','YYYY-MM-DD'));
+INSERT INTO PRM_DESCUENTO_DET (ID_DESCUENTO_DET, ID_DESCUENTO, ID_PRODUCTO, ID_LOTE, MOTIVO_INCLUSION_DSDE, FECHA_INCLUSION_DSDE)
+VALUES (5, 4, 6, 5, 'Lote L2026-301 incluido por antiguedad en inventario.', TO_DATE('2026-10-29','YYYY-MM-DD'));
+
+-- 6.8 PRM_ORDEN_PREMIACION (5 registros iniciales de clientes premiados)
+INSERT INTO PRM_ORDEN_PREMIACION (ID_ORDEN_PREMIACION, ID_CLIENTE, PERIODO_ORPR, POSICION_RANK_ORPR, TOTAL_COMPRADO_ORPR, MONTO_ORDEN_ORPR, FECHA_EMISION_ORPR, FECHA_VENCIM_ORPR, ESTADO_ORPR)
+VALUES (1, 5, '2026-S1', 1, 178540, 100000, TO_DATE('2026-07-01','YYYY-MM-DD'), TO_DATE('2026-12-31','YYYY-MM-DD'), 'D');
+INSERT INTO PRM_ORDEN_PREMIACION (ID_ORDEN_PREMIACION, ID_CLIENTE, PERIODO_ORPR, POSICION_RANK_ORPR, TOTAL_COMPRADO_ORPR, MONTO_ORDEN_ORPR, FECHA_EMISION_ORPR, FECHA_VENCIM_ORPR, ESTADO_ORPR)
+VALUES (2, 3, '2026-S1', 2, 56500, 100000, TO_DATE('2026-07-01','YYYY-MM-DD'), TO_DATE('2026-12-31','YYYY-MM-DD'), 'D');
+INSERT INTO PRM_ORDEN_PREMIACION (ID_ORDEN_PREMIACION, ID_CLIENTE, PERIODO_ORPR, POSICION_RANK_ORPR, TOTAL_COMPRADO_ORPR, MONTO_ORDEN_ORPR, FECHA_EMISION_ORPR, FECHA_VENCIM_ORPR, ESTADO_ORPR)
+VALUES (3, 2, '2026-S1', 3, 12204, 100000, TO_DATE('2026-07-01','YYYY-MM-DD'), TO_DATE('2026-12-31','YYYY-MM-DD'), 'C');
+INSERT INTO PRM_ORDEN_PREMIACION (ID_ORDEN_PREMIACION, ID_CLIENTE, PERIODO_ORPR, POSICION_RANK_ORPR, TOTAL_COMPRADO_ORPR, MONTO_ORDEN_ORPR, FECHA_EMISION_ORPR, FECHA_VENCIM_ORPR, ESTADO_ORPR)
+VALUES (4, 1, '2026-S1', 4, 11300, 100000, TO_DATE('2026-07-01','YYYY-MM-DD'), TO_DATE('2026-12-31','YYYY-MM-DD'), 'D');
+INSERT INTO PRM_ORDEN_PREMIACION (ID_ORDEN_PREMIACION, ID_CLIENTE, PERIODO_ORPR, POSICION_RANK_ORPR, TOTAL_COMPRADO_ORPR, MONTO_ORDEN_ORPR, FECHA_EMISION_ORPR, FECHA_VENCIM_ORPR, ESTADO_ORPR)
+VALUES (5, 4, '2026-S1', 5, 8080, 100000, TO_DATE('2026-07-01','YYYY-MM-DD'), TO_DATE('2026-12-31','YYYY-MM-DD'), 'D');
+
+-- 6.9 AUD_REGISTRO_CAMBIO (5 registros iniciales de auditoria detallada)
+INSERT INTO AUD_REGISTRO_CAMBIO (ID_REGISTRO_CAMBIO, TABLA_RECA, MODULO_RECA, OPERACION_RECA, LLAVE_PRIMARIA_RECA, CAMPO_MODIFICADO_RECA, VALOR_ANTERIOR_RECA, VALOR_NUEVO_RECA, TERMINAL_RECA, DIRECCION_IP_RECA)
+VALUES (1, 'PRO_PRODUCTO', 'PRECIOS', 'UPDATE', '1', 'PRECIO_COSTO_PROD', '420', '450', 'TERM-BODEGA01', '192.168.10.5');
+INSERT INTO AUD_REGISTRO_CAMBIO (ID_REGISTRO_CAMBIO, TABLA_RECA, MODULO_RECA, OPERACION_RECA, LLAVE_PRIMARIA_RECA, CAMPO_MODIFICADO_RECA, VALOR_ANTERIOR_RECA, VALOR_NUEVO_RECA, TERMINAL_RECA, DIRECCION_IP_RECA)
+VALUES (2, 'PER_CLIENTE', 'CLIENTES', 'UPDATE', '5', 'MONTO_MAX_CREDITO_CLI', '1000000', '1500000', 'TERM-GERENCIA', '192.168.10.15');
+INSERT INTO AUD_REGISTRO_CAMBIO (ID_REGISTRO_CAMBIO, TABLA_RECA, MODULO_RECA, OPERACION_RECA, LLAVE_PRIMARIA_RECA, CAMPO_MODIFICADO_RECA, VALOR_ANTERIOR_RECA, VALOR_NUEVO_RECA, TERMINAL_RECA, DIRECCION_IP_RECA)
+VALUES (3, 'PER_PROVEEDOR', 'PROVEEDORES', 'UPDATE', '1', 'LIMITE_CREDITO_PROVE', '7000000', '8000000', 'TERM-PROVEED', '192.168.10.20');
+INSERT INTO AUD_REGISTRO_CAMBIO (ID_REGISTRO_CAMBIO, TABLA_RECA, MODULO_RECA, OPERACION_RECA, LLAVE_PRIMARIA_RECA, CAMPO_MODIFICADO_RECA, VALOR_ANTERIOR_RECA, VALOR_NUEVO_RECA, TERMINAL_RECA, DIRECCION_IP_RECA)
+VALUES (4, 'VEN_FACTURA', 'FACTURACION', 'UPDATE', '8', 'ESTADO_FAVE', 'P', 'C', 'TERM-CAJA01', '192.168.10.11');
+INSERT INTO AUD_REGISTRO_CAMBIO (ID_REGISTRO_CAMBIO, TABLA_RECA, MODULO_RECA, OPERACION_RECA, LLAVE_PRIMARIA_RECA, CAMPO_MODIFICADO_RECA, VALOR_ANTERIOR_RECA, VALOR_NUEVO_RECA, TERMINAL_RECA, DIRECCION_IP_RECA)
+VALUES (5, 'INV_EXISTENCIA', 'INVENTARIO', 'UPDATE', '2', 'CANTIDAD_EXIS', '20', '18', 'TERM-CAJA01', '192.168.10.11');
+
+-- 6.10 AUD_ERROR_SISTEMA (5 registros iniciales de bitacora de errores)
+INSERT INTO AUD_ERROR_SISTEMA (ID_ERROR_SISTEMA, PAQUETE_ERSI, SUBPROGRAMA_ERSI, CODIGO_SQL_ERSI, MENSAJE_ERROR_ERSI, PILA_ERROR_ERSI, TERMINAL_ERSI)
+VALUES (1, 'PKG_VEN_OPERACION', 'PR_EMITIR_FACTURA_VENTA', -20010, 'ORA-20010: Credito insuficiente: la factura supera el limite autorizado del cliente.', 'ORA-06512: en CADENA_NEG.PKG_VEN_OPERACION, linea 84', 'TERM-CAJA01');
+INSERT INTO AUD_ERROR_SISTEMA (ID_ERROR_SISTEMA, PAQUETE_ERSI, SUBPROGRAMA_ERSI, CODIGO_SQL_ERSI, MENSAJE_ERROR_ERSI, PILA_ERROR_ERSI, TERMINAL_ERSI)
+VALUES (2, 'PKG_COM_OPERACION', 'PR_REGISTRAR_FACTURA_COMPRA', -20011, 'ORA-20011: Limite de credito con el proveedor superado.', 'ORA-06512: en CADENA_NEG.PKG_COM_OPERACION, linea 62', 'TERM-PROVEED');
+INSERT INTO AUD_ERROR_SISTEMA (ID_ERROR_SISTEMA, PAQUETE_ERSI, SUBPROGRAMA_ERSI, CODIGO_SQL_ERSI, MENSAJE_ERROR_ERSI, PILA_ERROR_ERSI, TERMINAL_ERSI)
+VALUES (3, 'PKG_INV_GESTION', 'PR_AFECTAR_EXISTENCIA', -20015, 'ORA-20015: Existencia insuficiente en bodega para cubrir la salida solicitada.', 'ORA-06512: en CADENA_NEG.PKG_INV_GESTION, linea 49', 'TERM-CAJA02');
+INSERT INTO AUD_ERROR_SISTEMA (ID_ERROR_SISTEMA, PAQUETE_ERSI, SUBPROGRAMA_ERSI, CODIGO_SQL_ERSI, MENSAJE_ERROR_ERSI, PILA_ERROR_ERSI, TERMINAL_ERSI)
+VALUES (4, 'PKG_PER_PADRON', 'PR_CARGAR_PADRON_TSE', -29283, 'ORA-29283: operacion de archivo no valida (archivo de padron en verificacion).', 'ORA-06512: en CADENA_NEG.PKG_PER_PADRON, linea 115', 'TERM-ADMIN');
+INSERT INTO AUD_ERROR_SISTEMA (ID_ERROR_SISTEMA, PAQUETE_ERSI, SUBPROGRAMA_ERSI, CODIGO_SQL_ERSI, MENSAJE_ERROR_ERSI, PILA_ERROR_ERSI, TERMINAL_ERSI)
+VALUES (5, 'PKG_SEG_SEGURIDAD', 'PR_ACTIVAR_ROL', -20020, 'ORA-20020: Rol solicitado no existe o se encuentra inactivo en SEG_PARAMETRO.', 'ORA-06512: en CADENA_NEG.PKG_SEG_SEGURIDAD, linea 140', 'TERM-CAJA01');
+
+-- 6.11 AUD_MONITOREO_BD (5 registros iniciales de revision de salud de la BD)
+INSERT INTO AUD_MONITOREO_BD (ID_MONITOREO_BD, TIPO_VERIF_MOBD, NOMBRE_OBJETO_MOBD, VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD)
+VALUES (1, 'TABLESPACE', 'TBS_DATOS', 12.50, 85.00, 'N', 'Uso normal del tablespace de datos (12.50% <= 85%).');
+INSERT INTO AUD_MONITOREO_BD (ID_MONITOREO_BD, TIPO_VERIF_MOBD, NOMBRE_OBJETO_MOBD, VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD)
+VALUES (2, 'TABLESPACE', 'TBS_INDICES', 8.20, 85.00, 'N', 'Uso normal del tablespace de indices (8.20% <= 85%).');
+INSERT INTO AUD_MONITOREO_BD (ID_MONITOREO_BD, TIPO_VERIF_MOBD, NOMBRE_OBJETO_MOBD, VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD)
+VALUES (3, 'TABLESPACE', 'TBS_AUDITORIA', 5.40, 85.00, 'N', 'Uso normal del tablespace de auditoria (5.40% <= 85%).');
+INSERT INTO AUD_MONITOREO_BD (ID_MONITOREO_BD, TIPO_VERIF_MOBD, NOMBRE_OBJETO_MOBD, VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD)
+VALUES (4, 'OBJETO_INVALIDO', 'ESQUEMA_CADENA_NEG', 0, 0, 'N', '0 objetos invalidos detectados en el esquema CADENA_NEG.');
+INSERT INTO AUD_MONITOREO_BD (ID_MONITOREO_BD, TIPO_VERIF_MOBD, NOMBRE_OBJETO_MOBD, VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD)
+VALUES (5, 'INDICE', 'TODOS_LOS_INDICES', 0, 0, 'N', 'Todos los indices en TBS_INDICES se encuentran en estado VALID.');
+
+COMMIT;
+
+-- 6.12 Realinear las 11 secuencias nuevas por encima del maximo ID insertado
+DECLARE
+    PROCEDURE realinear(p_seq IN VARCHAR2, p_tabla IN VARCHAR2, p_pk IN VARCHAR2) IS
+        v_max NUMBER;
+    BEGIN
+        EXECUTE IMMEDIATE 'SELECT NVL(MAX(' || p_pk || '), 0) FROM ' || p_tabla INTO v_max;
+        EXECUTE IMMEDIATE 'ALTER SEQUENCE ' || p_seq || ' RESTART START WITH ' || (v_max + 1);
+    END;
+BEGIN
+    realinear('SEQ_CAT_PADRON',            'CAT_PADRON',            'ID_PADRON');
+    realinear('SEQ_SEG_PARAMETRO',         'SEG_PARAMETRO',         'ID_PARAMETRO');
+    realinear('SEQ_COM_CUENTA_PAGAR',      'COM_CUENTA_PAGAR',      'ID_CUENTA_PAGAR');
+    realinear('SEQ_VEN_CUENTA_COBRAR',     'VEN_CUENTA_COBRAR',     'ID_CUENTA_COBRAR');
+    realinear('SEQ_VEN_CIERRE_DIARIO',     'VEN_CIERRE_DIARIO',     'ID_CIERRE_DIARIO');
+    realinear('SEQ_VEN_CIERRE_DIARIO_DET', 'VEN_CIERRE_DIARIO_DET', 'ID_CIERRE_DIARIO_DET');
+    realinear('SEQ_PRM_DESCUENTO_DET',     'PRM_DESCUENTO_DET',     'ID_DESCUENTO_DET');
+    realinear('SEQ_PRM_ORDEN_PREMIACION',  'PRM_ORDEN_PREMIACION',  'ID_ORDEN_PREMIACION');
+    realinear('SEQ_AUD_REGISTRO_CAMBIO',   'AUD_REGISTRO_CAMBIO',   'ID_REGISTRO_CAMBIO');
+    realinear('SEQ_AUD_ERROR_SISTEMA',     'AUD_ERROR_SISTEMA',     'ID_ERROR_SISTEMA');
+    realinear('SEQ_AUD_MONITOREO_BD',      'AUD_MONITOREO_BD',      'ID_MONITOREO_BD');
+END;
+/
+
+-- 6.13 Refrescar Vistas Materializadas y recolectar estadisticas del esquema
+BEGIN
+    DBMS_MVIEW.REFRESH('MV_VENTAS_MENSUALES', 'C');
+    DBMS_MVIEW.REFRESH('MV_INVENTARIO_CONSOLIDADO', 'C');
+    DBMS_STATS.GATHER_SCHEMA_STATS(
+        ownname          => 'CADENA_NEG',
+        cascade          => TRUE,
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE
+    );
+END;
+/
+
+--------------------------------------------------------------------------------
+-- SECCION 7: VERIFICACION DE ESTRUCTURAS DEL AVANCE #2
+--------------------------------------------------------------------------------
+DECLARE
+    PROCEDURE chequear(p_nombre IN VARCHAR2, p_obtenido IN NUMBER, p_esperado IN NUMBER) IS
+    BEGIN
+        DBMS_OUTPUT.PUT_LINE(
+            RPAD(p_nombre, 32) || RPAD(p_obtenido, 8) ||
+            CASE WHEN p_obtenido = p_esperado THEN '[OK]'
+                 ELSE '[REVISAR: esperado ' || p_esperado || ']' END
+        );
+    END;
+    v_n NUMBER;
+BEGIN
+    DBMS_OUTPUT.PUT_LINE(CHR(10) || '=== VERIFICACION DE ESTRUCTURAS AVANCE #2 ===' || CHR(10));
+
+    SELECT COUNT(*) INTO v_n FROM all_tables WHERE owner = 'CADENA_NEG' AND table_name NOT LIKE 'MV_%';
+    chequear('Tablas totales (49 + 11)', v_n, 60);
+
+    SELECT COUNT(*) INTO v_n FROM all_sequences WHERE sequence_owner = 'CADENA_NEG';
+    chequear('Secuencias totales (49 + 11)', v_n, 60);
+
+    SELECT COUNT(*) INTO v_n FROM all_mviews WHERE owner = 'CADENA_NEG';
+    chequear('Vistas Materializadas', v_n, 2);
+
+    SELECT COUNT(*) INTO v_n FROM all_objects WHERE owner = 'CADENA_NEG' AND status <> 'VALID';
+    chequear('Objetos invalidos', v_n, 0);
+END;
+/
+
+PROMPT === FIN DE 01_Estructuras_Avance2.sql ===
