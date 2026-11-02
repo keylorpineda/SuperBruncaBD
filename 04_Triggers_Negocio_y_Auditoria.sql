@@ -1173,6 +1173,34 @@ END;
 /
 SHOW ERRORS TRIGGER TRG_AUD_PRM_DESCUENTO_DET;
 
+-- ----------------------------------------------------------------------------
+-- 2.10 TRG_SEG_PARAM_PREMIACION_AU
+-- Sincronizacion dinamica del Scheduler ante actualizaciones del parametro
+-- MESES_FRECUENCIA_PREMIACION en SEG_PARAMETRO (Requerimiento de Parametrizacion Dinamica).
+-- Utiliza transaccion autonoma para aislar el COMMIT interno de DBMS_SCHEDULER.SET_ATTRIBUTE.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE TRIGGER TRG_SEG_PARAM_PREMIACION_AU
+AFTER UPDATE OF VALOR_NUM_PARA ON SEG_PARAMETRO
+FOR EACH ROW
+WHEN (NEW.CODIGO_PARA = 'MESES_FRECUENCIA_PREMIACION' AND NEW.VALOR_NUM_PARA IS NOT NULL AND NEW.VALOR_NUM_PARA > 0)
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+    BEGIN
+        DBMS_SCHEDULER.SET_ATTRIBUTE (
+            name      => 'CADENA_NEG.JOB_PREMIACION_SEMESTRAL',
+            attribute => 'repeat_interval',
+            value     => 'FREQ=MONTHLY; INTERVAL=' || :NEW.VALOR_NUM_PARA || '; BYMONTHDAY=-1; BYHOUR=23; BYMINUTE=30; BYSECOND=0'
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('TRG_SEG_PARAM_PREMIACION_AU', 'SET_ATTRIBUTE', SQLCODE, SQLERRM);
+    END;
+END;
+/
+SHOW ERRORS TRIGGER TRG_SEG_PARAM_PREMIACION_AU;
+
+
 
 PROMPT ============================================================================
 PROMPT 3. VALIDACION Y COMPROBACION DE DISPARADORES INSTALADOS

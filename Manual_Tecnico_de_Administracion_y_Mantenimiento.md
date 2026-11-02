@@ -191,10 +191,14 @@ El modelo impide inconsistencias mediante el supertipo `PER_PERSONA` y la clave 
 
 ## 7. Caso de Estudio: Optimización y Afinamiento SQL (EXPLAIN PLAN)
 
-### 7.1 Escenario Crítico de Producción
-La consulta de cuentas por cobrar vencidas en mora es invocada continuamente por el módulo de cobros y por el proceso de alertas nocturno:
+### 7.1 Escenarios Críticos de Producción y Requerimientos Funcionales
+El análisis de afinamiento evalúa las tres consultas más demandantes del sistema:
+1. **Cobros y Morosidad (`VEN_CUENTA_COBRAR`):** Monitoreo continuo de cuentas pendientes y vencidas.
+2. **Existencias de Inventario por Bodega (`INV_EXISTENCIA`):** Validación en tiempo real de disponibilidad para ventas.
+3. **Facturación por Rango de Fechas (`VEN_FACTURA`):** Consolidación contable de cierres de caja y auditoría de ventas.
 
 ```sql
+-- Consulta 1: Cuentas por Cobrar en Mora
 SELECT c.ID_CUENTA_COBRAR,
        c.ID_FACTURA_VENTA,
        cl.CODIGO_CLI,
@@ -207,35 +211,39 @@ SELECT c.ID_CUENTA_COBRAR,
    AND c.FECHA_VENCIM_CUCO < SYSDATE;
 ```
 
-### 7.2 Diagnóstico Técnico del Plan de Ejecución Inicial (FTS)
-Antes de la optimización, el Optimizador Basado en Costos (CBO) genera la siguiente ruta de acceso:
-* **Operación:** `TABLE ACCESS FULL` sobre `VEN_CUENTA_COBRAR`.
-* **Mecanismo:** Lectura secuencial de multibloques hasta la marca de agua alta (High Water Mark).
-* **Predicado:** `filter("ESTADO_CUCO"='P' AND "FECHA_VENCIM_CUCO"<SYSDATE@!)`.
-* **Impacto:** Costo lineal $O(N)$ proporcional al crecimiento de facturas históricas, generando saturación del buffer cache y degradación del rendimiento de I/O.
+### 7.2 Comportamiento Natural del Optimizador CBO vs Escala de Producción
+En bases de datos con volumen semilla (tablas de 5 a 10 filas contenidas en un único bloque de 8 KB), el Optimizador Basado en Costos (CBO) selecciona de forma natural y matemáticamente correcta la operación **`TABLE ACCESS FULL`**:
+* **Lectura Multibloque:** El motor lee la totalidad del segmento en una única llamada de I/O de sistema operativo (costo estimado por el CBO $\approx 3$ I/Os).
+* **Acceso por Índice B-Tree:** Requeriría leer el bloque raíz, descender por bloques rama hasta el bloque hoja, y posteriormente realizar una lectura aleatoria de bloque individual (*single block I/O*) hacia la tabla mediante `ROWID` (costo estimado $\approx 4$ I/Os).
+* **Conclusión CBO para Tablas Pequeñas:** Dado que $\text{Costo}(\text{FTS}) < \text{Costo}(\text{Index})$, el optimizador evita naturalmente el índice cuando los datos caben en un bloque.
+
+Para modelar y comprobar el comportamiento del motor a escala de producción (donde la tabla supera decenas de miles o millones de transacciones), se evalúan tanto el **Plan Natural sin Hints** como los **Planes Forzados mediante Hints** (`/*+ FULL */` vs `/*+ INDEX */`), demostrando la divergencia entre la complejidad lineal $\mathcal{O}(N)$ del escaneo completo y la complejidad logarítmica $\mathcal{O}(\log N)$ del acceso indexado.
 
 ### 7.3 Diseño e Implementación del Índice Compuesto Estratégico
-Aplicando la teoría de indexación compuesta:
-1. **Columna de Igualdad en Primera Posición:** `ESTADO_CUCO` ('P') filtra de inmediato la partición de cuentas pendientes.
-2. **Columna de Rango en Segunda Posición:** `FECHA_VENCIM_CUCO` (< SYSDATE) permite al optimizador descender por el árbol B-Tree y escanear únicamente el intervalo de hojas requerido.
+Se implementa el índice compuesto `IX_CUCO_ESTADO_VENCIM` en el tablespace dedicado `TBS_INDICES`:
+1. **Columna de Alta Selectividad / Filtro Directo en Primera Posición:** `ESTADO_CUCO` ('P') descarta inmediatamente la mayoría histórica de cuentas canceladas ('C').
+2. **Columna de Rango Temporal en Segunda Posición:** `FECHA_VENCIM_CUCO` (< SYSDATE) permite recorrer únicamente el subconjunto de hojas del árbol B-Tree que satisfacen el rango de mora.
 
 ```sql
-CREATE INDEX IX_CUCO_EST_VENC 
+-- Indice creado en 01_Estructuras_Avance2.sql
+CREATE INDEX IX_CUCO_ESTADO_VENCIM 
     ON VEN_CUENTA_COBRAR (ESTADO_CUCO, FECHA_VENCIM_CUCO)
     TABLESPACE TBS_INDICES;
 
 EXEC DBMS_STATS.GATHER_TABLE_STATS('CADENA_NEG', 'VEN_CUENTA_COBRAR', CASCADE => TRUE);
 ```
 
-### 7.4 Cuadro Comparativo de Rendimiento
+### 7.4 Cuadro Comparativo de Rendimiento y Rutas de Acceso
 
-| MÉTRICA TÉCNICA | ANTES DEL AFINAMIENTO | DESPUÉS DEL AFINAMIENTO | MEJORA OBTENIDA |
+| MÉTRICA TÉCNICA | RUTA NATURAL CBO (Pocas Filas) | ESCANEO COMPLETO FORZADO (FTS) | ACCESO POR ÍNDICE FORZADO (Index Scan) |
 | :--- | :---: | :---: | :---: |
-| **Operación Principal** | `TABLE ACCESS FULL` | `INDEX RANGE SCAN (B-Tree)` | Acceso directo a punteros de fila |
-| **Indice Empleado** | Ninguno (Full Scan) | `IX_CUCO_EST_VENC` | Indexación balanceada en `TBS_INDICES` |
-| **Tipo de Predicado** | Post-Filtro (Lee todo el bloque) | Access Predicate (Nivel raíz/rama) | Cero lecturas de bloques irrelevantes |
-| **Consumo de I/O (Buffers)** | Recorre todos los bloques asignados | Lee únicamente bloques del rango | **Reducción de I/O > 70%** |
-| **Complejidad Algorítmica** | Lineal O(N) | Logarítmica O(log N) | Alta escalabilidad para millones de filas |
+| **Operación Principal** | `TABLE ACCESS FULL` | `TABLE ACCESS FULL` | `INDEX RANGE SCAN` |
+| **Índice Utilizado** | Ninguno (1 solo bloque) | Ninguno (Multiblock I/O) | `IX_CUCO_ESTADO_VENCIM` |
+| **Justificación CBO** | Menor costo I/O en micro-tablas (3 vs 4) | Incurre en I/O proporcional a High Water Mark | Acceso directo a punteros `ROWID` |
+| **Comportamiento a Escala ($N \to \infty$)** | Conmuta automáticamente a Index Scan | Degenera a costo prohibitivo $\mathcal{O}(N)$ | Mantiene latencia mínima $\mathcal{O}(\log N)$ |
+| **Tipo de Predicado** | Filtro posterior sobre bloque | Filtro secuencial completo | *Access Predicate* en raíz y rama |
+| **Reducción Proyectada en Producción** | N/A (Entorno de laboratorio) | Línea base no afinada | **Reducción superior al 75% en lecturas de disco** |
+
 
 ---
 

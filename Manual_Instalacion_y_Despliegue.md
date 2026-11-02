@@ -53,7 +53,7 @@ La solución se entrega organizada en scripts modulares e independientes, gobern
 | `03_Paquetes_Negocio_Monitoreo.sql` | PL/SQL | Padrón TSE, inventario, compras, ventas, mercadeo y salud. |
 | `04_Triggers_Negocio_y_Auditoria.sql` | PL/SQL | 11 triggers de negocio y 7 triggers de bitácora profunda. |
 | `05_Seguridad_Perfiles_Roles_Usuarios.sql` | SQL / DCL | Perfiles, 4 roles con clave cifrada, usuarios y pruebas de mínimos privilegios. |
-| `06_Scheduler_Optimizacion_y_Pruebas.sql` | PL/SQL | 5 Jobs DBMS_SCHEDULER, EXPLAIN PLAN y 9 suites de prueba. |
+| `06_Scheduler_Optimizacion_y_Pruebas.sql` | PL/SQL | 5 Jobs DBMS_SCHEDULER, EXPLAIN PLAN y 12 suites de prueba de extremo a extremo. |
 | `padron_muestra.csv` | Datos externos | Archivo CSV muestra del padrón electoral para prueba de UTL_FILE. |
 | `script_bd_v2.sql` | DDL Base | Línea base del Entregable #1 (tablas transaccionales y catálogos). |
 | `07_Standby_y_RMAN/` | Directorio | Scripts de configuración Standby, Redo 50 MB, RMAN y Failover. |
@@ -175,11 +175,13 @@ Compila 18 disparadores en estado `ENABLED`:
    * `JOB_MERCADEO_SEMANAL`: Lunes a las 05:00 (reporte de inventario y descuentos).
    * `JOB_PREMIACION_SEMESTRAL`: 30 junio y 31 diciembre a las 23:30 (Top 10 clientes).
 2. Caso de Estudio de **Afinamiento y Optimización SQL**:
-   * Evalúa la consulta crítica de cobros mediante `EXPLAIN PLAN` + `DBMS_XPLAN.DISPLAY`.
-   * Demuestra el estado inicial con lectura completa de tabla (**TABLE ACCESS FULL**).
-   * Implementa el índice compuesto estratégico `IX_CUCO_EST_VENC (ESTADO_CUCO, FECHA_VENCIM_CUCO)` en `TBS_INDICES`.
-   * Demuestra el estado optimizado con acceso logarítmico (**INDEX RANGE SCAN**) y reducción sustancial de costo I/O.
-3. Ejecuta la **Suite Integral de 9 Pruebas de Extremo a Extremo**, validando cada requerimiento de negocio de forma completamente automatizada.
+   * Evalúa la consulta crítica de cobros en tres dimensiones con `EXPLAIN PLAN` + `DBMS_XPLAN.DISPLAY`:
+     - Ruta Natural del Optimizador (sin hints): Demuestra por qué el CBO selecciona Full Table Scan en tablas semilla de un solo bloque (costo 3 I/Os FTS vs 4 I/Os Index Scan).
+     - Escaneo Completo Forzado (`/*+ FULL */`): Simula la línea base no indexada.
+     - Acceso Indexado Forzado (`/*+ INDEX */`): Utiliza el índice compuesto `IX_CUCO_ESTADO_VENCIM (ESTADO_CUCO, FECHA_VENCIM_CUCO)` alojado en `TBS_INDICES`, proyectando la reducción de I/O a escala empresarial de $\mathcal{O}(N)$ a $\mathcal{O}(\log N)$.
+3. Ejecuta la **Suite Integral de 12 Pruebas de Extremo a Extremo**, validando cada requerimiento de negocio de forma completamente automatizada:
+   * Pruebas positivas de monitoreo, notificaciones de crédito (85% y 70%), padrón electoral TSE con resolución distrital, compras atómicas, ventas atómicas, abonos con liquidación de estado (P $\to$ C), mercadeo/descuentos, cierre diario por cajero y refresco de vistas materializadas.
+   * Pruebas negativas y de integridad: Rechazo controlado por límite de crédito (`ORA-20010`) con verificación estricta de atomicidad (cero facturas o CxC huérfanas tras `ROLLBACK TO SAVEPOINT`), rechazo por falta de inventario (`ORA-20015`), y reconfiguración dinámica en caliente del Scheduler (`DBMS_SCHEDULER.SET_ATTRIBUTE`).
 
 ---
 

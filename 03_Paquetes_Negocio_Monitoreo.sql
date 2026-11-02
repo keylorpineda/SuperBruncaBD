@@ -726,6 +726,12 @@ CREATE OR REPLACE PACKAGE PKG_PRM_MERCADEO IS
         p_periodo IN VARCHAR2 DEFAULT NULL
     );
 
+    -- Ajusta dinamicamente la frecuencia de premiacion en SEG_PARAMETRO y reconfigura
+    -- en caliente el repeat_interval del job DBMS_SCHEDULER mediante SET_ATTRIBUTE
+    PROCEDURE PR_CONFIGURAR_FRECUENCIA_PREMIACION (
+        p_meses IN NUMBER
+    );
+
 END PKG_PRM_MERCADEO;
 /
 SHOW ERRORS PACKAGE PKG_PRM_MERCADEO;
@@ -1052,6 +1058,45 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRM_MERCADEO IS
             PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_PRM_MERCADEO', 'PR_PREMIAR_MEJORES_CLIENTES', SQLCODE, SQLERRM);
             RAISE;
     END PR_PREMIAR_MEJORES_CLIENTES;
+
+    PROCEDURE PR_CONFIGURAR_FRECUENCIA_PREMIACION (
+        p_meses IN NUMBER
+    ) IS
+    BEGIN
+        IF p_meses IS NULL OR p_meses <= 0 THEN
+            RAISE_APPLICATION_ERROR(-20035, 'La frecuencia de premiacion en meses debe ser mayor a cero.');
+        END IF;
+
+        -- 1. Actualizar el parametro en SEG_PARAMETRO
+        UPDATE SEG_PARAMETRO
+           SET VALOR_NUM_PARA   = p_meses,
+               USUARIO_MOD_PARA = USER,
+               FECHA_MOD_PARA   = SYSTIMESTAMP
+         WHERE CODIGO_PARA = 'MESES_FRECUENCIA_PREMIACION';
+        COMMIT;
+
+        -- 2. Modificar dinamicamente el atributo repeat_interval del job DBMS_SCHEDULER
+        BEGIN
+            DBMS_SCHEDULER.SET_ATTRIBUTE (
+                name      => 'CADENA_NEG.JOB_PREMIACION_SEMESTRAL',
+                attribute => 'repeat_interval',
+                value     => 'FREQ=MONTHLY; INTERVAL=' || p_meses || '; BYMONTHDAY=-1; BYHOUR=23; BYMINUTE=30; BYSECOND=0'
+            );
+            DBMS_OUTPUT.PUT_LINE('[OK] repeat_interval del job JOB_PREMIACION_SEMESTRAL actualizado a cada ' || p_meses || ' meses.');
+        EXCEPTION
+            WHEN OTHERS THEN
+                PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_PRM_MERCADEO', 'PR_CONFIGURAR_FRECUENCIA_PREMIACION', SQLCODE, SQLERRM);
+        END;
+
+        -- 3. Registrar auditoria del cambio de parametro
+        PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
+            p_tabla       => 'SEG_PARAMETRO',
+            p_modulo      => 'PARAMETROS',
+            p_operacion   => 'UPDATE',
+            p_llave       => 'MESES_FRECUENCIA_PREMIACION',
+            p_descripcion => 'Reconfiguracion dinamica de frecuencia de premiacion a cada ' || p_meses || ' meses con ajuste de DBMS_SCHEDULER'
+        );
+    END PR_CONFIGURAR_FRECUENCIA_PREMIACION;
 
 END PKG_PRM_MERCADEO;
 /

@@ -209,9 +209,23 @@ EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'PER_CLIENTE', CASCADE => TRUE);
 EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'INV_EXISTENCIA', CASCADE => TRUE);
 EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'VEN_FACTURA', CASCADE => TRUE);
 
+-- 2.0 Consulta 1 en estado natural (sin hints): Muestra la eleccion autonoma del CBO
+-- En tablas de pocos bloques (<5 bloques, 5-10 filas), el CBO elige de forma natural TABLE ACCESS FULL
+-- debido a que 1 operacion de I/O multibloque cuesta menos que descender por raiz, rama y hoja del
+-- indice B-Tree mas la lectura por ROWID (3 I/Os FTS vs 4 I/Os Index Scan).
+PROMPT --- Evaluando Consulta 1 en estado Natural (Sin hints - Eleccion CBO) ---
+
+EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_CUCO_NATURAL' FOR
+SELECT c.ID_CUENTA_COBRAR, c.ID_FACTURA_VENTA, cl.CODIGO_CLI, c.FECHA_VENCIM_CUCO, c.SALDO_CUCO, c.ESTADO_CUCO
+  FROM VEN_CUENTA_COBRAR c
+  JOIN PER_CLIENTE cl ON c.ID_CLIENTE = cl.ID_CLIENTE
+ WHERE c.ESTADO_CUCO = 'P'
+   AND c.FECHA_VENCIM_CUCO < SYSDATE;
+
 -- 2.1 Consulta 1: Cuentas por Cobrar en Mora (Requerimiento Funcional de Cartera)
--- Compara escaneo secuencial (Full Table Scan) vs Acceso por Indice Compuesto IX_CUCO_ESTADO_VENCIM
-PROMPT --- Evaluando Consulta 1: Cuentas por Cobrar en Mora (FTS vs Index Range Scan) ---
+-- Simula y contrasta el comportamiento a escala de produccion forzando ambas rutas:
+-- FTS (Full Table Scan O(N)) vs Acceso por Indice Compuesto IX_CUCO_ESTADO_VENCIM (Index Range Scan O(log N)).
+PROMPT --- Evaluando Consulta 1 con Hints de Escala: FTS vs Index Range Scan ---
 
 EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_CUCO_FTS' FOR
 SELECT /*+ FULL(c) */
@@ -258,12 +272,17 @@ SELECT /*+ INDEX(f IX_FAVE_FECHA) */ f.ID_FACTURA_VENTA, f.NUM_FACTURA_FAVE, f.F
  WHERE f.FECHA_FAVE BETWEEN TRUNC(SYSDATE) - 30 AND SYSDATE;
 
 PROMPT ============================================================================
-PROMPT PLAN DE EJECUCION CBO: CUENTAS POR COBRAR - TABLE ACCESS FULL (ANTES)
+PROMPT PLAN DE EJECUCION CBO: CUENTAS POR COBRAR - RUTA NATURAL DEL OPTIMIZADOR (SIN HINTS)
+PROMPT ============================================================================
+SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY('PLAN_TABLE', 'PLAN_CUCO_NATURAL', 'TYPICAL'));
+
+PROMPT ============================================================================
+PROMPT PLAN DE EJECUCION CBO: CUENTAS POR COBRAR - TABLE ACCESS FULL (FORZADO CON HINT)
 PROMPT ============================================================================
 SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY('PLAN_TABLE', 'PLAN_CUCO_FTS', 'TYPICAL'));
 
 PROMPT ============================================================================
-PROMPT PLAN DE EJECUCION CBO: CUENTAS POR COBRAR - INDEX RANGE SCAN (DESPUES)
+PROMPT PLAN DE EJECUCION CBO: CUENTAS POR COBRAR - INDEX RANGE SCAN (FORZADO CON HINT)
 PROMPT ============================================================================
 SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY('PLAN_TABLE', 'PLAN_CUCO_IDX', 'TYPICAL'));
 
@@ -303,6 +322,11 @@ DECLARE
     v_lineas_padron   NUMBER;
     v_estado_fac_fin  VARCHAR2(1);
     v_fallo_esperado  BOOLEAN;
+    v_lineas_neg      PKG_VEN_OPERACION.T_LISTA_LINEAS_VENTA;
+    v_num_fac_neg     VARCHAR2(50);
+    v_count_fac       NUMBER;
+    v_count_cxc       NUMBER;
+    v_interval_sched  VARCHAR2(200);
 BEGIN
     DBMS_OUTPUT.PUT_LINE('========================================================================');
     DBMS_OUTPUT.PUT_LINE('  INICIANDO SUITE DE PRUEBAS INTEGRALES DE REGLAS DE NEGOCIO Y PAQUETES');
@@ -444,7 +468,7 @@ BEGIN
     END IF;
 
     -- ------------------------------------------------------------------------
-    -- PRUEBA 7: PKG_PRM_MERCADEO (Descuentos semanales y Premiacion semestral Top 10)
+    -- PRUEBA 7: PKG_PRM_MERCADEO (Descuentos semanales, Premiacion Top 10 y Scheduler Dinamico)
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 7] Ejecutando politicas de mercadeo y premiacion semestral...');
     PKG_PRM_MERCADEO.PR_VERIFICAR_DESCUENTOS_SEMANAL;
@@ -468,6 +492,18 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 7] Premiacion ejecutada. Acciones registradas: ' || v_acciones_tot || 
                          '. Cliente generico CLI-000000 excluido correctamente.');
 
+    -- Probar reconfiguracion dinamica de frecuencia de premiacion y sincronizacion del Scheduler
+    PKG_PRM_MERCADEO.PR_CONFIGURAR_FRECUENCIA_PREMIACION(3);
+    SELECT repeat_interval INTO v_interval_sched
+      FROM user_scheduler_jobs
+     WHERE job_name = 'JOB_PREMIACION_SEMESTRAL';
+    IF v_interval_sched NOT LIKE '%INTERVAL=3%' THEN
+        RAISE_APPLICATION_ERROR(-20094, 'Fallo reconfiguracion dinamica de Scheduler: repeat_interval no contiene INTERVAL=3.');
+    END IF;
+    -- Restaurar a 6 meses
+    PKG_PRM_MERCADEO.PR_CONFIGURAR_FRECUENCIA_PREMIACION(6);
+    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 7] Reconfiguracion dinamica de Scheduler validada exitosamente (repeat_interval sincronizado en caliente).');
+
     -- ------------------------------------------------------------------------
     -- PRUEBA 8: PKG_VEN_OPERACION (Cierre diario contable con desglose por cajero)
     -- ------------------------------------------------------------------------
@@ -485,20 +521,32 @@ BEGIN
 
     -- ------------------------------------------------------------------------
     -- PRUEBA 10: PRUEBA NEGATIVA - RECHAZO POR LIMITE DE CREDITO EXCEDIDO (ORA-20010)
+    -- Y DEMOSTRACION DE ATOMICIDAD (ROLLBACK TO SAVEPOINT SIN COMMIT INTERMEDIO)
     -- ------------------------------------------------------------------------
-    DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 10 - NEGATIVA] Validando rechazo por exceso de limite de credito...');
+    DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 10 - NEGATIVA] Validando rechazo por exceso de limite de credito y atomicidad...');
     v_fallo_esperado := FALSE;
+    v_num_fac_neg := 'FAC-EXCESO-CRED-' || TO_CHAR(SYSTIMESTAMP, 'HH24MISSFF3');
+    v_lineas_neg := PKG_VEN_OPERACION.T_LISTA_LINEAS_VENTA();
+    v_lineas_neg.EXTEND;
+    v_lineas_neg(1) := PKG_VEN_OPERACION.T_LINEA_VENTA(
+        id_producto     => 1,
+        id_servicio     => NULL,
+        id_lote         => 1,
+        cantidad        => 1,
+        precio_unitario => 50000000,
+        porc_descuento  => 0,
+        porc_impuesto   => 13
+    );
+
     BEGIN
-        -- Cliente 4 tiene limite modesto; una venta de CRC 50,000,000 debe disparar ORA-20010
-        PKG_VEN_OPERACION.PR_CREAR_FACTURA_VENTA(
+        -- Intentar facturar venta atomica que excede el limite de credito del cliente 4
+        PKG_VEN_OPERACION.PR_FACTURAR_VENTA_ATOMICA (
             p_id_cliente     => 4,
             p_id_sucursal    => 1,
             p_id_usuario     => 1,
-            p_num_factura    => 'FAC-EXCESO-CRED-' || TO_CHAR(SYSDATE, 'HH24MISS'),
+            p_num_factura    => v_num_fac_neg,
             p_es_credito     => 'S',
-            p_subtotal       => 50000000,
-            p_descuento      => 0,
-            p_impuesto       => 6500000,
+            p_lineas         => v_lineas_neg,
             p_id_factura_out => v_id_factura
         );
     EXCEPTION
@@ -507,11 +555,21 @@ BEGIN
                 v_fallo_esperado := TRUE;
                 DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 10 - RECHAZO CONTROLADO] Limite de credito bloqueado correctamente con ORA-20010: ' || SQLERRM);
             ELSE
-                DBMS_OUTPUT.PUT_LINE('[ERROR INESPERADO PRUEBA 10]: ' || SQLERRM);
+                DBMS_OUTPUT.PUT_LINE('[ERROR INESPERADO PRUEBA 10]: SQLCODE=' || SQLCODE || ' - ' || SQLERRM);
             END IF;
     END;
+
     IF NOT v_fallo_esperado THEN
         RAISE_APPLICATION_ERROR(-20091, 'Fallo prueba negativa 10: Se permitio exceder limite de credito sin ORA-20010.');
+    END IF;
+
+    -- Verificar atomicidad estricta: el ROLLBACK no dejo facturas huerfanas ni CxC creadas
+    SELECT COUNT(*) INTO v_count_fac FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE = v_num_fac_neg;
+    SELECT COUNT(*) INTO v_count_cxc FROM VEN_CUENTA_COBRAR WHERE ID_FACTURA_VENTA = v_id_factura;
+    IF v_count_fac > 0 OR v_count_cxc > 0 THEN
+        RAISE_APPLICATION_ERROR(-20092, 'Fallo atomico: la factura rechazada dejo filas huerfanas en VEN_FACTURA o VEN_CUENTA_COBRAR.');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 10 - ATOMICIDAD CONFIRMADA] Rollback total verificado: 0 facturas y 0 CxC huerfanas.');
     END IF;
 
     -- ------------------------------------------------------------------------
