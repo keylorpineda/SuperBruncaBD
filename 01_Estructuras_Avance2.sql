@@ -866,7 +866,7 @@ BEGIN
     VALUES (1, 'SMTP_HOST', 'CORREO', 'Servidor SMTP', 'Servidor de correo saliente para envio directo desde Oracle sin VPN.', 'N', 'smtp.gmail.com');
 
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
-    VALUES (2, 'SMTP_PORT', 'CORREO', 'Puerto SMTP', 'Puerto TCP del servidor SMTP.', 'N', 587);
+    VALUES (2, 'SMTP_PORT', 'CORREO', 'Puerto SMTP', 'Puerto TCP del servidor SMTP (465 SSL o 587 TLS).', 'N', 465);
 
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_TEXTO_PARA)
     VALUES (3, 'CORREO_EMISOR', 'CORREO', 'Correo emisor del sistema', 'Cuenta remitente de las notificaciones automaticas (Gmail autenticado).', 'N', 'keylorpineda729@gmail.com');

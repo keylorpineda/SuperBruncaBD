@@ -33,11 +33,9 @@ END;
 -- Configuracion de ACL de red en Oracle para envio directo por UTL_SMTP sin VPN
 BEGIN
     DBMS_NETWORK_ACL_ADMIN.APPEND_HOST_ACE(
-        host       => '*',
-        lower_port => 25,
-        upper_port => 587,
-        ace        => xs$ace_type(
-            privilege_list => xs$name_list('smtp', 'connect', 'resolve'),
+        host => '*',
+        ace  => xs$ace_type(
+            privilege_list => xs$name_list('connect', 'resolve'),
             principal_name => 'CADENA_NEG',
             principal_type => xs_acl.ptype_db
         )
@@ -621,24 +619,35 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
         DBMS_OUTPUT.PUT_LINE('  Mensaje       :' || CHR(10) || SUBSTR(p_cuerpo, 1, 3000));
         DBMS_OUTPUT.PUT_LINE('----------------------------------------------------------------------');
 
-        -- Intento de despacho directo por UTL_SMTP desde el motor Oracle con soporte TLS
+        -- Intento de despacho directo por UTL_SMTP desde el motor Oracle con soporte TLS / SSL
         BEGIN
-            v_conn := UTL_SMTP.OPEN_CONNECTION(host => v_host, port => v_port, tx_timeout => 10);
+            IF v_port = 465 THEN
+                -- Canal seguro SSL/TLS nativo (SMTPS puerto 465)
+                v_conn := UTL_SMTP.OPEN_CONNECTION(
+                    host => v_host,
+                    port => v_port,
+                    tx_timeout => 10,
+                    secure_connection_before_smtp => TRUE
+                );
+            ELSE
+                v_conn := UTL_SMTP.OPEN_CONNECTION(
+                    host => v_host,
+                    port => v_port,
+                    tx_timeout => 10
+                );
+            END IF;
+
             UTL_SMTP.EHLO(v_conn, v_host);
 
             -- Negociacion de canal seguro STARTTLS si el puerto es 587
             IF v_port = 587 THEN
                 BEGIN
-                    IF v_wallet_path IS NOT NULL THEN
-                        UTL_SMTP.STARTTLS(v_conn, wallet_path => v_wallet_path, wallet_password => v_wallet_pwd);
-                    ELSE
-                        UTL_SMTP.STARTTLS(v_conn);
-                    END IF;
+                    UTL_SMTP.STARTTLS(c => v_conn, secure_host => v_host);
                     -- RFC 3207: se debe reenviar EHLO inmediatamente tras STARTTLS
                     UTL_SMTP.EHLO(v_conn, v_host);
                 EXCEPTION
                     WHEN OTHERS THEN
-                        DBMS_OUTPUT.PUT_LINE('  [AVISO TLS]: STARTTLS no disponible o sin wallet configurada: ' || SUBSTR(SQLERRM, 1, 80));
+                        DBMS_OUTPUT.PUT_LINE('  [AVISO TLS]: STARTTLS no disponible o error TLS: ' || SUBSTR(SQLERRM, 1, 80));
                 END;
             END IF;
 
@@ -705,9 +714,6 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
     EXCEPTION
         WHEN OTHERS THEN
             PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_ADM_NOTIFICACION', 'PR_ENVIAR_CORREO_GENERAL', SQLCODE, SQLERRM);
-            RAISE;
-    END PR_ENVIAR_CORREO;
-            PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_ADM_NOTIFICACION', 'PR_ENVIAR_CORREO', SQLCODE, SQLERRM);
             RAISE;
     END PR_ENVIAR_CORREO;
 
