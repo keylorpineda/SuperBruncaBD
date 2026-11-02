@@ -162,20 +162,24 @@ END;
 
 -- ----------------------------------------------------------------------------
 -- 1.5 JOB_PREMIACION_SEMESTRAL
--- Frecuencia: Cada 6 meses (30 de junio y 31 de diciembre a las 23:30)
--- Accion: Premia a los 10 mejores clientes con ordenes de compra de C100,000 c/u
+-- Frecuencia: Parametrizada por MESES_FRECUENCIA_PREMIACION (ej. cada 6 meses)
+-- Accion: Premia a los mejores clientes excluyendo cliente generico CLI-000000
 -- ----------------------------------------------------------------------------
+DECLARE
+    v_meses NUMBER;
 BEGIN
+    v_meses := NVL(CADENA_NEG.PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_NUM('MESES_FRECUENCIA_PREMIACION'), 6);
+
     DBMS_SCHEDULER.CREATE_JOB (
         job_name        => 'CADENA_NEG.JOB_PREMIACION_SEMESTRAL',
         job_type        => 'PLSQL_BLOCK',
         job_action      => 'BEGIN CADENA_NEG.PKG_PRM_MERCADEO.PR_PREMIAR_MEJORES_CLIENTES; END;',
         start_date      => TO_DATE('2026-06-30 23:30:00', 'YYYY-MM-DD HH24:MI:SS'),
-        repeat_interval => 'FREQ=MONTHLY; BYMONTH=6,12; BYMONTHDAY=-1; BYHOUR=23; BYMINUTE=30; BYSECOND=0',
+        repeat_interval => 'FREQ=MONTHLY; INTERVAL=' || v_meses || '; BYMONTHDAY=-1; BYHOUR=23; BYMINUTE=30; BYSECOND=0',
         enabled         => TRUE,
-        comments        => 'Premiacion semestral automatica de lealtad: ordenes de compra para Top 10 clientes'
+        comments        => 'Premiacion automatica parametrizada: cada ' || v_meses || ' meses para Top clientes'
     );
-    DBMS_OUTPUT.PUT_LINE('[OK] Job JOB_PREMIACION_SEMESTRAL programado semestralmente (Junio/Diciembre).');
+    DBMS_OUTPUT.PUT_LINE('[OK] Job JOB_PREMIACION_SEMESTRAL programado dinamicamente cada ' || v_meses || ' meses.');
 END;
 /
 
@@ -190,124 +194,94 @@ PROMPT =========================================================================
 PROMPT 2. CASO DE ESTUDIO: OPTIMIZACION Y AFINAMIENTO SQL (EXPLAIN PLAN)
 PROMPT ============================================================================
 
--- Escenario de Negocio a optimizar:
--- La consulta de cuentas por cobrar vencidas en mora (utilizada por el modulo de cobros
--- y por el proceso nocturno de alertas) filtra por estado pendiente ('P') y fecha
--- de vencimiento inferior a la fecha actual, proyectando datos del cliente y saldo.
-
--- Asegurar tabla PLAN_TABLE disponible
+-- Limpiar tabla PLAN_TABLE antes del analisis
 BEGIN
-    EXECUTE IMMEDIATE 'DELETE FROM PLAN_TABLE WHERE STATEMENT_ID IN (''PLAN_CUCO_ANTES'', ''PLAN_CUCO_DESPUES'')';
+    DELETE FROM PLAN_TABLE WHERE STATEMENT_ID LIKE 'PLAN_%';
     COMMIT;
 EXCEPTION
     WHEN OTHERS THEN NULL;
 END;
 /
 
--- 2.1 Consulta bajo evaluacion
-PROMPT --- Ejecucion de consulta de prueba: Cuentas por Cobrar Vencidas ---
-SELECT c.ID_CUENTA_COBRAR,
-       c.ID_FACTURA_VENTA,
-       cl.CODIGO_CLI,
-       c.FECHA_VENCIM_CUCO,
-       c.SALDO_CUCO,
-       c.ESTADO_CUCO
-  FROM VEN_CUENTA_COBRAR c
-  JOIN PER_CLIENTE cl ON c.ID_CLIENTE = cl.ID_CLIENTE
- WHERE c.ESTADO_CUCO = 'P'
-   AND c.FECHA_VENCIM_CUCO < SYSDATE;
-
--- 2.2 Plan de ejecucion ANTES del afinamiento (Estado inicial sin indice compuesto)
--- Eliminamos temporalmente cualquier indice que pudiera intervenir para observar el estado base
-BEGIN
-    EXECUTE IMMEDIATE 'DROP INDEX IX_CUCO_EST_VENC';
-EXCEPTION
-    WHEN OTHERS THEN NULL;
-END;
-/
-
+-- Actualizar estadisticas del catalogo para el CBO
 EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'VEN_CUENTA_COBRAR', CASCADE => TRUE);
 EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'PER_CLIENTE', CASCADE => TRUE);
+EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'INV_EXISTENCIA', CASCADE => TRUE);
+EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'VEN_FACTURA', CASCADE => TRUE);
 
-EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_CUCO_ANTES' FOR
-SELECT c.ID_CUENTA_COBRAR,
-       c.ID_FACTURA_VENTA,
-       cl.CODIGO_CLI,
-       c.FECHA_VENCIM_CUCO,
-       c.SALDO_CUCO,
-       c.ESTADO_CUCO
+-- 2.1 Consulta 1: Cuentas por Cobrar en Mora (Requerimiento Funcional de Cartera)
+-- Compara escaneo secuencial (Full Table Scan) vs Acceso por Indice Compuesto IX_CUCO_ESTADO_VENCIM
+PROMPT --- Evaluando Consulta 1: Cuentas por Cobrar en Mora (FTS vs Index Range Scan) ---
+
+EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_CUCO_FTS' FOR
+SELECT /*+ FULL(c) */
+       c.ID_CUENTA_COBRAR, c.ID_FACTURA_VENTA, cl.CODIGO_CLI, c.FECHA_VENCIM_CUCO, c.SALDO_CUCO, c.ESTADO_CUCO
   FROM VEN_CUENTA_COBRAR c
   JOIN PER_CLIENTE cl ON c.ID_CLIENTE = cl.ID_CLIENTE
  WHERE c.ESTADO_CUCO = 'P'
    AND c.FECHA_VENCIM_CUCO < SYSDATE;
 
-PROMPT ============================================================================
-PROMPT PLAN DE EJECUCION ANTES DEL AFINAMIENTO (OBSERVE TABLE ACCESS FULL):
-PROMPT ============================================================================
-SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY('PLAN_TABLE', 'PLAN_CUCO_ANTES', 'TYPICAL'));
-
-/* ============================================================================
-   DIAGNOSTICO TECNICO DE LA RUTA DE ACCESO ORIGINAL (ANTES):
-   - Metodo identificado: TABLE ACCESS FULL sobre VEN_CUENTA_COBRAR.
-   - Analisis del Optimizador (CBO):
-     Oracle debe recorrer la totalidad de bloques asignados a la tabla hasta
-     la marca de agua alta (High Water Mark), realizando lecturas multibloque.
-     Cada registro es evaluado mediante un predicado post-filtro:
-     filter("ESTADO_CUCO"='P' AND "FECHA_VENCIM_CUCO"<SYSDATE@!)
-   - Problema en produccion: A medida que la cadena acumula miles de facturas
-     y cuentas historicas, el costo de I/O se incrementa linealmente (O(N)),
-     afectando el rendimiento global de la instancia y consumiendo memoria del buffer cache.
-   ============================================================================ */
-
--- 2.3 Creacion del Indice Compuesto Estrategico
--- Principio de afinamiento:
--- 1. Columna de igualdad de alta selectividad primero: ESTADO_CUCO ('P')
--- 2. Columna de rango despues: FECHA_VENCIM_CUCO (< SYSDATE)
-CREATE INDEX IX_CUCO_EST_VENC 
-    ON VEN_CUENTA_COBRAR (ESTADO_CUCO, FECHA_VENCIM_CUCO)
-    TABLESPACE TBS_INDICES;
-
--- Actualizar estadisticas en el catalogo
-EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'VEN_CUENTA_COBRAR', CASCADE => TRUE);
-
--- 2.4 Plan de ejecucion DESPUES del afinamiento
-EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_CUCO_DESPUES' FOR
-SELECT c.ID_CUENTA_COBRAR,
-       c.ID_FACTURA_VENTA,
-       cl.CODIGO_CLI,
-       c.FECHA_VENCIM_CUCO,
-       c.SALDO_CUCO,
-       c.ESTADO_CUCO
+EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_CUCO_IDX' FOR
+SELECT /*+ INDEX(c IX_CUCO_ESTADO_VENCIM) */
+       c.ID_CUENTA_COBRAR, c.ID_FACTURA_VENTA, cl.CODIGO_CLI, c.FECHA_VENCIM_CUCO, c.SALDO_CUCO, c.ESTADO_CUCO
   FROM VEN_CUENTA_COBRAR c
   JOIN PER_CLIENTE cl ON c.ID_CLIENTE = cl.ID_CLIENTE
  WHERE c.ESTADO_CUCO = 'P'
    AND c.FECHA_VENCIM_CUCO < SYSDATE;
 
-PROMPT ============================================================================
-PROMPT PLAN DE EJECUCION DESPUES DEL AFINAMIENTO (OBSERVE INDEX RANGE SCAN):
-PROMPT ============================================================================
-SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY('PLAN_TABLE', 'PLAN_CUCO_DESPUES', 'TYPICAL'));
+-- 2.2 Consulta 2: Existencias de Inventario por Bodega (Requerimiento Funcional de Stock)
+PROMPT --- Evaluando Consulta 2: Existencias por Bodega (FTS vs Index Scan) ---
 
-/* ============================================================================
-   CUADRO COMPARATIVO DE RENDIMIENTO Y OPTIMIZACION (EXPLAIN PLAN)
-   ----------------------------------------------------------------------------
-   METRICA                   ANTES (FTS)             DESPUES (INDEX RANGE SCAN)
-   ----------------------------------------------------------------------------
-   Operacion Principal       TABLE ACCESS FULL       INDEX RANGE SCAN (B-Tree)
-   Indice Utilizado          Ninguno                 IX_CUCO_EST_VENC
-   Predicado de Acceso       Filter (Post-lectura)   Access (Nivel Raiz/Rama)
-   Consumo de CPU / I/O      Alto (Escaneo Completo) Minimo (Puntero B-Tree)
-   Bloques Leidos (Buffers)  Todos los del segmento  Solo bloques del rango
-   Escalabilidad O(N)        Lineal O(N)             Logaritmica O(log N)
-   Reduccion de Costo Est.   Referencia 100%         Reduccion >= 65% a 85%
-   ----------------------------------------------------------------------------
-   JUSTIFICACION DEL DISENO:
-   Al situar ESTADO_CUCO en la primera posicion, el optimizador desciende por
-   la estructura B-Tree apuntando exclusivamente a la particion logica de
-   cuentas 'P'. A partir de alli, recorre unicamente el intervalo de hojas donde
-   FECHA_VENCIMIENTO_CUCO es anterior a la fecha actual, reduciendo drasticamente
-   la cantidad de buffers I/O requeridos y eliminando el cuello de botella.
-   ============================================================================ */
+EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_INV_FTS' FOR
+SELECT /*+ FULL(e) */ e.ID_BODEGA, p.CODIGO_BARRA_PROD, p.NOMBRE_PROD, e.CANTIDAD_EXIS
+  FROM INV_EXISTENCIA e
+  JOIN PRO_PRODUCTO p ON p.ID_PRODUCTO = e.ID_PRODUCTO
+ WHERE e.ID_BODEGA = 1 AND e.CANTIDAD_EXIS > 0;
+
+EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_INV_IDX' FOR
+SELECT /*+ INDEX(e UK_EXIS_BODE_PROD_LOTE) */ e.ID_BODEGA, p.CODIGO_BARRA_PROD, p.NOMBRE_PROD, e.CANTIDAD_EXIS
+  FROM INV_EXISTENCIA e
+  JOIN PRO_PRODUCTO p ON p.ID_PRODUCTO = e.ID_PRODUCTO
+ WHERE e.ID_BODEGA = 1 AND e.CANTIDAD_EXIS > 0;
+
+-- 2.3 Consulta 3: Facturas de Venta por Rango de Fechas (Requerimiento Funcional de Cierre)
+PROMPT --- Evaluando Consulta 3: Ventas por Rango de Fechas (FTS vs Index Range Scan) ---
+
+EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_FAC_FTS' FOR
+SELECT /*+ FULL(f) */ f.ID_FACTURA_VENTA, f.NUM_FACTURA_FAVE, f.FECHA_FAVE, f.SUBTOTAL_FAVE
+  FROM VEN_FACTURA f
+ WHERE f.FECHA_FAVE BETWEEN TRUNC(SYSDATE) - 30 AND SYSDATE;
+
+EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_FAC_IDX' FOR
+SELECT /*+ INDEX(f IX_FAVE_FECHA) */ f.ID_FACTURA_VENTA, f.NUM_FACTURA_FAVE, f.FECHA_FAVE, f.SUBTOTAL_FAVE
+  FROM VEN_FACTURA f
+ WHERE f.FECHA_FAVE BETWEEN TRUNC(SYSDATE) - 30 AND SYSDATE;
+
+PROMPT ============================================================================
+PROMPT PLAN DE EJECUCION CBO: CUENTAS POR COBRAR - TABLE ACCESS FULL (ANTES)
+PROMPT ============================================================================
+SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY('PLAN_TABLE', 'PLAN_CUCO_FTS', 'TYPICAL'));
+
+PROMPT ============================================================================
+PROMPT PLAN DE EJECUCION CBO: CUENTAS POR COBRAR - INDEX RANGE SCAN (DESPUES)
+PROMPT ============================================================================
+SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY('PLAN_TABLE', 'PLAN_CUCO_IDX', 'TYPICAL'));
+
+PROMPT ============================================================================
+PROMPT METRICAS REALES CALCULADAS POR EL OPTIMIZADOR CBO (PLAN_TABLE)
+PROMPT ============================================================================
+COL STATEMENT_ID FORMAT A16;
+COL OPERATION    FORMAT A20;
+COL OPTIONS      FORMAT A18;
+COL OBJECT_NAME  FORMAT A22;
+COL COST         FORMAT 999999;
+COL CPU_COST     FORMAT 999999999;
+COL IO_COST      FORMAT 999999;
+
+SELECT statement_id, operation, options, object_name, cost, cpu_cost, io_cost
+  FROM plan_table
+ WHERE id = 0
+ ORDER BY statement_id;
 
 
 PROMPT ============================================================================
@@ -317,28 +291,29 @@ PROMPT =========================================================================
 DECLARE
     v_id_factura      NUMBER;
     v_id_compra       NUMBER;
+    v_id_cli_padr     NUMBER;
     v_saldo_cli_ant   NUMBER;
     v_saldo_cli_nue   NUMBER;
     v_saldo_prov_ant  NUMBER;
     v_saldo_prov_nue  NUMBER;
     v_stock_ant       NUMBER;
     v_stock_nue       NUMBER;
-    v_id_cuenta_co    NUMBER;
-    v_id_cuenta_pa    NUMBER;
+    v_saldo_cuco_fin  NUMBER;
     v_acciones_tot    NUMBER;
     v_lineas_padron   NUMBER;
     v_estado_fac_fin  VARCHAR2(1);
+    v_fallo_esperado  BOOLEAN;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('========================================================================');
     DBMS_OUTPUT.PUT_LINE('  INICIANDO SUITE DE PRUEBAS INTEGRALES DE REGLAS DE NEGOCIO Y PAQUETES');
     DBMS_OUTPUT.PUT_LINE('========================================================================');
 
     -- ------------------------------------------------------------------------
-    -- PRUEBA 1: PKG_ADM_MONITOREO (Inspeccion de salud del motor)
+    -- PRUEBA 1: PKG_ADM_MONITOREO (Inspeccion de salud del motor y errores de sistema)
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 1] Ejecutando monitoreo de salud del motor...');
     PKG_ADM_MONITOREO.PR_EJECUTAR_MONITOREO_DIARIO;
-    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 1] Monitoreo diario ejecutado y registrado en ADM_MONITOREO_LOG.');
+    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 1] Monitoreo diario ejecutado y registrado en AUD_MONITOREO_BD.');
 
     -- ------------------------------------------------------------------------
     -- PRUEBA 2: PKG_ADM_NOTIFICACION (Deteccion de umbrales 85% CxC, 70% CxP, morosidad)
@@ -351,11 +326,25 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 2] Procedimientos de notificacion ejecutados exitosamente.');
 
     -- ------------------------------------------------------------------------
-    -- PRUEBA 3: PKG_PER_PADRON (Padron electoral y clientes)
+    -- PRUEBA 3: PKG_PER_PADRON (Padron electoral TSE, carga por lotes y cliente)
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 3] Verificando padron electoral y sincronizacion...');
+    PKG_PER_PADRON.PR_GENERAR_ARCHIVO_PADRON_TSE('DIR_PADRON', 'PADRON_COMPLETO.TXT');
+    PKG_PER_PADRON.PR_CARGAR_PADRON_TSE('DIR_PADRON', 'PADRON_COMPLETO.TXT');
+
     SELECT COUNT(*) INTO v_lineas_padron FROM CAT_PADRON;
-    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 3] Padron electoral operativo. Registros en CAT_PADRON: ' || v_lineas_padron);
+    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 3.1] Padron electoral cargado. Total registros en CAT_PADRON: ' || v_lineas_padron);
+
+    -- Creacion automatica de cliente a partir de padron TSE
+    PKG_PER_PADRON.PR_CREAR_CLIENTE_DESDE_PADRON(
+        p_cedula            => '110230458',
+        p_codigo_cli        => 'CLI-TSE-001',
+        p_es_preferencial   => 'S',
+        p_monto_max_credito => 300000,
+        p_dias_credito      => 30,
+        p_id_cliente_out    => v_id_cli_padr
+    );
+    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 3.2] Cliente creado exitosamente desde Padron TSE. ID: ' || v_id_cli_padr);
 
     -- ------------------------------------------------------------------------
     -- PRUEBA 4: COMPRAS A CREDITO Y ACTUALIZACION AUTOMATICA DE PROVEEDOR E INVENTARIO
@@ -446,8 +435,13 @@ BEGIN
     );
 
     SELECT ESTADO_FAVE INTO v_estado_fac_fin FROM VEN_FACTURA WHERE ID_FACTURA_VENTA = v_id_factura;
-    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 6] Abono liquidado. Estado final factura #' || v_id_factura || 
-                         ': ' || v_estado_fac_fin || ' (Esperado: C = Cancelada)');
+    SELECT SALDO_CUCO INTO v_saldo_cuco_fin FROM VEN_CUENTA_COBRAR WHERE ID_FACTURA_VENTA = v_id_factura;
+
+    IF v_estado_fac_fin = 'C' AND v_saldo_cuco_fin = 0 THEN
+        DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 6] Abono liquidado. Estado final factura: Cancelada (' || v_estado_fac_fin || '), Saldo CxC: ' || v_saldo_cuco_fin);
+    ELSE
+        RAISE_APPLICATION_ERROR(-20090, 'Fallo verificacion de cambio de estado P->C o saldo en CxC.');
+    END IF;
 
     -- ------------------------------------------------------------------------
     -- PRUEBA 7: PKG_PRM_MERCADEO (Descuentos semanales y Premiacion semestral Top 10)
@@ -455,15 +449,31 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 7] Ejecutando politicas de mercadeo y premiacion semestral...');
     PKG_PRM_MERCADEO.PR_VERIFICAR_DESCUENTOS_SEMANAL;
     PKG_PRM_MERCADEO.PR_PREMIAR_MEJORES_CLIENTES('2026-S1');
+
+    -- Verificar que el cliente de mostrador generico CLI-000000 no haya sido premiado
+    DECLARE
+        v_cant_gen NUMBER := 0;
+    BEGIN
+        SELECT COUNT(*) INTO v_cant_gen
+          FROM PRM_ORDEN_PREMIACION op
+               JOIN PER_CLIENTE c ON c.ID_CLIENTE = op.ID_CLIENTE
+         WHERE c.CODIGO_CLI = 'CLI-000000';
+
+        IF v_cant_gen > 0 THEN
+            RAISE_APPLICATION_ERROR(-20093, 'El cliente generico CLI-000000 fue premiado indebidamente.');
+        END IF;
+    END;
+
     SELECT COUNT(*) INTO v_acciones_tot FROM PRM_ACCION_CLIENTE;
-    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 7] Politicas aplicadas. Acciones promocionales registradas: ' || v_acciones_tot);
+    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 7] Premiacion ejecutada. Acciones registradas: ' || v_acciones_tot || 
+                         '. Cliente generico CLI-000000 excluido correctamente.');
 
     -- ------------------------------------------------------------------------
     -- PRUEBA 8: PKG_VEN_OPERACION (Cierre diario contable con desglose por cajero)
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 8] Ejecutando cierre contable diario consolidado y por cajero...');
     PKG_VEN_OPERACION.PR_EJECUTAR_CIERRE_DIARIO(TRUNC(SYSDATE));
-    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 8] Cierre diario ejecutado y registrado en VEN_CIERRE_DIARIO y VEN_CIERRE_CAJERO.');
+    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 8] Cierre diario ejecutado y registrado en VEN_CIERRE_DIARIO y VEN_CIERRE_DIARIO_DET.');
 
     -- ------------------------------------------------------------------------
     -- PRUEBA 9: REFRESCO DE VISTAS MATERIALIZADAS
@@ -473,8 +483,88 @@ BEGIN
     DBMS_MVIEW.REFRESH('MV_INVENTARIO_CONSOLIDADO', 'C');
     DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 9] Vistas materializadas refrescadas exitosamente en modo COMPLETE.');
 
+    -- ------------------------------------------------------------------------
+    -- PRUEBA 10: PRUEBA NEGATIVA - RECHAZO POR LIMITE DE CREDITO EXCEDIDO (ORA-20010)
+    -- ------------------------------------------------------------------------
+    DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 10 - NEGATIVA] Validando rechazo por exceso de limite de credito...');
+    v_fallo_esperado := FALSE;
+    BEGIN
+        -- Cliente 4 tiene limite modesto; una venta de CRC 50,000,000 debe disparar ORA-20010
+        PKG_VEN_OPERACION.PR_CREAR_FACTURA_VENTA(
+            p_id_cliente     => 4,
+            p_id_sucursal    => 1,
+            p_id_usuario     => 1,
+            p_num_factura    => 'FAC-EXCESO-CRED-' || TO_CHAR(SYSDATE, 'HH24MISS'),
+            p_es_credito     => 'S',
+            p_subtotal       => 50000000,
+            p_descuento      => 0,
+            p_impuesto       => 6500000,
+            p_id_factura_out => v_id_factura
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLCODE = -20010 THEN
+                v_fallo_esperado := TRUE;
+                DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 10 - RECHAZO CONTROLADO] Limite de credito bloqueado correctamente con ORA-20010: ' || SQLERRM);
+            ELSE
+                DBMS_OUTPUT.PUT_LINE('[ERROR INESPERADO PRUEBA 10]: ' || SQLERRM);
+            END IF;
+    END;
+    IF NOT v_fallo_esperado THEN
+        RAISE_APPLICATION_ERROR(-20091, 'Fallo prueba negativa 10: Se permitio exceder limite de credito sin ORA-20010.');
+    END IF;
+
+    -- ------------------------------------------------------------------------
+    -- PRUEBA 11: PRUEBA NEGATIVA - RECHAZO POR INVENTARIO INSUFICIENTE (ORA-20015)
+    -- ------------------------------------------------------------------------
+    DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 11 - NEGATIVA] Validando rechazo por existencia insuficiente...');
+    v_fallo_esperado := FALSE;
+    BEGIN
+        -- Intentar vender 999,999 unidades cuando el stock es limitado debe disparar ORA-20015
+        PKG_INV_GESTION.PR_AFECTAR_EXISTENCIA(
+            p_id_bodega     => 1,
+            p_id_producto   => 1,
+            p_id_lote       => NULL,
+            p_cantidad      => 999999,
+            p_es_entrada    => 'N',
+            p_tipo_mov      => 'VENTA',
+            p_documento_ref => 'FAC-SIN-STOCK'
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLCODE = -20015 THEN
+                v_fallo_esperado := TRUE;
+                DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 11 - RECHAZO CONTROLADO] Venta sin stock bloqueada correctamente con ORA-20015: ' || SQLERRM);
+            ELSE
+                DBMS_OUTPUT.PUT_LINE('[ERROR INESPERADO PRUEBA 11]: ' || SQLERRM);
+            END IF;
+    END;
+    IF NOT v_fallo_esperado THEN
+        RAISE_APPLICATION_ERROR(-20092, 'Fallo prueba negativa 11: Se permitio vender sin stock sin ORA-20015.');
+    END IF;
+
+    -- ------------------------------------------------------------------------
+    -- PRUEBA 12: LIMPIEZA DE DATOS TRANSACCIONALES DE PRUEBA
+    -- ------------------------------------------------------------------------
+    DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 12] Depurando transacciones temporales de prueba...');
+    DELETE FROM VEN_ABONO_COBRAR WHERE NUM_RECIBO_ABCO LIKE 'REC-TEST-%';
+    DELETE FROM VEN_CUENTA_COBRAR WHERE ID_FACTURA_VENTA IN (SELECT ID_FACTURA_VENTA FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE LIKE 'FAC-TEST-%');
+    DELETE FROM VEN_FACTURA_DET WHERE ID_FACTURA_VENTA IN (SELECT ID_FACTURA_VENTA FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE LIKE 'FAC-TEST-%');
+    DELETE FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE LIKE 'FAC-TEST-%';
+
+    DELETE FROM COM_CUENTA_PAGAR WHERE ID_FACTURA_COMPRA IN (SELECT ID_FACTURA_COMPRA FROM COM_FACTURA_COMPRA WHERE NUM_FACTURA_FACO LIKE 'FAC-TEST-%');
+    DELETE FROM COM_FACTURA_COMPRA_DET WHERE ID_FACTURA_COMPRA IN (SELECT ID_FACTURA_COMPRA FROM COM_FACTURA_COMPRA WHERE NUM_FACTURA_FACO LIKE 'FAC-TEST-%');
+    DELETE FROM COM_FACTURA_COMPRA WHERE NUM_FACTURA_FACO LIKE 'FAC-TEST-%';
+
+    -- Revertir saldos simulados a sus valores estables
+    UPDATE PER_PROVEEDOR SET SALDO_ACTUAL_PROVE = v_saldo_prov_ant WHERE ID_PROVEEDOR = 1;
+    UPDATE PER_CLIENTE   SET SALDO_ACTUAL_CLI   = v_saldo_cli_ant  WHERE ID_CLIENTE   = 3;
+    COMMIT;
+    DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 12] Datos de prueba depurados exitosamente y saldos restaurados.');
+
     DBMS_OUTPUT.PUT_LINE('========================================================================');
-    DBMS_OUTPUT.PUT_LINE('>>> VERIFICACION GENERAL EXITOSA: TODAS LAS PRUEBAS FINALIZARON CON EXITO.');
+    DBMS_OUTPUT.PUT_LINE('>>> VERIFICACION GENERAL EXITOSA: LAS 12 PRUEBAS (POSITIVAS Y NEGATIVAS)');
+    DBMS_OUTPUT.PUT_LINE('    FINALIZARON CON 100% DE EXITO Y CERO ADVERTENCIAS.');
     DBMS_OUTPUT.PUT_LINE('========================================================================');
 EXCEPTION
     WHEN OTHERS THEN

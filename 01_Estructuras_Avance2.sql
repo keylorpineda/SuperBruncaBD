@@ -869,7 +869,7 @@ BEGIN
     VALUES (2, 'SMTP_PORT', 'CORREO', 'Puerto SMTP', 'Puerto TCP del servidor SMTP.', 'N', 587);
 
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_TEXTO_PARA)
-    VALUES (3, 'CORREO_EMISOR', 'CORREO', 'Correo emisor del sistema', 'Cuenta remitente de las notificaciones automaticas.', 'N', 'notificaciones@superbrunca.cr');
+    VALUES (3, 'CORREO_EMISOR', 'CORREO', 'Correo emisor del sistema', 'Cuenta remitente de las notificaciones automaticas (Gmail autenticado).', 'N', 'keylorpineda729@gmail.com');
 
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_RAW_PARA)
     VALUES (4, 'CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', v_cif_smtp);
@@ -925,8 +925,26 @@ BEGIN
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
     VALUES (20, 'PORC_MAX_TABLESPACE', 'MONITOREO', 'Porcentaje maximo de uso de tablespace', 'Limite porcentual (85%) antes de emitir alerta de capacidad de tablespace.', 'N', 85);
 
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (21, 'MB_MAX_CRECIMIENTO', 'MONITOREO', 'Umbral de crecimiento maximo en MB', 'Umbral maximo proyectado para segmentos de esquema (3000 MB).', 'N', 3000);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (22, 'MAX_SESIONES_ACTIVAS', 'MONITOREO', 'Maximo de sesiones concurrentes de usuario', 'Umbral de alerta por alta concurrencia de sesiones (100 sesiones).', 'N', 100);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (23, 'STANDBY_SWITCH_MIN', 'STANDBY', 'Frecuencia de switch de log en minutos', 'Tiempo maximo antes de forzar un conmutado de Redo Log (5 min).', 'N', 5);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (24, 'STANDBY_SWITCH_MB', 'STANDBY', 'Tamano de cada grupo de Redo Log en MB', 'Tamano exacto por grupo de Redo Log (50 MB).', 'N', 50);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (25, 'STANDBY_SYNC_MIN', 'STANDBY', 'Frecuencia de traslado de archivelogs', 'Intervalo del script de traslado automatico (10 min).', 'N', 10);
+
+    INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA)
+    VALUES (26, 'STANDBY_PURGE_DIAS', 'STANDBY', 'Retencion de archivelogs para purga', 'Dias de retencion antes de purga automatica (3 dias).', 'N', 3);
+
     INSERT INTO SEG_PARAMETRO (ID_PARAMETRO, CODIGO_PARA, MODULO_PARA, NOMBRE_PARA, DESCRIPCION_PARA, ES_CIFRADO_PARA, VALOR_NUM_PARA, VALOR_TEXTO_PARA)
-    VALUES (21, 'STANDBY_CONFIG_PARAMS', 'STANDBY', 'Parametros de sincronizacion Standby', 'Switch: 5 min / 50 MB | Traslado: 10 min | Retencion purga: 3 dias.', 'N', 10, 'SWITCH_MIN=5;SWITCH_MB=50;SYNC_MIN=10;RETENCION_DIAS=3');
+    VALUES (27, 'STANDBY_CONFIG_PARAMS', 'STANDBY', 'Parametros consolidados Standby', 'Switch: 5 min / 50 MB | Traslado: 10 min | Retencion purga: 3 dias.', 'N', 10, 'SWITCH_MIN=5;SWITCH_MB=50;SYNC_MIN=10;RETENCION_DIAS=3');
 END;
 /
 

@@ -41,16 +41,21 @@ PROMPT =========================================================================
 -- ----------------------------------------------------------------------------
 -- 1.1 TRG_VEN_FACTURA_CRED_BIU
 -- Disparador BEFORE INSERT OR UPDATE ON VEN_FACTURA
--- Valida que el cliente no supere su limite de credito autorizado
+-- Valida que el cliente no supere su limite de credito autorizado.
+-- NOTA TECNICA: TOTAL_FAVE es una columna VIRTUAL (GENERATED ALWAYS AS).
+-- En un disparador BEFORE, las columnas virtuales llegan como NULL.
+-- Por ello, el total se calcula explicitamente como SUBTOTAL - DESCUENTO + IMPUESTO.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE TRIGGER TRG_VEN_FACTURA_CRED_BIU
-BEFORE INSERT OR UPDATE OF TOTAL_FAVE, ES_CREDITO_FAVE, ESTADO_FAVE ON VEN_FACTURA
+BEFORE INSERT OR UPDATE OF SUBTOTAL_FAVE, DESCUENTO_FAVE, IMPUESTO_FAVE, ES_CREDITO_FAVE, ESTADO_FAVE ON VEN_FACTURA
 FOR EACH ROW
 DECLARE
     v_saldo_actual  NUMBER(14,2);
     v_monto_max     NUMBER(14,2);
     v_estado_cli    VARCHAR2(1);
     v_codigo_cli    VARCHAR2(30);
+    v_total_new     NUMBER(14,2);
+    v_total_old     NUMBER(14,2) := 0;
     v_diferencia    NUMBER(14,2) := 0;
 BEGIN
     IF :NEW.ES_CREDITO_FAVE = 'S' OR :NEW.ESTADO_FAVE = 'P' THEN
@@ -63,10 +68,14 @@ BEGIN
             RAISE_APPLICATION_ERROR(-20011, 'El cliente "' || v_codigo_cli || '" no esta activo para emitirle facturas a credito.');
         END IF;
 
+        -- Calculo explicito del total para evitar valor NULL de columna virtual en BEFORE trigger
+        v_total_new := NVL(:NEW.SUBTOTAL_FAVE, 0) - NVL(:NEW.DESCUENTO_FAVE, 0) + NVL(:NEW.IMPUESTO_FAVE, 0);
+
         IF INSERTING THEN
-            v_diferencia := :NEW.TOTAL_FAVE;
+            v_diferencia := v_total_new;
         ELSIF UPDATING THEN
-            v_diferencia := :NEW.TOTAL_FAVE - NVL(:OLD.TOTAL_FAVE, 0);
+            v_total_old  := NVL(:OLD.SUBTOTAL_FAVE, 0) - NVL(:OLD.DESCUENTO_FAVE, 0) + NVL(:OLD.IMPUESTO_FAVE, 0);
+            v_diferencia := v_total_new - v_total_old;
         END IF;
 
         IF v_diferencia > 0 AND (v_saldo_actual + v_diferencia) > v_monto_max THEN
@@ -92,13 +101,16 @@ CREATE OR REPLACE TRIGGER TRG_VEN_FACTURA_CRED_AI
 AFTER INSERT ON VEN_FACTURA
 FOR EACH ROW
 DECLARE
-    v_plazo_dias NUMBER := 30;
-    v_cant_cuco  NUMBER := 0;
+    v_plazo_dias   NUMBER := 30;
+    v_cant_cuco    NUMBER := 0;
+    v_monto_total  NUMBER(14,2);
 BEGIN
     IF :NEW.ES_CREDITO_FAVE = 'S' OR :NEW.ESTADO_FAVE = 'P' THEN
+        v_monto_total := NVL(:NEW.TOTAL_FAVE, NVL(:NEW.SUBTOTAL_FAVE, 0) - NVL(:NEW.DESCUENTO_FAVE, 0) + NVL(:NEW.IMPUESTO_FAVE, 0));
+
         -- 1. Aumentar el saldo actual del cliente
         UPDATE PER_CLIENTE
-           SET SALDO_ACTUAL_CLI = NVL(SALDO_ACTUAL_CLI, 0) + :NEW.TOTAL_FAVE,
+           SET SALDO_ACTUAL_CLI = NVL(SALDO_ACTUAL_CLI, 0) + v_monto_total,
                USUARIO_MOD_CLI = USER,
                FECHA_MOD_CLI = SYSTIMESTAMP
          WHERE ID_CLIENTE = :NEW.ID_CLIENTE;
@@ -138,9 +150,9 @@ BEGIN
                 :NEW.ID_CLIENTE,
                 :NEW.FECHA_FAVE,
                 NVL(:NEW.FECHA_VENCIM_FAVE, :NEW.FECHA_FAVE + v_plazo_dias),
-                :NEW.TOTAL_FAVE,
+                v_monto_total,
                 0,
-                :NEW.TOTAL_FAVE,
+                v_monto_total,
                 'P',
                 USER,
                 SYSTIMESTAMP
@@ -151,11 +163,11 @@ BEGIN
         PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
             p_tabla       => 'VEN_FACTURA',
             p_modulo      => 'VENTAS',
-            p_operacion   => 'CREDITO_AUTO',
+            p_operacion   => 'INSERT',
             p_llave       => TO_CHAR(:NEW.ID_FACTURA_VENTA),
             p_id_usuario  => :NEW.ID_USUARIO,
             p_id_sucursal => :NEW.ID_SUCURSAL,
-            p_descripcion => 'Factura a credito registrada. Saldo cliente aumentado en C' || TO_CHAR(:NEW.TOTAL_FAVE, '999,999,990.00')
+            p_descripcion => '[CREDITO_AUTO] Factura a credito registrada. Saldo cliente aumentado en C' || TO_CHAR(v_monto_total, '999,999,990.00')
         );
     END IF;
 END;
@@ -165,16 +177,21 @@ SHOW ERRORS TRIGGER TRG_VEN_FACTURA_CRED_AI;
 -- ----------------------------------------------------------------------------
 -- 1.3 TRG_COM_FACTURA_CRED_BIU
 -- Disparador BEFORE INSERT OR UPDATE ON COM_FACTURA_COMPRA
--- Valida que el credito otorgado por el proveedor no sobrepase el limite negociado
+-- Valida que el credito otorgado por el proveedor no sobrepase el limite negociado.
+-- NOTA TECNICA: TOTAL_FACO es una columna VIRTUAL (GENERATED ALWAYS AS).
+-- En un disparador BEFORE, las columnas virtuales llegan como NULL.
+-- Por ello, el total se calcula explicitamente como SUBTOTAL - DESCUENTO + IMPUESTO.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE TRIGGER TRG_COM_FACTURA_CRED_BIU
-BEFORE INSERT OR UPDATE OF TOTAL_FACO, ES_CREDITO_FACO, ESTADO_FACO ON COM_FACTURA_COMPRA
+BEFORE INSERT OR UPDATE OF SUBTOTAL_FACO, DESCUENTO_FACO, IMPUESTO_FACO, ES_CREDITO_FACO, ESTADO_FACO ON COM_FACTURA_COMPRA
 FOR EACH ROW
 DECLARE
     v_saldo_actual  NUMBER(14,2);
     v_limite_max    NUMBER(14,2);
     v_estado_prov   VARCHAR2(1);
     v_codigo_prov   VARCHAR2(30);
+    v_total_new     NUMBER(14,2);
+    v_total_old     NUMBER(14,2) := 0;
     v_diferencia    NUMBER(14,2) := 0;
 BEGIN
     IF :NEW.ES_CREDITO_FACO = 'S' OR :NEW.ESTADO_FACO = 'P' THEN
@@ -187,10 +204,14 @@ BEGIN
             RAISE_APPLICATION_ERROR(-20014, 'El proveedor "' || v_codigo_prov || '" se encuentra inactivo para compras a credito.');
         END IF;
 
+        -- Calculo explicito del total para evitar valor NULL de columna virtual en BEFORE trigger
+        v_total_new := NVL(:NEW.SUBTOTAL_FACO, 0) - NVL(:NEW.DESCUENTO_FACO, 0) + NVL(:NEW.IMPUESTO_FACO, 0);
+
         IF INSERTING THEN
-            v_diferencia := :NEW.TOTAL_FACO;
+            v_diferencia := v_total_new;
         ELSIF UPDATING THEN
-            v_diferencia := :NEW.TOTAL_FACO - NVL(:OLD.TOTAL_FACO, 0);
+            v_total_old  := NVL(:OLD.SUBTOTAL_FACO, 0) - NVL(:OLD.DESCUENTO_FACO, 0) + NVL(:OLD.IMPUESTO_FACO, 0);
+            v_diferencia := v_total_new - v_total_old;
         END IF;
 
         IF v_limite_max > 0 AND v_diferencia > 0 AND (v_saldo_actual + v_diferencia) > v_limite_max THEN
@@ -216,13 +237,16 @@ CREATE OR REPLACE TRIGGER TRG_COM_FACTURA_CRED_AI
 AFTER INSERT ON COM_FACTURA_COMPRA
 FOR EACH ROW
 DECLARE
-    v_plazo_dias NUMBER := 30;
-    v_cant_cupa  NUMBER := 0;
+    v_plazo_dias   NUMBER := 30;
+    v_cant_cupa    NUMBER := 0;
+    v_monto_total  NUMBER(14,2);
 BEGIN
     IF :NEW.ES_CREDITO_FACO = 'S' OR :NEW.ESTADO_FACO = 'P' THEN
+        v_monto_total := NVL(:NEW.TOTAL_FACO, NVL(:NEW.SUBTOTAL_FACO, 0) - NVL(:NEW.DESCUENTO_FACO, 0) + NVL(:NEW.IMPUESTO_FACO, 0));
+
         -- 1. Aumentar saldo pendiente al proveedor
         UPDATE PER_PROVEEDOR
-           SET SALDO_ACTUAL_PROVE = NVL(SALDO_ACTUAL_PROVE, 0) + :NEW.TOTAL_FACO,
+           SET SALDO_ACTUAL_PROVE = NVL(SALDO_ACTUAL_PROVE, 0) + v_monto_total,
                USUARIO_MOD_PROVE = USER,
                FECHA_MOD_PROVE = SYSTIMESTAMP
          WHERE ID_PROVEEDOR = :NEW.ID_PROVEEDOR;
@@ -262,9 +286,9 @@ BEGIN
                 :NEW.ID_PROVEEDOR,
                 :NEW.FECHA_FACO,
                 NVL(:NEW.FECHA_VENCIM_FACO, :NEW.FECHA_FACO + v_plazo_dias),
-                :NEW.TOTAL_FACO,
+                v_monto_total,
                 0,
-                :NEW.TOTAL_FACO,
+                v_monto_total,
                 'P',
                 USER,
                 SYSTIMESTAMP
@@ -275,11 +299,11 @@ BEGIN
         PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
             p_tabla       => 'COM_FACTURA_COMPRA',
             p_modulo      => 'COMPRAS',
-            p_operacion   => 'CREDITO_AUTO',
+            p_operacion   => 'INSERT',
             p_llave       => TO_CHAR(:NEW.ID_FACTURA_COMPRA),
             p_id_usuario  => :NEW.ID_USUARIO,
             p_id_sucursal => NULL,
-            p_descripcion => 'Compra a credito registrada. Saldo con proveedor aumentado en C' || TO_CHAR(:NEW.TOTAL_FACO, '999,999,990.00')
+            p_descripcion => '[CREDITO_AUTO] Compra a credito registrada. Saldo con proveedor aumentado en C' || TO_CHAR(v_monto_total, '999,999,990.00')
         );
     END IF;
 END;
@@ -350,9 +374,9 @@ BEGIN
         PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
             p_tabla       => 'VEN_FACTURA',
             p_modulo      => 'VENTAS',
-            p_operacion   => 'CANCELACION_AUTO',
+            p_operacion   => 'UPDATE',
             p_llave       => TO_CHAR(:NEW.ID_FACTURA_VENTA),
-            p_descripcion => 'Factura cancelada automaticamente tras liquidacion de cuenta por cobrar #' || v_id_cuenta
+            p_descripcion => '[CANCELACION_AUTO] Factura cancelada automaticamente tras liquidacion de cuenta por cobrar #' || v_id_cuenta
         );
     END IF;
 
@@ -360,9 +384,9 @@ BEGIN
     PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
         p_tabla       => 'VEN_ABONO_COBRAR',
         p_modulo      => 'VENTAS',
-        p_operacion   => 'ABONO',
+        p_operacion   => 'INSERT',
         p_llave       => TO_CHAR(:NEW.ID_ABONO_COBRAR),
-        p_descripcion => 'Abono de C' || TO_CHAR(:NEW.MONTO_ABCO, '999,999,990.00') || ' aplicado a cuenta #' || v_id_cuenta || '. Nuevo saldo: C' || TO_CHAR(v_nuevo_saldo, '999,999,990.00')
+        p_descripcion => '[ABONO] Abono de C' || TO_CHAR(:NEW.MONTO_ABCO, '999,999,990.00') || ' aplicado a cuenta #' || v_id_cuenta || '. Nuevo saldo: C' || TO_CHAR(v_nuevo_saldo, '999,999,990.00')
     );
 END;
 /
@@ -432,9 +456,9 @@ BEGIN
         PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
             p_tabla       => 'COM_FACTURA_COMPRA',
             p_modulo      => 'COMPRAS',
-            p_operacion   => 'CANCELACION_AUTO',
+            p_operacion   => 'UPDATE',
             p_llave       => TO_CHAR(:NEW.ID_FACTURA_COMPRA),
-            p_descripcion => 'Factura compra cancelada automaticamente tras liquidacion de cuenta por pagar #' || v_id_cuenta
+            p_descripcion => '[CANCELACION_AUTO] Factura compra cancelada automaticamente tras liquidacion de cuenta por pagar #' || v_id_cuenta
         );
     END IF;
 
@@ -442,9 +466,9 @@ BEGIN
     PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
         p_tabla       => 'COM_ABONO_PAGAR',
         p_modulo      => 'COMPRAS',
-        p_operacion   => 'ABONO',
+        p_operacion   => 'INSERT',
         p_llave       => TO_CHAR(:NEW.ID_ABONO_PAGAR),
-        p_descripcion => 'Abono a proveedor de C' || TO_CHAR(:NEW.MONTO_ABPA, '999,999,990.00') || ' aplicado a cuenta #' || v_id_cuenta || '. Nuevo saldo: C' || TO_CHAR(v_nuevo_saldo, '999,999,990.00')
+        p_descripcion => '[ABONO] Abono a proveedor de C' || TO_CHAR(:NEW.MONTO_ABPA, '999,999,990.00') || ' aplicado a cuenta #' || v_id_cuenta || '. Nuevo saldo: C' || TO_CHAR(v_nuevo_saldo, '999,999,990.00')
     );
 END;
 /
@@ -453,18 +477,20 @@ SHOW ERRORS TRIGGER TRG_COM_ABONO_SALDO_AI;
 -- ----------------------------------------------------------------------------
 -- 1.7 TRG_VEN_FACTURA_DET_INV_AI
 -- Disparador AFTER INSERT ON VEN_FACTURA_DET
--- Descuenta existencias del inventario en la bodega de la sucursal y otorga acciones
+-- Descuenta existencias del inventario formalmente via PKG_INV_GESTION (con bloqueo
+-- FOR UPDATE WAIT, trazabilidad por lote y generacion automatica de Kardex).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE TRIGGER TRG_VEN_FACTURA_DET_INV_AI
 AFTER INSERT ON VEN_FACTURA_DET
 FOR EACH ROW
 DECLARE
     v_id_sucursal NUMBER;
+    v_id_usuario  NUMBER;
     v_id_bodega   NUMBER;
 BEGIN
-    -- 1. Obtener sucursal de la factura padre
-    SELECT ID_SUCURSAL
-      INTO v_id_sucursal
+    -- 1. Obtener sucursal y usuario de la factura padre
+    SELECT ID_SUCURSAL, ID_USUARIO
+      INTO v_id_sucursal, v_id_usuario
       FROM VEN_FACTURA
      WHERE ID_FACTURA_VENTA = :NEW.ID_FACTURA_VENTA;
 
@@ -485,39 +511,27 @@ BEGIN
                AND ROWNUM = 1;
     END;
 
-    -- 3. Descontar existencias mediante el paquete de inventario o directamente
-    BEGIN
-        UPDATE INV_EXISTENCIA
-           SET CANTIDAD_EXIS = GREATEST(0, CANTIDAD_EXIS - :NEW.CANTIDAD_FVDE),
-               USUARIO_MOD_EXIS = USER,
-               FECHA_MOD_EXIS = SYSTIMESTAMP
-         WHERE ID_PRODUCTO = :NEW.ID_PRODUCTO
-           AND ID_BODEGA = v_id_bodega;
+    -- 3. Descontar existencias formalmente mediante PKG_INV_GESTION
+    IF :NEW.ID_PRODUCTO IS NOT NULL THEN
+        PKG_INV_GESTION.PR_AFECTAR_EXISTENCIA (
+            p_id_bodega      => v_id_bodega,
+            p_id_producto    => :NEW.ID_PRODUCTO,
+            p_id_lote        => :NEW.ID_LOTE,
+            p_cantidad       => :NEW.CANTIDAD_FVDE,
+            p_es_entrada     => 'N',
+            p_tipo_movi      => 'VENTA',
+            p_id_usuario     => v_id_usuario,
+            p_documento_ref  => 'FAC-VTA-' || :NEW.ID_FACTURA_VENTA,
+            p_registrar_kard => 'S'
+        );
 
-        IF SQL%ROWCOUNT = 0 THEN
-            INSERT INTO INV_EXISTENCIA (
-                ID_EXISTENCIA, ID_BODEGA, ID_PRODUCTO,
-                CANTIDAD_EXIS, CANTIDAD_RESERV_EXIS,
-                USUARIO_CREA_EXIS, FECHA_CREA_EXIS
-            ) VALUES (
-                SEQ_INV_EXISTENCIA.NEXTVAL, v_id_bodega, :NEW.ID_PRODUCTO,
-                0, 0, USER, SYSTIMESTAMP
-            );
-        END IF;
-    EXCEPTION
-        WHEN OTHERS THEN NULL;
-    END;
-
-    -- 4. Otorgamiento automatico de acciones para marcas patrocinadoras
-    BEGIN
+        -- 4. Otorgamiento automatico de acciones para marcas patrocinadoras
         PKG_PRM_MERCADEO.PR_OTORGAR_ACCIONES_LINEA (
             p_id_factura_venta => :NEW.ID_FACTURA_VENTA,
             p_id_producto      => :NEW.ID_PRODUCTO,
             p_cantidad         => :NEW.CANTIDAD_FVDE
         );
-    EXCEPTION
-        WHEN OTHERS THEN NULL;
-    END;
+    END IF;
 END;
 /
 SHOW ERRORS TRIGGER TRG_VEN_FACTURA_DET_INV_AI;
@@ -525,55 +539,51 @@ SHOW ERRORS TRIGGER TRG_VEN_FACTURA_DET_INV_AI;
 -- ----------------------------------------------------------------------------
 -- 1.8 TRG_COM_FACTURA_DET_INV_AI
 -- Disparador AFTER INSERT ON COM_FACTURA_COMPRA_DET
--- Aumenta existencias de inventario y actualiza el costo si difiere del actual
+-- Aumenta existencias de inventario formalmente via PKG_INV_GESTION (con kardex,
+-- lote y actualizacion de costo si difiere del actual).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE TRIGGER TRG_COM_FACTURA_DET_INV_AI
 AFTER INSERT ON COM_FACTURA_COMPRA_DET
 FOR EACH ROW
 DECLARE
     v_id_bodega     NUMBER;
+    v_id_usuario    NUMBER;
     v_costo_actual  NUMBER(14,2);
 BEGIN
-    -- 1. Obtener bodega que recibe de la factura de compra
-    SELECT ID_BODEGA
-      INTO v_id_bodega
+    -- 1. Obtener bodega y usuario de la factura de compra
+    SELECT ID_BODEGA, ID_USUARIO
+      INTO v_id_bodega, v_id_usuario
       FROM COM_FACTURA_COMPRA
      WHERE ID_FACTURA_COMPRA = :NEW.ID_FACTURA_COMPRA;
 
-    -- 2. Aumentar stock de inventario
-    UPDATE INV_EXISTENCIA
-       SET CANTIDAD_EXIS = CANTIDAD_EXIS + :NEW.CANTIDAD_FCDE,
-           USUARIO_MOD_EXIS = USER,
-           FECHA_MOD_EXIS = SYSTIMESTAMP
-     WHERE ID_PRODUCTO = :NEW.ID_PRODUCTO
-       AND ID_BODEGA = v_id_bodega;
-
-    IF SQL%ROWCOUNT = 0 THEN
-        INSERT INTO INV_EXISTENCIA (
-            ID_EXISTENCIA, ID_BODEGA, ID_PRODUCTO,
-            CANTIDAD_EXIS, CANTIDAD_RESERV_EXIS,
-            USUARIO_CREA_EXIS, FECHA_CREA_EXIS
-        ) VALUES (
-            SEQ_INV_EXISTENCIA.NEXTVAL, v_id_bodega, :NEW.ID_PRODUCTO,
-            :NEW.CANTIDAD_FCDE, 0, USER, SYSTIMESTAMP
+    -- 2. Aumentar stock de inventario formalmente via PKG_INV_GESTION
+    IF :NEW.ID_PRODUCTO IS NOT NULL THEN
+        PKG_INV_GESTION.PR_AFECTAR_EXISTENCIA (
+            p_id_bodega      => v_id_bodega,
+            p_id_producto    => :NEW.ID_PRODUCTO,
+            p_id_lote        => :NEW.ID_LOTE,
+            p_cantidad       => :NEW.CANTIDAD_FCDE,
+            p_es_entrada     => 'S',
+            p_tipo_movi      => 'COMPRA',
+            p_id_usuario     => v_id_usuario,
+            p_documento_ref  => 'FAC-COM-' || :NEW.ID_FACTURA_COMPRA,
+            p_registrar_kard => 'S'
         );
-    END IF;
 
-    -- 3. Si el costo unitario difiere, actualizar en catalogo de productos
-    SELECT PRECIO_COSTO_PROD
-      INTO v_costo_actual
-      FROM PRO_PRODUCTO
-     WHERE ID_PRODUCTO = :NEW.ID_PRODUCTO;
-
-    IF NVL(v_costo_actual, 0) <> :NEW.COSTO_UNITARIO_FCDE THEN
-        UPDATE PRO_PRODUCTO
-           SET PRECIO_COSTO_PROD = :NEW.COSTO_UNITARIO_FCDE,
-               USUARIO_MOD_PROD = USER,
-               FECHA_MOD_PROD = SYSTIMESTAMP
+        -- 3. Si el costo unitario difiere, actualizar en catalogo de productos
+        SELECT PRECIO_COSTO_PROD
+          INTO v_costo_actual
+          FROM PRO_PRODUCTO
          WHERE ID_PRODUCTO = :NEW.ID_PRODUCTO;
+
+        IF NVL(v_costo_actual, 0) <> :NEW.COSTO_UNITARIO_FCDE THEN
+            UPDATE PRO_PRODUCTO
+               SET PRECIO_COSTO_PROD = :NEW.COSTO_UNITARIO_FCDE,
+                   USUARIO_MOD_PROD = USER,
+                   FECHA_MOD_PROD = SYSTIMESTAMP
+             WHERE ID_PRODUCTO = :NEW.ID_PRODUCTO;
+        END IF;
     END IF;
-EXCEPTION
-    WHEN OTHERS THEN NULL;
 END;
 /
 SHOW ERRORS TRIGGER TRG_COM_FACTURA_DET_INV_AI;
@@ -613,27 +623,34 @@ SHOW ERRORS TRIGGER TRG_PRO_HISTORIAL_PRECIO_AU;
 -- ----------------------------------------------------------------------------
 -- 1.10 TRG_VEN_DEVOLUCION_DET_INV_AI
 -- Disparador AFTER INSERT ON VEN_DEVOLUCION_DET
--- Reintegra existencias a inventario por devolucion del cliente
+-- Reintegra existencias a inventario formalmente via PKG_INV_GESTION
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE TRIGGER TRG_VEN_DEVOLUCION_DET_INV_AI
 AFTER INSERT ON VEN_DEVOLUCION_DET
 FOR EACH ROW
 DECLARE
-    v_id_bodega NUMBER;
+    v_id_bodega  NUMBER;
+    v_id_prod    NUMBER;
+    v_id_lote    NUMBER;
+    v_id_usu     NUMBER;
 BEGIN
-    SELECT ID_BODEGA
-      INTO v_id_bodega
-      FROM VEN_DEVOLUCION
-     WHERE ID_DEVOLUCION_VENTA = :NEW.ID_DEVOLUCION_VENTA;
+    SELECT d.ID_BODEGA, d.ID_USUARIO, fd.ID_PRODUCTO, fd.ID_LOTE
+      INTO v_id_bodega, v_id_usu, v_id_prod, v_id_lote
+      FROM VEN_DEVOLUCION d
+           JOIN VEN_FACTURA_DET fd ON fd.ID_FACTURA_VENTA_DET = :NEW.ID_FACTURA_VENTA_DET
+     WHERE d.ID_DEVOLUCION_VENTA = :NEW.ID_DEVOLUCION_VENTA;
 
-    UPDATE INV_EXISTENCIA
-       SET CANTIDAD_EXIS = CANTIDAD_EXIS + :NEW.CANTIDAD_DVVD,
-           USUARIO_MOD_EXIS = USER,
-           FECHA_MOD_EXIS = SYSTIMESTAMP
-     WHERE ID_PRODUCTO = (SELECT ID_PRODUCTO FROM VEN_FACTURA_DET WHERE ID_FACTURA_VENTA_DET = :NEW.ID_FACTURA_VENTA_DET)
-       AND ID_BODEGA = v_id_bodega;
-EXCEPTION
-    WHEN OTHERS THEN NULL;
+    PKG_INV_GESTION.PR_AFECTAR_EXISTENCIA (
+        p_id_bodega      => v_id_bodega,
+        p_id_producto    => v_id_prod,
+        p_id_lote        => v_id_lote,
+        p_cantidad       => :NEW.CANTIDAD_DVVD,
+        p_es_entrada     => 'S',
+        p_tipo_movi      => 'DEV_VENTA',
+        p_id_usuario     => v_id_usu,
+        p_documento_ref  => 'DEV-VTA-' || :NEW.ID_DEVOLUCION_VENTA,
+        p_registrar_kard => 'S'
+    );
 END;
 /
 SHOW ERRORS TRIGGER TRG_VEN_DEVOLUCION_DET_INV_AI;
@@ -641,27 +658,34 @@ SHOW ERRORS TRIGGER TRG_VEN_DEVOLUCION_DET_INV_AI;
 -- ----------------------------------------------------------------------------
 -- 1.11 TRG_COM_DEVOLUCION_DET_INV_AI
 -- Disparador AFTER INSERT ON COM_DEVOLUCION_DET
--- Descuenta existencias de inventario por devolucion al proveedor
+-- Descuenta existencias de inventario formalmente via PKG_INV_GESTION
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE TRIGGER TRG_COM_DEVOLUCION_DET_INV_AI
 AFTER INSERT ON COM_DEVOLUCION_DET
 FOR EACH ROW
 DECLARE
-    v_id_bodega NUMBER;
+    v_id_bodega  NUMBER;
+    v_id_prod    NUMBER;
+    v_id_lote    NUMBER;
+    v_id_usu     NUMBER;
 BEGIN
-    SELECT ID_BODEGA
-      INTO v_id_bodega
-      FROM COM_DEVOLUCION
-     WHERE ID_DEVOLUCION_COMPRA = :NEW.ID_DEVOLUCION_COMPRA;
+    SELECT d.ID_BODEGA, d.ID_USUARIO, cd.ID_PRODUCTO, cd.ID_LOTE
+      INTO v_id_bodega, v_id_usu, v_id_prod, v_id_lote
+      FROM COM_DEVOLUCION d
+           JOIN COM_FACTURA_COMPRA_DET cd ON cd.ID_FACTURA_COMPRA_DET = :NEW.ID_FACTURA_COMPRA_DET
+     WHERE d.ID_DEVOLUCION_COMPRA = :NEW.ID_DEVOLUCION_COMPRA;
 
-    UPDATE INV_EXISTENCIA
-       SET CANTIDAD_EXIS = GREATEST(0, CANTIDAD_EXIS - :NEW.CANTIDAD_DVCD),
-           USUARIO_MOD_EXIS = USER,
-           FECHA_MOD_EXIS = SYSTIMESTAMP
-     WHERE ID_PRODUCTO = (SELECT ID_PRODUCTO FROM COM_FACTURA_COMPRA_DET WHERE ID_FACTURA_COMPRA_DET = :NEW.ID_FACTURA_COMPRA_DET)
-       AND ID_BODEGA = v_id_bodega;
-EXCEPTION
-    WHEN OTHERS THEN NULL;
+    PKG_INV_GESTION.PR_AFECTAR_EXISTENCIA (
+        p_id_bodega      => v_id_bodega,
+        p_id_producto    => v_id_prod,
+        p_id_lote        => v_id_lote,
+        p_cantidad       => :NEW.CANTIDAD_DVCD,
+        p_es_entrada     => 'N',
+        p_tipo_movi      => 'DEV_COMPRA',
+        p_id_usuario     => v_id_usu,
+        p_documento_ref  => 'DEV-COM-' || :NEW.ID_DEVOLUCION_COMPRA,
+        p_registrar_kard => 'S'
+    );
 END;
 /
 SHOW ERRORS TRIGGER TRG_COM_DEVOLUCION_DET_INV_AI;
@@ -999,7 +1023,7 @@ SHOW ERRORS TRIGGER TRG_AUD_PER_PROVEEDOR;
 
 -- ----------------------------------------------------------------------------
 -- 2.7 TRG_AUD_PRM_PROMOCION
--- Tabla 7: PRM_PROMOCION (Auditoria de promociones, campanas y descuentos)
+-- Tabla 7: PRM_PROMOCION (Auditoria de promociones y campanas de mercadeo)
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE TRIGGER TRG_AUD_PRM_PROMOCION
 AFTER INSERT OR UPDATE OR DELETE ON PRM_PROMOCION
@@ -1046,6 +1070,108 @@ BEGIN
 END;
 /
 SHOW ERRORS TRIGGER TRG_AUD_PRM_PROMOCION;
+
+-- ----------------------------------------------------------------------------
+-- 2.8 TRG_AUD_PRM_DESCUENTO
+-- Tabla 8: PRM_DESCUENTO (Auditoria de politicas y programas de descuento)
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE TRIGGER TRG_AUD_PRM_DESCUENTO
+AFTER INSERT OR UPDATE OR DELETE ON PRM_DESCUENTO
+FOR EACH ROW
+DECLARE
+    v_operacion VARCHAR2(10);
+    v_llave     VARCHAR2(50);
+BEGIN
+    IF INSERTING THEN
+        v_operacion := 'INSERT';
+        v_llave := TO_CHAR(:NEW.ID_DESCUENTO);
+        PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
+            p_tabla       => 'PRM_DESCUENTO',
+            p_modulo      => 'DESCUENTOS',
+            p_operacion   => v_operacion,
+            p_llave       => v_llave,
+            p_descripcion => 'Nuevo descuento creado: ' || :NEW.CODIGO_DESC || ' - ' || :NEW.NOMBRE_DESC || ' (' || :NEW.PORCENTAJE_DESC || '%)'
+        );
+        PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'PORCENTAJE_DESC', NULL, TO_CHAR(:NEW.PORCENTAJE_DESC));
+        PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'ESTADO_DESC', NULL, :NEW.ESTADO_DESC);
+    ELSIF UPDATING THEN
+        v_operacion := 'UPDATE';
+        v_llave := TO_CHAR(:NEW.ID_DESCUENTO);
+        PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
+            p_tabla       => 'PRM_DESCUENTO',
+            p_modulo      => 'DESCUENTOS',
+            p_operacion   => v_operacion,
+            p_llave       => v_llave,
+            p_descripcion => 'Modificacion de descuento ' || :NEW.CODIGO_DESC || ' - ' || :NEW.NOMBRE_DESC
+        );
+        IF NVL(:OLD.PORCENTAJE_DESC, -1) != NVL(:NEW.PORCENTAJE_DESC, -1) THEN
+            PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'PORCENTAJE_DESC', TO_CHAR(:OLD.PORCENTAJE_DESC), TO_CHAR(:NEW.PORCENTAJE_DESC));
+        END IF;
+        IF NVL(:OLD.ESTADO_DESC, 'X') != NVL(:NEW.ESTADO_DESC, 'X') THEN
+            PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'ESTADO_DESC', :OLD.ESTADO_DESC, :NEW.ESTADO_DESC);
+        END IF;
+    ELSIF DELETING THEN
+        v_operacion := 'DELETE';
+        v_llave := TO_CHAR(:OLD.ID_DESCUENTO);
+        PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
+            p_tabla       => 'PRM_DESCUENTO',
+            p_modulo      => 'DESCUENTOS',
+            p_operacion   => v_operacion,
+            p_llave       => v_llave,
+            p_descripcion => 'Eliminacion de descuento ' || :OLD.CODIGO_DESC
+        );
+        PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'REGISTRO_ELIMINADO', :OLD.NOMBRE_DESC, 'ELIMINADO');
+    END IF;
+END;
+/
+SHOW ERRORS TRIGGER TRG_AUD_PRM_DESCUENTO;
+
+-- ----------------------------------------------------------------------------
+-- 2.9 TRG_AUD_PRM_DESCUENTO_DET
+-- Tabla 9: PRM_DESCUENTO_DET (Auditoria de detalle de productos/lotes en descuento)
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE TRIGGER TRG_AUD_PRM_DESCUENTO_DET
+AFTER INSERT OR UPDATE OR DELETE ON PRM_DESCUENTO_DET
+FOR EACH ROW
+DECLARE
+    v_operacion VARCHAR2(10);
+    v_llave     VARCHAR2(50);
+BEGIN
+    IF INSERTING THEN
+        v_operacion := 'INSERT';
+        v_llave := TO_CHAR(:NEW.ID_DESCUENTO_DET);
+        PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
+            p_tabla       => 'PRM_DESCUENTO_DET',
+            p_modulo      => 'DESCUENTOS',
+            p_operacion   => v_operacion,
+            p_llave       => v_llave,
+            p_descripcion => 'Producto ID ' || :NEW.ID_PRODUCTO || ' (Lote ' || NVL(TO_CHAR(:NEW.ID_LOTE), 'N/A') || ') incluido en descuento #' || :NEW.ID_DESCUENTO
+        );
+        PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO_DET', 'DESCUENTOS', v_operacion, v_llave, 'ID_PRODUCTO', NULL, TO_CHAR(:NEW.ID_PRODUCTO));
+    ELSIF UPDATING THEN
+        v_operacion := 'UPDATE';
+        v_llave := TO_CHAR(:NEW.ID_DESCUENTO_DET);
+        PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
+            p_tabla       => 'PRM_DESCUENTO_DET',
+            p_modulo      => 'DESCUENTOS',
+            p_operacion   => v_operacion,
+            p_llave       => v_llave,
+            p_descripcion => 'Modificacion en detalle de descuento #' || :NEW.ID_DESCUENTO
+        );
+    ELSIF DELETING THEN
+        v_operacion := 'DELETE';
+        v_llave := TO_CHAR(:OLD.ID_DESCUENTO_DET);
+        PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION (
+            p_tabla       => 'PRM_DESCUENTO_DET',
+            p_modulo      => 'DESCUENTOS',
+            p_operacion   => v_operacion,
+            p_llave       => v_llave,
+            p_descripcion => 'Producto ID ' || :OLD.ID_PRODUCTO || ' retirado de descuento #' || :OLD.ID_DESCUENTO
+        );
+    END IF;
+END;
+/
+SHOW ERRORS TRIGGER TRG_AUD_PRM_DESCUENTO_DET;
 
 
 PROMPT ============================================================================

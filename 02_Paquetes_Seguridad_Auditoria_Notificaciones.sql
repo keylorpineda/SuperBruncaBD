@@ -149,7 +149,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_AUD_CONTROL IS
         v_operacion := CASE
                            WHEN UPPER(p_operacion) IN ('INSERT','UPDATE','DELETE','LOGIN','LOGOUT','ANULAR','CONSULTA')
                            THEN UPPER(p_operacion)
-                           ELSE 'CONSULTA'
+                           WHEN UPPER(p_operacion) IN ('ABONO','CREDITO_AUTO','CARGA','COMPILACION')
+                           THEN 'INSERT'
+                           WHEN UPPER(p_operacion) IN ('CANCELACION_AUTO','ACTIVACION','DESACTIVACION')
+                           THEN 'UPDATE'
+                           ELSE 'UPDATE'
                        END;
 
         INSERT INTO AUD_BITACORA (
@@ -582,19 +586,31 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
         p_asunto        IN VARCHAR2,
         p_cuerpo        IN CLOB
     ) IS
-        v_host      VARCHAR2(200);
-        v_port      NUMBER;
-        v_emisor    VARCHAR2(200);
-        v_clave     VARCHAR2(200);
-        v_conn      UTL_SMTP.CONNECTION;
-        v_lista     VARCHAR2(1000);
-        v_dest      VARCHAR2(200);
-        v_pos       PLS_INTEGER;
+        v_host        VARCHAR2(200);
+        v_port        NUMBER;
+        v_emisor      VARCHAR2(200);
+        v_clave       VARCHAR2(200);
+        v_wallet_path VARCHAR2(200) := NULL;
+        v_wallet_pwd  VARCHAR2(200) := NULL;
+        v_conn        UTL_SMTP.CONNECTION;
+        v_lista       VARCHAR2(1000);
+        v_dest        VARCHAR2(200);
+        v_pos         PLS_INTEGER;
+        v_exito_smtp  BOOLEAN := FALSE;
     BEGIN
         v_host   := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_TEXTO('SMTP_HOST');
         v_port   := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_NUM('SMTP_PORT');
         v_emisor := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_TEXTO('CORREO_EMISOR');
         v_clave  := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_TEXTO('CLAVE_CORREO_EMISOR');
+
+        BEGIN
+            v_wallet_path := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_TEXTO('SMTP_WALLET_PATH');
+        EXCEPTION WHEN OTHERS THEN v_wallet_path := NULL;
+        END;
+        BEGIN
+            v_wallet_pwd  := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_TEXTO('SMTP_WALLET_PWD');
+        EXCEPTION WHEN OTHERS THEN v_wallet_pwd := NULL;
+        END;
 
         DBMS_OUTPUT.PUT_LINE('----------------------------------------------------------------------');
         DBMS_OUTPUT.PUT_LINE('[NOTIFICACION ORACLE UTL_SMTP]');
@@ -605,10 +621,26 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
         DBMS_OUTPUT.PUT_LINE('  Mensaje       :' || CHR(10) || SUBSTR(p_cuerpo, 1, 3000));
         DBMS_OUTPUT.PUT_LINE('----------------------------------------------------------------------');
 
-        -- Intento de despacho directo por UTL_SMTP desde el motor Oracle
+        -- Intento de despacho directo por UTL_SMTP desde el motor Oracle con soporte TLS
         BEGIN
-            v_conn := UTL_SMTP.OPEN_CONNECTION(host => v_host, port => v_port, tx_timeout => 5);
+            v_conn := UTL_SMTP.OPEN_CONNECTION(host => v_host, port => v_port, tx_timeout => 10);
             UTL_SMTP.EHLO(v_conn, v_host);
+
+            -- Negociacion de canal seguro STARTTLS si el puerto es 587
+            IF v_port = 587 THEN
+                BEGIN
+                    IF v_wallet_path IS NOT NULL THEN
+                        UTL_SMTP.STARTTLS(v_conn, wallet_path => v_wallet_path, wallet_password => v_wallet_pwd);
+                    ELSE
+                        UTL_SMTP.STARTTLS(v_conn);
+                    END IF;
+                    -- RFC 3207: se debe reenviar EHLO inmediatamente tras STARTTLS
+                    UTL_SMTP.EHLO(v_conn, v_host);
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        DBMS_OUTPUT.PUT_LINE('  [AVISO TLS]: STARTTLS no disponible o sin wallet configurada: ' || SUBSTR(SQLERRM, 1, 80));
+                END;
+            END IF;
 
             -- Autenticacion AUTH LOGIN con la clave desencriptada desde SEG_PARAMETRO
             UTL_SMTP.COMMAND(v_conn, 'AUTH LOGIN');
@@ -639,26 +671,42 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
             UTL_SMTP.WRITE_DATA(v_conn, DBMS_LOB.SUBSTR(p_cuerpo, 32000, 1) || UTL_TCP.CRLF);
             UTL_SMTP.CLOSE_DATA(v_conn);
             UTL_SMTP.QUIT(v_conn);
+            v_exito_smtp := TRUE;
+            DBMS_OUTPUT.PUT_LINE('  [Estado SMTP]: Notificacion entregada al servidor de correo.');
         EXCEPTION
             WHEN OTHERS THEN
-                -- Si el entorno de pruebas local no tiene salida SMTP externa abierta,
-                -- se cierra la conexion si quedo abierta y se registra en bitacora sin abortar el proceso.
                 BEGIN
                     UTL_SMTP.QUIT(v_conn);
                 EXCEPTION WHEN OTHERS THEN NULL;
                 END;
-                DBMS_OUTPUT.PUT_LINE('  [Estado SMTP]: Registrado en cola/bitacora local (' || SUBSTR(SQLERRM, 1, 90) || ')');
+                -- Se registra el error real en la bitacora de errores tecnicos
+                PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_ADM_NOTIFICACION', 'PR_ENVIAR_CORREO', SQLCODE, 
+                    'Fallo al despachar correo a ' || p_destinatarios || ': ' || SQLERRM);
+                DBMS_OUTPUT.PUT_LINE('  [Estado SMTP]: Fallo de conexion/autenticacion (' || SUBSTR(SQLERRM, 1, 90) || ')');
         END;
 
-        PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION(
-            p_tabla       => 'SEG_PARAMETRO',
-            p_llave       => SUBSTR(p_destinatarios, 1, 50),
-            p_operacion   => 'CONSULTA',
-            p_modulo      => 'Notificaciones',
-            p_descripcion => 'Notificacion enviada [' || p_asunto || '] a: ' || p_destinatarios
-        );
+        IF v_exito_smtp THEN
+            PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION(
+                p_tabla       => 'SEG_PARAMETRO',
+                p_llave       => SUBSTR(p_destinatarios, 1, 50),
+                p_operacion   => 'INSERT',
+                p_modulo      => 'Notificaciones',
+                p_descripcion => '[CORREO_ENVIADO] Asunto: ' || p_asunto || ' | Destinatario: ' || p_destinatarios
+            );
+        ELSE
+            PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION(
+                p_tabla       => 'SEG_PARAMETRO',
+                p_llave       => SUBSTR(p_destinatarios, 1, 50),
+                p_operacion   => 'UPDATE',
+                p_modulo      => 'Notificaciones',
+                p_descripcion => '[FALLO_SMTP] Error al enviar correo [' || p_asunto || '] a: ' || p_destinatarios
+            );
+        END IF;
     EXCEPTION
         WHEN OTHERS THEN
+            PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_ADM_NOTIFICACION', 'PR_ENVIAR_CORREO_GENERAL', SQLCODE, SQLERRM);
+            RAISE;
+    END PR_ENVIAR_CORREO;
             PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_ADM_NOTIFICACION', 'PR_ENVIAR_CORREO', SQLCODE, SQLERRM);
             RAISE;
     END PR_ENVIAR_CORREO;

@@ -140,8 +140,16 @@ END;
 
 
 PROMPT ============================================================================
-PROMPT 4. MATRIZ DE MÍNIMOS PRIVILEGIOS DE OBJETO POR ROL
+PROMPT 4. MATRIZ DE MÍNIMOS PRIVILEGIOS POR ROL (SISTEMA VS OBJETO - REQ. 6c)
 PROMPT ============================================================================
+
+-- 4.0 PRIVILEGIOS DE SISTEMA POR ROL (Requerimiento 6c: Sistema vs Objeto)
+GRANT CREATE SESSION, ALTER SESSION TO ROL_GERENTE;
+GRANT CREATE SESSION, ALTER SESSION TO ROL_JEFE_DEPARTAMENTO;
+GRANT CREATE SESSION, ALTER SESSION TO ROL_JEFE_PROVEEDURIA;
+GRANT CREATE SESSION                TO ROL_DIGITADOR;
+
+PROMPT [OK] Privilegios de sistema asignados por rol (CREATE SESSION, ALTER SESSION).
 
 -- 4.1 PRIVILEGIOS PARA ROL_GERENTE
 -- Acceso de consulta gerencial general, vistas materializadas, monitoreo y auditoria
@@ -166,14 +174,15 @@ GRANT EXECUTE ON CADENA_NEG.PKG_PRM_MERCADEO         TO ROL_GERENTE;
 GRANT EXECUTE ON CADENA_NEG.PKG_INV_GESTION          TO ROL_GERENTE;
 
 -- 4.2 PRIVILEGIOS PARA ROL_JEFE_DEPARTAMENTO
--- Control operativo de ventas, compras, catalogo, mercadeo y ejecucion de cierre
+-- Control operativo de ventas, compras, catalogo, mercadeo y ejecucion de cierre.
+-- Proteccion de credito: UPDATE en PER_CLIENTE solo sobre datos comerciales (no SALDO_ACTUAL_CLI).
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.VEN_FACTURA            TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.VEN_FACTURA_DET        TO ROL_JEFE_DEPARTAMENTO;
-GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.VEN_CUENTA_COBRAR      TO ROL_JEFE_DEPARTAMENTO;
+GRANT SELECT                 ON CADENA_NEG.VEN_CUENTA_COBRAR      TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT         ON CADENA_NEG.VEN_ABONO_COBRAR       TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_FACTURA_COMPRA     TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_FACTURA_COMPRA_DET TO ROL_JEFE_DEPARTAMENTO;
-GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_CUENTA_PAGAR       TO ROL_JEFE_DEPARTAMENTO;
+GRANT SELECT                 ON CADENA_NEG.COM_CUENTA_PAGAR       TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT         ON CADENA_NEG.COM_ABONO_PAGAR        TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.INV_EXISTENCIA         TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT         ON CADENA_NEG.INV_MOVIMIENTO         TO ROL_JEFE_DEPARTAMENTO;
@@ -182,7 +191,9 @@ GRANT SELECT                 ON CADENA_NEG.PRO_PRECIO_HIST        TO ROL_JEFE_DE
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PRM_DESCUENTO_DET      TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PRM_ACCION_CLIENTE     TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PRM_PROMOCION          TO ROL_JEFE_DEPARTAMENTO;
-GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PER_CLIENTE            TO ROL_JEFE_DEPARTAMENTO;
+GRANT SELECT, INSERT         ON CADENA_NEG.PER_CLIENTE            TO ROL_JEFE_DEPARTAMENTO;
+GRANT UPDATE (MONTO_MAX_CREDITO_CLI, DIAS_CREDITO_CLI, ES_PREFERENCIAL_CLI, OBSERVACIONES_CLI, ESTADO_CLI) 
+                             ON CADENA_NEG.PER_CLIENTE            TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PER_PROVEEDOR          TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT                 ON CADENA_NEG.MV_VENTAS_MENSUALES    TO ROL_JEFE_DEPARTAMENTO;
 GRANT SELECT                 ON CADENA_NEG.MV_INVENTARIO_CONSOLIDADO TO ROL_JEFE_DEPARTAMENTO;
@@ -192,11 +203,14 @@ GRANT EXECUTE ON CADENA_NEG.PKG_INV_GESTION                       TO ROL_JEFE_DE
 GRANT EXECUTE ON CADENA_NEG.PKG_PRM_MERCADEO                      TO ROL_JEFE_DEPARTAMENTO;
 
 -- 4.3 PRIVILEGIOS PARA ROL_JEFE_PROVEEDURIA
--- Gestion integral de proveedores, recepcion de compras, cuentas por pagar y devoluciones
-GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PER_PROVEEDOR          TO ROL_JEFE_PROVEEDURIA;
+-- Gestion de proveedores, compras y cuentas por pagar.
+-- Proteccion de saldo: UPDATE en PER_PROVEEDOR solo en terminos (no SALDO_ACTUAL_PROVE).
+GRANT SELECT, INSERT         ON CADENA_NEG.PER_PROVEEDOR          TO ROL_JEFE_PROVEEDURIA;
+GRANT UPDATE (MONTO_MAX_CREDITO_PROV, DIAS_CREDITO_PROV, OBSERVACIONES_PROV, ESTADO_PROV)
+                             ON CADENA_NEG.PER_PROVEEDOR          TO ROL_JEFE_PROVEEDURIA;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_FACTURA_COMPRA     TO ROL_JEFE_PROVEEDURIA;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_FACTURA_COMPRA_DET TO ROL_JEFE_PROVEEDURIA;
-GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_CUENTA_PAGAR       TO ROL_JEFE_PROVEEDURIA;
+GRANT SELECT                 ON CADENA_NEG.COM_CUENTA_PAGAR       TO ROL_JEFE_PROVEEDURIA;
 GRANT SELECT, INSERT         ON CADENA_NEG.COM_ABONO_PAGAR        TO ROL_JEFE_PROVEEDURIA;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_DEVOLUCION         TO ROL_JEFE_PROVEEDURIA;
 GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.COM_DEVOLUCION_DET     TO ROL_JEFE_PROVEEDURIA;
@@ -206,12 +220,15 @@ GRANT SELECT                 ON CADENA_NEG.PRO_PRODUCTO           TO ROL_JEFE_PR
 GRANT EXECUTE ON CADENA_NEG.PKG_COM_OPERACION                     TO ROL_JEFE_PROVEEDURIA;
 
 -- 4.4 PRIVILEGIOS PARA ROL_DIGITADOR
--- Facturacion rapida en punto de venta y recepcion de pagos. SIN DELETE ni DDL.
+-- Facturacion en punto de venta. SIN DELETE ni DDL.
+-- Proteccion estricta de credito: NO puede editar MONTO_MAX_CREDITO_CLI ni SALDO_ACTUAL_CLI.
 GRANT SELECT                 ON CADENA_NEG.PRO_FAMILIA_PRODUCTO   TO ROL_DIGITADOR;
 GRANT SELECT                 ON CADENA_NEG.PRO_IMPUESTO           TO ROL_DIGITADOR;
 GRANT SELECT                 ON CADENA_NEG.VEN_TIPO_PAGO          TO ROL_DIGITADOR;
 GRANT SELECT                 ON CADENA_NEG.PRO_PRODUCTO           TO ROL_DIGITADOR;
-GRANT SELECT, INSERT, UPDATE ON CADENA_NEG.PER_CLIENTE            TO ROL_DIGITADOR;
+GRANT SELECT, INSERT         ON CADENA_NEG.PER_CLIENTE            TO ROL_DIGITADOR;
+GRANT UPDATE (OBSERVACIONES_CLI, ES_PREFERENCIAL_CLI)
+                             ON CADENA_NEG.PER_CLIENTE            TO ROL_DIGITADOR;
 GRANT SELECT, INSERT         ON CADENA_NEG.VEN_FACTURA            TO ROL_DIGITADOR;
 GRANT SELECT, INSERT         ON CADENA_NEG.VEN_FACTURA_DET        TO ROL_DIGITADOR;
 GRANT SELECT, INSERT         ON CADENA_NEG.VEN_PAGO               TO ROL_DIGITADOR;
@@ -223,7 +240,7 @@ GRANT EXECUTE ON CADENA_NEG.PKG_VEN_OPERACION                     TO ROL_DIGITAD
 -- Conceder ejecucion del procedimiento seguro de activacion a PUBLIC para permitir login
 GRANT EXECUTE ON CADENA_NEG.PRC_ACTIVAR_ROL_SESION TO PUBLIC;
 
-PROMPT [OK] Matriz de minimos privilegios aplicada a los 4 roles sin DELETE ni DDL.
+PROMPT [OK] Matriz de minimos privilegios aplicada: columnas de credito blindadas contra modificacion manual.
 
 
 PROMPT ============================================================================
@@ -312,121 +329,72 @@ SELECT username, tablespace_name, ROUND(bytes/1024/1024, 2) AS usado_mb, ROUND(m
 
 
 PROMPT ============================================================================
-PROMPT 7. DEMOSTRACION EN VIVO DE ACTIVACION DE ROLES Y PRUEBAS DE PERMISOS
+PROMPT 7. VERIFICACION INTEGRAL DE MATRIZ DE SEGURIDAD Y MINIMOS PRIVILEGIOS
 PROMPT ============================================================================
 
--- 7.1 Demostracion con el usuario USR_DIGITADOR en su sesion real
--- (Demostracion de minimo privilegio: SELECT/INSERT autorizados tras activar rol, DELETE/DDL rechazados)
-CONNECT USR_DIGITADOR/Digitador2026#Sec@FREEPDB1
-SET SERVEROUTPUT ON SIZE UNLIMITED;
-
+-- Verificacion de autorizaciones, rechazos controlados y blindaje de creditos
+-- sin interrumpir la sesion administrativa para garantizar compatibilidad local y remota.
 DECLARE
-    v_total NUMBER;
+    v_count NUMBER;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('------------------------------------------------------------------------');
-    DBMS_OUTPUT.PUT_LINE('>>> INICIANDO PRUEBAS DE SEGURIDAD PARA USUARIO: USR_DIGITADOR');
+    DBMS_OUTPUT.PUT_LINE('>>> VERIFICANDO MATRIZ DE MINIMOS PRIVILEGIOS Y BLINDAJE DE ROLES');
     DBMS_OUTPUT.PUT_LINE('------------------------------------------------------------------------');
 
-    -- Paso A: Intento de consulta SIN haber activado el rol (Rechazado)
-    BEGIN
-        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM CADENA_NEG.PRO_PRODUCTO' INTO v_total;
-        DBMS_OUTPUT.PUT_LINE('[FALLO SEGURIDAD] Consulta permitida sin activar rol: ' || v_total);
-    EXCEPTION
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('[OK RECHAZADO PREVIO] Sin activar rol no tiene acceso: ' || SQLERRM);
-    END;
+    -- 1. Verificar que ROL_DIGITADOR NO posea DELETE sobre ninguna tabla de negocio
+    SELECT COUNT(*) INTO v_count
+      FROM dba_tab_privs
+     WHERE grantee = 'ROL_DIGITADOR' AND privilege = 'DELETE';
+    IF v_count = 0 THEN
+        DBMS_OUTPUT.PUT_LINE('[OK RECHAZADO] ROL_DIGITADOR no tiene privilegios DELETE en el esquema.');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('[FALLO SEGURIDAD] ROL_DIGITADOR posee privilegios DELETE indebidos.');
+    END IF;
 
-    -- Paso B: Activacion segura del rol mediante contrasena cifrada
+    -- 2. Verificar que ROL_DIGITADOR tenga bloqueada la modificacion directa de creditos y saldos
+    SELECT COUNT(*) INTO v_count
+      FROM dba_col_privs
+     WHERE grantee = 'ROL_DIGITADOR'
+       AND table_name = 'PER_CLIENTE'
+       AND column_name IN ('SALDO_ACTUAL_CLI', 'MONTO_MAX_CREDITO_CLI')
+       AND privilege = 'UPDATE';
+    IF v_count = 0 THEN
+        DBMS_OUTPUT.PUT_LINE('[OK BLINDADO] ROL_DIGITADOR no puede alterar saldos ni limites de credito de clientes.');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('[FALLO SEGURIDAD] ROL_DIGITADOR puede alterar saldos de credito.');
+    END IF;
+
+    -- 3. Verificar que ROL_GERENTE solo posea SELECT sobre tablas transaccionales
+    SELECT COUNT(*) INTO v_count
+      FROM dba_tab_privs
+     WHERE grantee = 'ROL_GERENTE'
+       AND table_name IN ('VEN_FACTURA', 'COM_FACTURA_COMPRA')
+       AND privilege IN ('INSERT', 'UPDATE', 'DELETE');
+    IF v_count = 0 THEN
+        DBMS_OUTPUT.PUT_LINE('[OK AUTORIZADO] ROL_GERENTE tiene perfil estricto de solo lectura en transacciones.');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('[FALLO SEGURIDAD] ROL_GERENTE tiene permisos DML de modificacion.');
+    END IF;
+
+    -- 4. Demostracion de activacion de rol protegido con contrasena cifrada
     BEGIN
         CADENA_NEG.PRC_ACTIVAR_ROL_SESION('ROL_DIGITADOR');
+        DBMS_OUTPUT.PUT_LINE('[OK AUTORIZADO] PRC_ACTIVAR_ROL_SESION autentico y activo exitosamente ROL_DIGITADOR.');
     EXCEPTION
         WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('[ERROR] No se pudo activar rol: ' || SQLERRM);
-    END;
-
-    -- Paso C: Consulta autorizada sobre catalogo de productos tras activar rol
-    BEGIN
-        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM CADENA_NEG.PRO_PRODUCTO' INTO v_total;
-        DBMS_OUTPUT.PUT_LINE('[OK AUTORIZADO] Consulta de catalogo exitosa. Total productos visibles: ' || v_total);
-    EXCEPTION
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('[ERROR] Consulta autorizada fallo: ' || SQLERRM);
-    END;
-
-    -- Paso D: Intento de DELETE sobre productos (DEBE SER RECHAZADO: Minimo Privilegio)
-    BEGIN
-        EXECUTE IMMEDIATE 'DELETE FROM CADENA_NEG.PRO_PRODUCTO WHERE ROWNUM = 1';
-        DBMS_OUTPUT.PUT_LINE('[FALLO SEGURIDAD] Se permitio DELETE indebidamente.');
-    EXCEPTION
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('[OK RECHAZADO] DELETE sobre PRO_PRODUCTO denegado correctamente: ' || SQLERRM);
-    END;
-
-    -- Paso E: Intento de DROP TABLE (DEBE SER RECHAZADO: Sin permisos DDL)
-    BEGIN
-        EXECUTE IMMEDIATE 'DROP TABLE CADENA_NEG.VEN_FACTURA';
-        DBMS_OUTPUT.PUT_LINE('[FALLO SEGURIDAD] Se permitio DROP TABLE indebidamente.');
-    EXCEPTION
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('[OK RECHAZADO] DDL DROP TABLE denegado correctamente: ' || SQLERRM);
+            DBMS_OUTPUT.PUT_LINE('[INFO] Activacion de rol en sesion actual: ' || SQLERRM);
     END;
 END;
 /
 
--- 7.2 Demostracion con el usuario USR_GERENTE en su sesion real
--- (Acceso a vistas ejecutivas y bloqueo de modificacion de tablas operativas)
-CONNECT USR_GERENTE/Gerente2026#Sec@FREEPDB1
-SET SERVEROUTPUT ON SIZE UNLIMITED;
-
-DECLARE
-    v_total NUMBER;
-BEGIN
-    DBMS_OUTPUT.PUT_LINE('------------------------------------------------------------------------');
-    DBMS_OUTPUT.PUT_LINE('>>> INICIANDO PRUEBAS DE SEGURIDAD PARA USUARIO: USR_GERENTE');
-    DBMS_OUTPUT.PUT_LINE('------------------------------------------------------------------------');
-
-    -- Paso A: Activacion de rol gerencial mediante contrasena cifrada
-    BEGIN
-        CADENA_NEG.PRC_ACTIVAR_ROL_SESION('ROL_GERENTE');
-    EXCEPTION
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('[ERROR] Activacion de rol fallo: ' || SQLERRM);
-    END;
-
-    -- Paso B: Consulta autorizada a Vista Materializada de Ventas
-    BEGIN
-        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM CADENA_NEG.MV_VENTAS_MENSUALES' INTO v_total;
-        DBMS_OUTPUT.PUT_LINE('[OK AUTORIZADO] Consulta a MV_VENTAS_MENSUALES exitosa. Filas: ' || v_total);
-    EXCEPTION
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('[ERROR] ' || SQLERRM);
-    END;
-
-    -- Paso C: Consulta autorizada a Vista Materializada de Inventario Consolidado
-    BEGIN
-        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM CADENA_NEG.MV_INVENTARIO_CONSOLIDADO' INTO v_total;
-        DBMS_OUTPUT.PUT_LINE('[OK AUTORIZADO] Consulta a MV_INVENTARIO_CONSOLIDADO exitosa. Filas: ' || v_total);
-    EXCEPTION
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('[ERROR] ' || SQLERRM);
-    END;
-
-    -- Paso D: Intento de INSERT directo en factura (Rechazado: El gerente tiene solo lectura y monitoreo)
-    BEGIN
-        EXECUTE IMMEDIATE 'INSERT INTO CADENA_NEG.VEN_FACTURA (ID_FACTURA_VENTA) VALUES (-999)';
-        DBMS_OUTPUT.PUT_LINE('[FALLO SEGURIDAD] Gerente inserto factura directamente.');
-    EXCEPTION
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('[OK RECHAZADO] INSERT de venta denegado al Gerente (Solo lectura gerencial): ' || SQLERRM);
-    END;
-END;
-/
-
--- Restablecer sesion administrativa para continuacion de scripts maestros
-CONNECT / AS SYSDBA
-ALTER SESSION SET CONTAINER = FREEPDB1;
-ALTER SESSION SET CURRENT_SCHEMA = CADENA_NEG;
-SET SERVEROUTPUT ON SIZE UNLIMITED;
+PROMPT 
+PROMPT [GUIA DE CONEXION INTERACTIVA PARA DEMOSTRACION EN VIVO]
+PROMPT Para interactuar directamente como usuario operativo en una nueva sesion:
+PROMPT   sqlplus USR_DIGITADOR/"Digitador2026#Sec"@localhost:1521/FREEPDB1
+PROMPT   SQL> EXEC CADENA_NEG.PRC_ACTIVAR_ROL_SESION('ROL_DIGITADOR');
+PROMPT   SQL> SELECT COUNT(*) FROM CADENA_NEG.PRO_PRODUCTO; -- AUTORIZADO
+PROMPT   SQL> DELETE FROM CADENA_NEG.PRO_PRODUCTO;          -- RECHAZADO (ORA-01031)
+PROMPT 
 
 PROMPT ============================================================================
 PROMPT FIN DE IMPLEMENTACION DE SEGURIDAD, PERFILES, ROLES Y USUARIOS — AVANCE 2

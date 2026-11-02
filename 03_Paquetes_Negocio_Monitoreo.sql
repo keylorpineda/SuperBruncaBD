@@ -205,8 +205,24 @@ CREATE OR REPLACE PACKAGE BODY PKG_PER_PADRON IS
                         v_fecha_venc := ADD_MONTHS(TRUNC(SYSDATE), 60);
                 END;
 
-                -- Buscar un distrito coincidente o usar el distrito 1 por defecto
-                SELECT MIN(ID_DISTRITO) INTO v_id_distrito FROM CAT_DISTRITO;
+                -- Resolucion inteligente del distrito electoral a partir del CODELEC del TSE
+                -- Estructura TSE: Digito 1=Provincia, 2-3=Canton, 4-6=Distrito Electoral
+                BEGIN
+                    SELECT ID_DISTRITO INTO v_id_distrito
+                      FROM (
+                          SELECT d.ID_DISTRITO
+                            FROM CAT_DISTRITO d
+                                 JOIN CAT_CANTON c ON c.ID_CANTON = d.ID_CANTON
+                                 JOIN CAT_PROVINCIA p ON p.ID_PROVINCIA = c.ID_PROVINCIA
+                           WHERE d.CODIGO_POSTAL_DIST = SUBSTR(v_codelec, 1, 3) || SUBSTR(v_codelec, 5, 2)
+                              OR (p.CODIGO_PROV = SUBSTR(v_codelec, 1, 1) AND c.CODIGO_CANT = SUBSTR(v_codelec, 2, 2))
+                           ORDER BY CASE WHEN d.CODIGO_POSTAL_DIST = SUBSTR(v_codelec, 1, 3) || SUBSTR(v_codelec, 5, 2) THEN 1 ELSE 2 END
+                      )
+                     WHERE ROWNUM = 1;
+                EXCEPTION
+                    WHEN NO_DATA_FOUND THEN
+                        SELECT MIN(ID_DISTRITO) INTO v_id_distrito FROM CAT_DISTRITO;
+                END;
 
                 MERGE INTO CAT_PADRON dest
                 USING (SELECT v_cedula AS CEDULA_PADR FROM dual) src
@@ -241,6 +257,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_PER_PADRON IS
                     );
 
                 v_correctos := v_correctos + 1;
+
+                -- Compromiso por lotes de 500 registros para optimizar escalabilidad ante millones de filas del TSE
+                IF MOD(v_correctos, 500) = 0 THEN
+                    COMMIT;
+                END IF;
             EXCEPTION
                 WHEN e_validacion THEN
                     v_errores := v_errores + 1;
@@ -436,10 +457,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_INV_GESTION IS
         p_documento_ref   IN VARCHAR2 DEFAULT NULL,
         p_registrar_kard  IN VARCHAR2 DEFAULT 'S'
     ) IS
-        v_id_existencia  NUMBER(12);
-        v_cant_actual    NUMBER(14,3);
-        v_costo_prod     NUMBER(14,4);
-        v_id_mov         NUMBER(12);
+        v_id_existencia   NUMBER(12);
+        v_cant_actual     NUMBER(14,3);
+        v_costo_prod      NUMBER(14,4);
+        v_id_mov          NUMBER(12);
+        v_lote_efectivo   NUMBER(12);
         e_recurso_ocupado EXCEPTION;
         PRAGMA EXCEPTION_INIT(e_recurso_ocupado, -30006); -- ORA-30006: resource busy; acquire with WAIT timeout expired
     BEGIN
@@ -451,6 +473,36 @@ CREATE OR REPLACE PACKAGE BODY PKG_INV_GESTION IS
           FROM PRO_PRODUCTO
          WHERE ID_PRODUCTO = p_id_producto;
 
+        -- Resolucion inteligente de lote (FIFO por fecha de caducidad si p_id_lote es nulo)
+        v_lote_efectivo := p_id_lote;
+        IF v_lote_efectivo IS NULL THEN
+            BEGIN
+                SELECT ID_LOTE INTO v_lote_efectivo
+                  FROM (
+                      SELECT e.ID_LOTE
+                        FROM INV_EXISTENCIA e
+                             LEFT JOIN PRO_LOTE l ON l.ID_LOTE = e.ID_LOTE AND l.ID_PRODUCTO = e.ID_PRODUCTO
+                       WHERE e.ID_BODEGA   = p_id_bodega
+                         AND e.ID_PRODUCTO = p_id_producto
+                         AND (UPPER(p_es_entrada) = 'S' OR e.CANTIDAD_EXIS >= p_cantidad)
+                       ORDER BY NVL(l.FECHA_VENCIM_LOTE, DATE '2099-12-31') ASC, e.ID_EXISTENCIA ASC
+                  )
+                 WHERE ROWNUM = 1;
+            EXCEPTION
+                WHEN NO_DATA_FOUND THEN
+                    -- Si no hay lote con suficiente stock, tomar cualquiera existente de la bodega/producto
+                    BEGIN
+                        SELECT ID_LOTE INTO v_lote_efectivo
+                          FROM (SELECT ID_LOTE FROM INV_EXISTENCIA 
+                                 WHERE ID_BODEGA = p_id_bodega AND ID_PRODUCTO = p_id_producto 
+                                 ORDER BY CANTIDAD_EXIS DESC)
+                         WHERE ROWNUM = 1;
+                    EXCEPTION
+                        WHEN NO_DATA_FOUND THEN v_lote_efectivo := NULL;
+                    END;
+            END;
+        END IF;
+
         -- Intentar bloquear la fila de existencia con FOR UPDATE WAIT 5 (Requerimiento #11 Concurrencia)
         BEGIN
             SELECT ID_EXISTENCIA, CANTIDAD_EXIS
@@ -458,7 +510,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INV_GESTION IS
               FROM INV_EXISTENCIA
              WHERE ID_BODEGA   = p_id_bodega
                AND ID_PRODUCTO = p_id_producto
-               AND NVL(ID_LOTE, -1) = NVL(p_id_lote, -1)
+               AND NVL(ID_LOTE, -1) = NVL(v_lote_efectivo, -1)
                FOR UPDATE WAIT 5;
 
             IF UPPER(p_es_entrada) = 'S' THEN
@@ -489,7 +541,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INV_GESTION IS
                         ID_EXISTENCIA, ID_BODEGA, ID_PRODUCTO, ID_LOTE,
                         CANTIDAD_EXIS, CANTIDAD_RESERV_EXIS
                     ) VALUES (
-                        SEQ_INV_EXISTENCIA.NEXTVAL, p_id_bodega, p_id_producto, p_id_lote,
+                        SEQ_INV_EXISTENCIA.NEXTVAL, p_id_bodega, p_id_producto, v_lote_efectivo,
                         p_cantidad, 0
                     );
                 ELSE
@@ -517,7 +569,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INV_GESTION IS
                 ID_MOVIMIENTO_DET, ID_MOVIMIENTO, ID_PRODUCTO, ID_LOTE,
                 LINEA_MODE, CANTIDAD_MODE, COSTO_UNITARIO_MODE
             ) VALUES (
-                SEQ_INV_MOVIMIENTO_DET.NEXTVAL, v_id_mov, p_id_producto, p_id_lote,
+                SEQ_INV_MOVIMIENTO_DET.NEXTVAL, v_id_mov, p_id_producto, v_lote_efectivo,
                 1, p_cantidad, v_costo_prod
             );
         END IF;
@@ -891,24 +943,29 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRM_MERCADEO IS
         v_meses_frec    NUMBER;
         v_correo_coord  VARCHAR2(200);
         v_periodo       VARCHAR2(20);
+        v_anio          NUMBER(4);
+        v_sem           NUMBER(1);
+        v_fecha_ini     DATE;
+        v_fecha_fin     DATE;
         v_cuerpo        CLOB;
         v_posicion      PLS_INTEGER := 0;
 
-        CURSOR c_top_clientes (p_meses NUMBER, p_limite NUMBER) IS
+        CURSOR c_top_clientes (p_fec_ini DATE, p_fec_fin DATE, p_limite NUMBER) IS
             SELECT *
               FROM (
                   SELECT c.ID_CLIENTE,
                          c.CODIGO_CLI,
                          NVL(pj.RAZON_SOCIAL_PEJU,
                              pf.NOMBRE_PEFI || ' ' || pf.APELLIDO1_PEFI) AS NOMBRE_CLIENTE,
-                         SUM(f.TOTAL_FAVE)                               AS TOTAL_COMPRADO,
+                         SUM(NVL(f.SUBTOTAL_FAVE, 0) - NVL(f.DESCUENTO_FAVE, 0) + NVL(f.IMPUESTO_FAVE, 0)) AS TOTAL_COMPRADO,
                          COUNT(f.ID_FACTURA_VENTA)                       AS CANT_FACTURAS
                     FROM VEN_FACTURA f
                          JOIN PER_CLIENTE c ON c.ID_CLIENTE = f.ID_CLIENTE
                          LEFT JOIN PER_PERSONA_JURIDICA pj ON pj.ID_PERSONA_JURIDICA = c.ID_PERSONA
                          LEFT JOIN PER_PERSONA_FISICA pf   ON pf.ID_PERSONA_FISICA   = c.ID_PERSONA
                    WHERE f.ESTADO_FAVE <> 'N'
-                     AND f.FECHA_FAVE >= ADD_MONTHS(TRUNC(SYSDATE), -p_meses)
+                     AND NVL(c.ES_DEFECTO_CLI, 'N') = 'N' -- Excluir cliente de mostrador generico CLI-000000
+                     AND f.FECHA_FAVE BETWEEN p_fec_ini AND p_fec_fin
                    GROUP BY c.ID_CLIENTE, c.CODIGO_CLI, pj.RAZON_SOCIAL_PEJU,
                             pf.NOMBRE_PEFI, pf.APELLIDO1_PEFI
                    ORDER BY TOTAL_COMPRADO DESC
@@ -921,17 +978,35 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRM_MERCADEO IS
         v_monto_orden  := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_NUM('MONTO_ORDEN_PREMIACION');
         v_meses_frec   := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_NUM('MESES_FRECUENCIA_PREMIACION');
         v_correo_coord := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_TEXTO('CORREO_COORDINADOR');
-        v_periodo      := NVL(p_periodo, TO_CHAR(SYSDATE, 'YYYY') || '-S' ||
-                              CASE WHEN TO_NUMBER(TO_CHAR(SYSDATE, 'MM')) <= 6 THEN '1' ELSE '2' END);
+
+        -- Determinar semestre calendario estricto (no ventana rodante)
+        IF p_periodo IS NOT NULL AND INSTR(p_periodo, '-S') > 0 THEN
+            v_periodo := p_periodo;
+            v_anio    := TO_NUMBER(SUBSTR(v_periodo, 1, 4));
+            v_sem     := TO_NUMBER(SUBSTR(v_periodo, INSTR(v_periodo, '-S') + 2, 1));
+        ELSE
+            v_anio := TO_NUMBER(TO_CHAR(SYSDATE, 'YYYY'));
+            v_sem  := CASE WHEN TO_NUMBER(TO_CHAR(SYSDATE, 'MM')) <= 6 THEN 1 ELSE 2 END;
+            v_periodo := v_anio || '-S' || v_sem;
+        END IF;
+
+        IF v_sem = 1 THEN
+            v_fecha_ini := TO_DATE(v_anio || '-01-01 00:00:00', 'YYYY-MM-DD HH24:MI:SS');
+            v_fecha_fin := TO_DATE(v_anio || '-06-30 23:59:59', 'YYYY-MM-DD HH24:MI:SS');
+        ELSE
+            v_fecha_ini := TO_DATE(v_anio || '-07-01 00:00:00', 'YYYY-MM-DD HH24:MI:SS');
+            v_fecha_fin := TO_DATE(v_anio || '-12-31 23:59:59', 'YYYY-MM-DD HH24:MI:SS');
+        END IF;
 
         v_cuerpo := 'SELECCION AUTOMATICA DE LOS ' || v_top_n || ' MEJORES CLIENTES (PERIODO ' || v_periodo || ')' || CHR(10) ||
+                    'Rango evaluado: ' || TO_CHAR(v_fecha_ini, 'YYYY-MM-DD') || ' al ' || TO_CHAR(v_fecha_fin, 'YYYY-MM-DD') || CHR(10) ||
                     'Orden de compra otorgada a cada cliente: CRC ' || TO_CHAR(v_monto_orden, 'FM999G999G990D00') || CHR(10) ||
                     RPAD('=', 80, '=') || CHR(10) ||
                     RPAD('POS', 5) || RPAD('CODIGO', 12) || RPAD('CLIENTE', 32) ||
                     LPAD('COMPRAS PERIODO', 16) || LPAD('ORDEN PREMIO', 15) || CHR(10) ||
                     RPAD('-', 80, '-') || CHR(10);
 
-        FOR r IN c_top_clientes(v_meses_frec, v_top_n) LOOP
+        FOR r IN c_top_clientes(v_fecha_ini, v_fecha_fin, v_top_n) LOOP
             v_posicion := v_posicion + 1;
 
             MERGE INTO PRM_ORDEN_PREMIACION dest
@@ -990,6 +1065,17 @@ SHOW ERRORS PACKAGE BODY PKG_PRM_MERCADEO;
 --------------------------------------------------------------------------------
 CREATE OR REPLACE PACKAGE PKG_COM_OPERACION IS
 
+    -- Tipo para lineas de detalle en facturacion atomica
+    TYPE T_LINEA_COMPRA IS RECORD (
+        id_producto      NUMBER,
+        id_lote          NUMBER,
+        cantidad         NUMBER,
+        costo_unitario   NUMBER,
+        porc_descuento   NUMBER,
+        porc_impuesto    NUMBER
+    );
+    TYPE T_LISTA_LINEAS_COMPRA IS TABLE OF T_LINEA_COMPRA;
+
     -- Registra el encabezado de una factura de compra a proveedor
     PROCEDURE PR_CREAR_FACTURA_COMPRA (
         p_id_proveedor       IN  NUMBER,
@@ -1000,7 +1086,8 @@ CREATE OR REPLACE PACKAGE PKG_COM_OPERACION IS
         p_subtotal           IN  NUMBER,
         p_descuento          IN  NUMBER,
         p_impuesto           IN  NUMBER,
-        p_id_factura_out     OUT NUMBER
+        p_id_factura_out     OUT NUMBER,
+        p_auto_commit        IN  VARCHAR2 DEFAULT 'S'
     );
 
     -- Agrega una linea de detalle a una factura de compra
@@ -1012,7 +1099,19 @@ CREATE OR REPLACE PACKAGE PKG_COM_OPERACION IS
         p_cantidad           IN NUMBER,
         p_costo_unitario     IN NUMBER,
         p_porc_descuento     IN NUMBER DEFAULT 0,
-        p_porc_impuesto      IN NUMBER DEFAULT 13
+        p_porc_impuesto      IN NUMBER DEFAULT 13,
+        p_auto_commit        IN VARCHAR2 DEFAULT 'S'
+    );
+
+    -- Procedimiento atomico integral: registra compra y lineas con SAVEPOINT unico
+    PROCEDURE PR_FACTURAR_COMPRA_ATOMICA (
+        p_id_proveedor       IN  NUMBER,
+        p_id_bodega          IN  NUMBER,
+        p_id_usuario         IN  NUMBER,
+        p_num_factura        IN  VARCHAR2,
+        p_es_credito         IN  VARCHAR2,
+        p_lineas             IN  T_LISTA_LINEAS_COMPRA,
+        p_id_factura_out     OUT NUMBER
     );
 
     -- Registra un abono a una factura de compra pendiente (Cuentas por Pagar)
@@ -1039,7 +1138,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_COM_OPERACION IS
         p_subtotal           IN  NUMBER,
         p_descuento          IN  NUMBER,
         p_impuesto           IN  NUMBER,
-        p_id_factura_out     OUT NUMBER
+        p_id_factura_out     OUT NUMBER,
+        p_auto_commit        IN  VARCHAR2 DEFAULT 'S'
     ) IS
         v_dias_cred   NUMBER(4);
         v_fecha_venc  DATE;
@@ -1074,7 +1174,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_COM_OPERACION IS
             p_subtotal, p_descuento, p_impuesto, v_estado
         );
 
-        COMMIT;
+        IF UPPER(p_auto_commit) = 'S' THEN
+            COMMIT;
+        END IF;
     EXCEPTION
         WHEN OTHERS THEN
             ROLLBACK TO sp_crear_compra;
@@ -1090,7 +1192,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_COM_OPERACION IS
         p_cantidad           IN NUMBER,
         p_costo_unitario     IN NUMBER,
         p_porc_descuento     IN NUMBER DEFAULT 0,
-        p_porc_impuesto      IN NUMBER DEFAULT 13
+        p_porc_impuesto      IN NUMBER DEFAULT 13,
+        p_auto_commit        IN VARCHAR2 DEFAULT 'S'
     ) IS
     BEGIN
         SAVEPOINT sp_det_compra;
@@ -1105,13 +1208,83 @@ CREATE OR REPLACE PACKAGE BODY PKG_COM_OPERACION IS
             p_porc_descuento, p_porc_impuesto
         );
 
-        COMMIT;
+        IF UPPER(p_auto_commit) = 'S' THEN
+            COMMIT;
+        END IF;
     EXCEPTION
         WHEN OTHERS THEN
             ROLLBACK TO sp_det_compra;
             PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_COM_OPERACION', 'PR_AGREGAR_DETALLE_COMPRA', SQLCODE, SQLERRM);
             RAISE;
     END PR_AGREGAR_DETALLE_COMPRA;
+
+    PROCEDURE PR_FACTURAR_COMPRA_ATOMICA (
+        p_id_proveedor       IN  NUMBER,
+        p_id_bodega          IN  NUMBER,
+        p_id_usuario         IN  NUMBER,
+        p_num_factura        IN  VARCHAR2,
+        p_es_credito         IN  VARCHAR2,
+        p_lineas             IN  T_LISTA_LINEAS_COMPRA,
+        p_id_factura_out     OUT NUMBER
+    ) IS
+        v_subtotal  NUMBER(14,2) := 0;
+        v_descuento NUMBER(14,2) := 0;
+        v_impuesto  NUMBER(14,2) := 0;
+        v_linea_num NUMBER := 0;
+    BEGIN
+        SAVEPOINT sp_compra_atomica;
+
+        IF p_lineas IS NULL OR p_lineas.COUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20042, 'No se puede emitir una factura de compra sin lineas de detalle.');
+        END IF;
+
+        FOR i IN 1..p_lineas.COUNT LOOP
+            DECLARE
+                v_lin_sub NUMBER := ROUND(p_lineas(i).cantidad * p_lineas(i).costo_unitario, 2);
+                v_lin_des NUMBER := ROUND(v_lin_sub * (NVL(p_lineas(i).porc_descuento, 0) / 100), 2);
+                v_lin_imp NUMBER := ROUND((v_lin_sub - v_lin_des) * (NVL(p_lineas(i).porc_impuesto, 13) / 100), 2);
+            BEGIN
+                v_subtotal  := v_subtotal + v_lin_sub;
+                v_descuento := v_descuento + v_lin_des;
+                v_impuesto  := v_impuesto + v_lin_imp;
+            END;
+        END LOOP;
+
+        PR_CREAR_FACTURA_COMPRA (
+            p_id_proveedor   => p_id_proveedor,
+            p_id_bodega      => p_id_bodega,
+            p_id_usuario     => p_id_usuario,
+            p_num_factura    => p_num_factura,
+            p_es_credito     => p_es_credito,
+            p_subtotal       => v_subtotal,
+            p_descuento      => v_descuento,
+            p_impuesto       => v_impuesto,
+            p_id_factura_out => p_id_factura_out,
+            p_auto_commit    => 'N'
+        );
+
+        FOR i IN 1..p_lineas.COUNT LOOP
+            v_linea_num := v_linea_num + 1;
+            PR_AGREGAR_DETALLE_COMPRA (
+                p_id_factura_compra => p_id_factura_out,
+                p_id_producto       => p_lineas(i).id_producto,
+                p_id_lote           => p_lineas(i).id_lote,
+                p_linea             => v_linea_num,
+                p_cantidad          => p_lineas(i).cantidad,
+                p_costo_unitario    => p_lineas(i).costo_unitario,
+                p_porc_descuento    => NVL(p_lineas(i).porc_descuento, 0),
+                p_porc_impuesto     => NVL(p_lineas(i).porc_impuesto, 13),
+                p_auto_commit       => 'N'
+            );
+        END LOOP;
+
+        COMMIT;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK TO sp_compra_atomica;
+            PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_COM_OPERACION', 'PR_FACTURAR_COMPRA_ATOMICA', SQLCODE, SQLERRM);
+            RAISE;
+    END PR_FACTURAR_COMPRA_ATOMICA;
 
     PROCEDURE PR_REGISTRAR_ABONO_PAGAR (
         p_id_factura_compra  IN NUMBER,
@@ -1166,6 +1339,18 @@ SHOW ERRORS PACKAGE BODY PKG_COM_OPERACION;
 --------------------------------------------------------------------------------
 CREATE OR REPLACE PACKAGE PKG_VEN_OPERACION IS
 
+    -- Tipo para lineas de detalle en facturacion atomica de venta
+    TYPE T_LINEA_VENTA IS RECORD (
+        id_producto      NUMBER,
+        id_servicio      NUMBER,
+        id_lote          NUMBER,
+        cantidad         NUMBER,
+        precio_unitario  NUMBER,
+        porc_descuento   NUMBER,
+        porc_impuesto    NUMBER
+    );
+    TYPE T_LISTA_LINEAS_VENTA IS TABLE OF T_LINEA_VENTA;
+
     -- Crea el encabezado de una factura de venta
     PROCEDURE PR_CREAR_FACTURA_VENTA (
         p_id_cliente       IN  NUMBER,
@@ -1176,7 +1361,8 @@ CREATE OR REPLACE PACKAGE PKG_VEN_OPERACION IS
         p_subtotal         IN  NUMBER,
         p_descuento        IN  NUMBER,
         p_impuesto         IN  NUMBER,
-        p_id_factura_out   OUT NUMBER
+        p_id_factura_out   OUT NUMBER,
+        p_auto_commit      IN  VARCHAR2 DEFAULT 'S'
     );
 
     -- Agrega una linea de detalle a una factura de venta
@@ -1189,7 +1375,19 @@ CREATE OR REPLACE PACKAGE PKG_VEN_OPERACION IS
         p_cantidad         IN NUMBER,
         p_precio_unitario  IN NUMBER,
         p_porc_descuento   IN NUMBER DEFAULT 0,
-        p_porc_impuesto    IN NUMBER DEFAULT 13
+        p_porc_impuesto    IN NUMBER DEFAULT 13,
+        p_auto_commit      IN VARCHAR2 DEFAULT 'S'
+    );
+
+    -- Procedimiento atomico integral: registra venta y lineas con SAVEPOINT unico
+    PROCEDURE PR_FACTURAR_VENTA_ATOMICA (
+        p_id_cliente       IN  NUMBER,
+        p_id_sucursal      IN  NUMBER,
+        p_id_usuario       IN  NUMBER,
+        p_num_factura      IN  VARCHAR2,
+        p_es_credito       IN  VARCHAR2,
+        p_lineas           IN  T_LISTA_LINEAS_VENTA,
+        p_id_factura_out   OUT NUMBER
     );
 
     -- Registra un abono de cliente a una factura en Cuentas por Cobrar
@@ -1222,7 +1420,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_VEN_OPERACION IS
         p_subtotal         IN  NUMBER,
         p_descuento        IN  NUMBER,
         p_impuesto         IN  NUMBER,
-        p_id_factura_out   OUT NUMBER
+        p_id_factura_out   OUT NUMBER,
+        p_auto_commit      IN  VARCHAR2 DEFAULT 'S'
     ) IS
         v_dias_cred   NUMBER(4);
         v_fecha_venc  DATE;
@@ -1257,7 +1456,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_VEN_OPERACION IS
             p_subtotal, p_descuento, p_impuesto, v_estado
         );
 
-        COMMIT;
+        IF UPPER(p_auto_commit) = 'S' THEN
+            COMMIT;
+        END IF;
     EXCEPTION
         WHEN OTHERS THEN
             ROLLBACK TO sp_crear_venta;
@@ -1274,7 +1475,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_VEN_OPERACION IS
         p_cantidad         IN NUMBER,
         p_precio_unitario  IN NUMBER,
         p_porc_descuento   IN NUMBER DEFAULT 0,
-        p_porc_impuesto    IN NUMBER DEFAULT 13
+        p_porc_impuesto    IN NUMBER DEFAULT 13,
+        p_auto_commit      IN VARCHAR2 DEFAULT 'S'
     ) IS
     BEGIN
         SAVEPOINT sp_det_venta;
@@ -1289,13 +1491,84 @@ CREATE OR REPLACE PACKAGE BODY PKG_VEN_OPERACION IS
             p_porc_descuento, p_porc_impuesto
         );
 
-        COMMIT;
+        IF UPPER(p_auto_commit) = 'S' THEN
+            COMMIT;
+        END IF;
     EXCEPTION
         WHEN OTHERS THEN
             ROLLBACK TO sp_det_venta;
             PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_VEN_OPERACION', 'PR_AGREGAR_DETALLE_VENTA', SQLCODE, SQLERRM);
             RAISE;
     END PR_AGREGAR_DETALLE_VENTA;
+
+    PROCEDURE PR_FACTURAR_VENTA_ATOMICA (
+        p_id_cliente       IN  NUMBER,
+        p_id_sucursal      IN  NUMBER,
+        p_id_usuario       IN  NUMBER,
+        p_num_factura      IN  VARCHAR2,
+        p_es_credito       IN  VARCHAR2,
+        p_lineas           IN  T_LISTA_LINEAS_VENTA,
+        p_id_factura_out   OUT NUMBER
+    ) IS
+        v_subtotal  NUMBER(14,2) := 0;
+        v_descuento NUMBER(14,2) := 0;
+        v_impuesto  NUMBER(14,2) := 0;
+        v_linea_num NUMBER := 0;
+    BEGIN
+        SAVEPOINT sp_venta_atomica;
+
+        IF p_lineas IS NULL OR p_lineas.COUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20043, 'No se puede emitir una factura de venta sin lineas de detalle.');
+        END IF;
+
+        FOR i IN 1..p_lineas.COUNT LOOP
+            DECLARE
+                v_lin_sub NUMBER := ROUND(p_lineas(i).cantidad * p_lineas(i).precio_unitario, 2);
+                v_lin_des NUMBER := ROUND(v_lin_sub * (NVL(p_lineas(i).porc_descuento, 0) / 100), 2);
+                v_lin_imp NUMBER := ROUND((v_lin_sub - v_lin_des) * (NVL(p_lineas(i).porc_impuesto, 13) / 100), 2);
+            BEGIN
+                v_subtotal  := v_subtotal + v_lin_sub;
+                v_descuento := v_descuento + v_lin_des;
+                v_impuesto  := v_impuesto + v_lin_imp;
+            END;
+        END LOOP;
+
+        PR_CREAR_FACTURA_VENTA (
+            p_id_cliente     => p_id_cliente,
+            p_id_sucursal    => p_id_sucursal,
+            p_id_usuario     => p_id_usuario,
+            p_num_factura    => p_num_factura,
+            p_es_credito     => p_es_credito,
+            p_subtotal       => v_subtotal,
+            p_descuento      => v_descuento,
+            p_impuesto       => v_impuesto,
+            p_id_factura_out => p_id_factura_out,
+            p_auto_commit    => 'N'
+        );
+
+        FOR i IN 1..p_lineas.COUNT LOOP
+            v_linea_num := v_linea_num + 1;
+            PR_AGREGAR_DETALLE_VENTA (
+                p_id_factura_venta => p_id_factura_out,
+                p_id_producto      => p_lineas(i).id_producto,
+                p_id_servicio      => p_lineas(i).id_servicio,
+                p_id_lote          => p_lineas(i).id_lote,
+                p_linea            => v_linea_num,
+                p_cantidad         => p_lineas(i).cantidad,
+                p_precio_unitario  => p_lineas(i).precio_unitario,
+                p_porc_descuento   => NVL(p_lineas(i).porc_descuento, 0),
+                p_porc_impuesto    => NVL(p_lineas(i).porc_impuesto, 13),
+                p_auto_commit      => 'N'
+            );
+        END LOOP;
+
+        COMMIT;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK TO sp_venta_atomica;
+            PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_VEN_OPERACION', 'PR_FACTURAR_VENTA_ATOMICA', SQLCODE, SQLERRM);
+            RAISE;
+    END PR_FACTURAR_VENTA_ATOMICA;
 
     PROCEDURE PR_REGISTRAR_ABONO_COBRAR (
         p_id_factura_venta IN NUMBER,
@@ -1536,7 +1809,7 @@ SHOW ERRORS PACKAGE BODY PKG_VEN_OPERACION;
 --------------------------------------------------------------------------------
 -- 6. PAQUETE: PKG_ADM_MONITOREO
 --    Monitoreo diario de tablespaces (<= 85%), objetos invalidos, estado de
---    indices, sesiones y crecimiento de la base de datos (Requerimiento #13).
+--    indices, errores de sistema, sesiones y crecimiento de la BD (Requerimiento #13).
 --------------------------------------------------------------------------------
 CREATE OR REPLACE PACKAGE PKG_ADM_MONITOREO IS
 
@@ -1549,10 +1822,13 @@ CREATE OR REPLACE PACKAGE PKG_ADM_MONITOREO IS
     -- Verifica si existen indices danados o en estado UNUSABLE
     PROCEDURE PR_VERIFICAR_INDICES_DANADOS;
 
-    -- Monitorea el crecimiento de la base de datos y las sesiones activas/bloqueadas
+    -- Monitorea errores de sistema registrados en las ultimas 24 horas (AUD_ERROR_SISTEMA)
+    PROCEDURE PR_VERIFICAR_ERRORES_SISTEMA;
+
+    -- Monitorea el crecimiento de la BD comparando contra medicion anterior y sesiones
     PROCEDURE PR_MONITOREAR_SESIONES_Y_CRECIMIENTO;
 
-    -- Proceso diario integral invocado por DBMS_SCHEDULER
+    -- Proceso diario integral invocado por DBMS_SCHEDULER con aislamiento de fallos
     PROCEDURE PR_EJECUTAR_MONITOREO_DIARIO;
 
 END PKG_ADM_MONITOREO;
@@ -1741,14 +2017,92 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_MONITOREO IS
             RAISE;
     END PR_VERIFICAR_INDICES_DANADOS;
 
-    PROCEDURE PR_MONITOREAR_SESIONES_Y_CRECIMIENTO IS
-        v_mb_esquema    NUMBER(14,2);
-        v_sesiones_tot  NUMBER;
-        v_bloqueadas    NUMBER;
+    PROCEDURE PR_VERIFICAR_ERRORES_SISTEMA IS
+        v_correo_dba    VARCHAR2(200);
+        v_cuerpo_alerta CLOB;
+        v_cant_errores  NUMBER := 0;
+
+        CURSOR c_errores_recientes IS
+            SELECT ID_ERROR_SISTEMA, OBJETO_ERSI, SUBPROGRAMA_ERSI, CODIGO_ERROR_ERSI,
+                   SUBSTR(MENSAJE_ERROR_ERSI, 1, 100) AS MENSAJE_CORTO, FECHA_ERSI
+              FROM AUD_ERROR_SISTEMA
+             WHERE FECHA_ERSI >= SYSTIMESTAMP - INTERVAL '1' DAY
+             ORDER BY FECHA_ERSI DESC;
     BEGIN
+        v_correo_dba := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_TEXTO('CORREO_DBA');
+        v_cuerpo_alerta := 'INCONSISTENCIA DETECTADA: ERRORES DE SISTEMA EN LAS ULTIMAS 24 HORAS' || CHR(10) ||
+                           RPAD('=', 80, '=') || CHR(10);
+
+        FOR e IN c_errores_recientes LOOP
+            v_cant_errores := v_cant_errores + 1;
+            IF v_cant_errores <= 20 THEN
+                v_cuerpo_alerta := v_cuerpo_alerta ||
+                                   TO_CHAR(e.FECHA_ERSI, 'HH24:MI:SS') || ' | ' ||
+                                   RPAD(NVL(e.OBJETO_ERSI, 'N/A') || '.' || NVL(e.SUBPROGRAMA_ERSI, 'N/A'), 35) ||
+                                   ' | ORA' || LPAD(e.CODIGO_ERROR_ERSI, 6) || ' | ' || e.MENSAJE_CORTO || CHR(10);
+            END IF;
+        END LOOP;
+
+        INSERT INTO AUD_MONITOREO_BD (
+            ID_MONITOREO_BD, TIPO_VERIF_MOBD, NOMBRE_OBJETO_MOBD,
+            VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD
+        ) VALUES (
+            SEQ_AUD_MONITOREO_BD.NEXTVAL, 'ERROR_SISTEMA', 'AUD_ERROR_SISTEMA',
+            v_cant_errores, 0, CASE WHEN v_cant_errores > 0 THEN 'S' ELSE 'N' END,
+            'Errores registrados en ultimas 24h: ' || v_cant_errores
+        );
+        COMMIT;
+
+        IF v_cant_errores > 0 THEN
+            PKG_ADM_NOTIFICACION.PR_ENVIAR_CORREO(
+                p_destinatarios => v_correo_dba,
+                p_asunto        => 'ALERTA BD: ' || v_cant_errores || ' Error(es) de Sistema en ultimas 24h',
+                p_cuerpo        => v_cuerpo_alerta
+            );
+        ELSE
+            DBMS_OUTPUT.PUT_LINE('[OK] Monitoreo Errores: 0 errores detectados en las ultimas 24 horas.');
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_ADM_MONITOREO', 'PR_VERIFICAR_ERRORES_SISTEMA', SQLCODE, SQLERRM);
+            RAISE;
+    END PR_VERIFICAR_ERRORES_SISTEMA;
+
+    PROCEDURE PR_MONITOREAR_SESIONES_Y_CRECIMIENTO IS
+        v_mb_esquema      NUMBER(14,2);
+        v_mb_anterior     NUMBER(14,2);
+        v_dif_mb          NUMBER(14,2);
+        v_max_crecimiento NUMBER;
+        v_max_sesiones    NUMBER;
+        v_correo_dba      VARCHAR2(200);
+        v_sesiones_tot    NUMBER;
+        v_bloqueadas      NUMBER;
+    BEGIN
+        v_max_crecimiento := NVL(PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_NUM('MB_MAX_CRECIMIENTO'), 3000);
+        v_max_sesiones    := NVL(PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_NUM('MAX_SESIONES_ACTIVAS'), 100);
+        v_correo_dba      := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_TEXTO('CORREO_DBA');
+
         SELECT ROUND(NVL(SUM(bytes), 0) / 1024 / 1024, 2)
           INTO v_mb_esquema
           FROM user_segments;
+
+        -- Comparar contra la medicion anterior en AUD_MONITOREO_BD
+        BEGIN
+            SELECT VALOR_ACTUAL_MOBD INTO v_mb_anterior
+              FROM (
+                  SELECT VALOR_ACTUAL_MOBD
+                    FROM AUD_MONITOREO_BD
+                   WHERE TIPO_VERIF_MOBD = 'CRECIMIENTO'
+                     AND NOMBRE_OBJETO_MOBD = 'SEGMENTOS_CADENA_NEG'
+                   ORDER BY FECHA_HORA_MOBD DESC
+              )
+             WHERE ROWNUM = 1;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                v_mb_anterior := v_mb_esquema;
+        END;
+
+        v_dif_mb := ROUND(v_mb_esquema - v_mb_anterior, 2);
 
         SELECT COUNT(*),
                NVL(SUM(CASE WHEN blocking_session IS NOT NULL THEN 1 ELSE 0 END), 0)
@@ -1761,8 +2115,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_MONITOREO IS
             VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD
         ) VALUES (
             SEQ_AUD_MONITOREO_BD.NEXTVAL, 'CRECIMIENTO', 'SEGMENTOS_CADENA_NEG',
-            v_mb_esquema, 3000, 'N',
-            'Espacio total ocupado por segmentos de CADENA_NEG: ' || v_mb_esquema || ' MB.'
+            v_mb_esquema, v_max_crecimiento, CASE WHEN v_mb_esquema > v_max_crecimiento THEN 'S' ELSE 'N' END,
+            'Espacio total: ' || v_mb_esquema || ' MB (Umbral: ' || v_max_crecimiento || ' MB). Variacion vs anterior: ' ||
+            CASE WHEN v_dif_mb >= 0 THEN '+' ELSE '' END || v_dif_mb || ' MB.'
         );
 
         INSERT INTO AUD_MONITOREO_BD (
@@ -1770,13 +2125,26 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_MONITOREO IS
             VALOR_ACTUAL_MOBD, UMBRAL_MAX_MOBD, ES_INCONSISTENTE_MOBD, DETALLE_MOBD
         ) VALUES (
             SEQ_AUD_MONITOREO_BD.NEXTVAL, 'SESION', 'SESIONES_USUARIO',
-            v_sesiones_tot, 100, CASE WHEN v_bloqueadas > 0 THEN 'S' ELSE 'N' END,
-            'Sesiones de usuario conectadas: ' || v_sesiones_tot || ' | Sesiones bloqueadas: ' || v_bloqueadas
+            v_sesiones_tot, v_max_sesiones, CASE WHEN v_bloqueadas > 0 OR v_sesiones_tot > v_max_sesiones THEN 'S' ELSE 'N' END,
+            'Sesiones conectadas: ' || v_sesiones_tot || ' (Maximo: ' || v_max_sesiones || ') | Bloqueadas: ' || v_bloqueadas
         );
 
         COMMIT;
+
+        -- Alerta automatica por correo al DBA si se detectan bloqueos o exceso de concurrencia
+        IF v_bloqueadas > 0 OR v_sesiones_tot > v_max_sesiones THEN
+            PKG_ADM_NOTIFICACION.PR_ENVIAR_CORREO(
+                p_destinatarios => v_correo_dba,
+                p_asunto        => 'ALERTA SESIONES: ' || v_sesiones_tot || ' activas / ' || v_bloqueadas || ' bloqueadas',
+                p_cuerpo        => 'Alerta de concurrencia y bloqueo de sesiones:' || CHR(10) ||
+                                   'Total sesiones de usuario: ' || v_sesiones_tot || ' (Umbral maximo: ' || v_max_sesiones || ')' || CHR(10) ||
+                                   'Sesiones bloqueadas detectadas: ' || v_bloqueadas || CHR(10) ||
+                                   'Fecha/Hora: ' || TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD HH24:MI:SS')
+            );
+        END IF;
+
         DBMS_OUTPUT.PUT_LINE('[OK] Monitoreo Crecimiento y Sesiones: ' || v_mb_esquema ||
-                             ' MB ocupados | ' || v_sesiones_tot || ' sesiones (' || v_bloqueadas || ' bloqueadas).');
+                             ' MB (Var: ' || v_dif_mb || ' MB) | ' || v_sesiones_tot || ' sesiones (' || v_bloqueadas || ' bloqueadas).');
     EXCEPTION
         WHEN OTHERS THEN
             PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_ADM_MONITOREO', 'PR_MONITOREAR_SESIONES_Y_CRECIMIENTO', SQLCODE, SQLERRM);
@@ -1785,11 +2153,13 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_MONITOREO IS
 
     PROCEDURE PR_EJECUTAR_MONITOREO_DIARIO IS
     BEGIN
-        PR_VERIFICAR_TABLESPACES;
-        PR_VERIFICAR_OBJETOS_INVALIDOS;
-        PR_VERIFICAR_INDICES_DANADOS;
-        PR_MONITOREAR_SESIONES_Y_CRECIMIENTO;
-        PKG_ADM_NOTIFICACION.PR_NOTIF_PRODUCTOS_VENCIDOS;
+        -- Aislamiento de pasos: cada modulo de monitoreo se ejecuta en su propio bloque protegido
+        BEGIN PR_VERIFICAR_TABLESPACES;             EXCEPTION WHEN OTHERS THEN NULL; END;
+        BEGIN PR_VERIFICAR_OBJETOS_INVALIDOS;       EXCEPTION WHEN OTHERS THEN NULL; END;
+        BEGIN PR_VERIFICAR_INDICES_DANADOS;         EXCEPTION WHEN OTHERS THEN NULL; END;
+        BEGIN PR_VERIFICAR_ERRORES_SISTEMA;         EXCEPTION WHEN OTHERS THEN NULL; END;
+        BEGIN PR_MONITOREAR_SESIONES_Y_CRECIMIENTO; EXCEPTION WHEN OTHERS THEN NULL; END;
+        BEGIN PKG_ADM_NOTIFICACION.PR_NOTIF_PRODUCTOS_VENCIDOS; EXCEPTION WHEN OTHERS THEN NULL; END;
     END PR_EJECUTAR_MONITOREO_DIARIO;
 
 END PKG_ADM_MONITOREO;
