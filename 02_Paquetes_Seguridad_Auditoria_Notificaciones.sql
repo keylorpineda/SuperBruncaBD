@@ -651,30 +651,34 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
                 END;
             END IF;
 
-            -- Autenticacion AUTH LOGIN con la clave desencriptada desde SEG_PARAMETRO
-            UTL_SMTP.COMMAND(v_conn, 'AUTH LOGIN');
-            UTL_SMTP.COMMAND(v_conn, UTL_RAW.CAST_TO_VARCHAR2(
-                UTL_ENCODE.BASE64_ENCODE(UTL_I18N.STRING_TO_RAW(v_emisor, 'AL32UTF8'))));
-            UTL_SMTP.COMMAND(v_conn, UTL_RAW.CAST_TO_VARCHAR2(
-                UTL_ENCODE.BASE64_ENCODE(UTL_I18N.STRING_TO_RAW(v_clave, 'AL32UTF8'))));
+            -- Autenticacion segura mediante UTL_SMTP.AUTH (LOGIN / PLAIN) con la clave desencriptada
+            IF v_clave IS NOT NULL THEN
+                UTL_SMTP.AUTH(
+                    c        => v_conn,
+                    username => v_emisor,
+                    password => v_clave,
+                    schemes  => 'LOGIN PLAIN'
+                );
+            END IF;
 
-            UTL_SMTP.MAIL(v_conn, v_emisor);
+            UTL_SMTP.MAIL(v_conn, '<' || v_emisor || '>');
 
             v_lista := REPLACE(p_destinatarios, ';', ',') || ',';
             LOOP
                 v_pos := INSTR(v_lista, ',');
-                EXIT WHEN v_pos = 0;
+                EXIT WHEN NVL(v_pos, 0) = 0;
                 v_dest  := TRIM(SUBSTR(v_lista, 1, v_pos - 1));
                 v_lista := SUBSTR(v_lista, v_pos + 1);
                 IF v_dest IS NOT NULL THEN
-                    UTL_SMTP.RCPT(v_conn, v_dest);
+                    UTL_SMTP.RCPT(v_conn, '<' || v_dest || '>');
                 END IF;
+                EXIT WHEN v_lista IS NULL;
             END LOOP;
 
             UTL_SMTP.OPEN_DATA(v_conn);
             UTL_SMTP.WRITE_DATA(v_conn, 'Date: '    || TO_CHAR(SYSDATE, 'Dy, DD Mon YYYY HH24:MI:SS', 'NLS_DATE_LANGUAGE=AMERICAN') || UTL_TCP.CRLF);
-            UTL_SMTP.WRITE_DATA(v_conn, 'From: '    || v_emisor || UTL_TCP.CRLF);
-            UTL_SMTP.WRITE_DATA(v_conn, 'To: '      || p_destinatarios || UTL_TCP.CRLF);
+            UTL_SMTP.WRITE_DATA(v_conn, 'From: <'   || v_emisor || '>' || UTL_TCP.CRLF);
+            UTL_SMTP.WRITE_DATA(v_conn, 'To: <'     || p_destinatarios || '>' || UTL_TCP.CRLF);
             UTL_SMTP.WRITE_DATA(v_conn, 'Subject: ' || p_asunto || UTL_TCP.CRLF);
             UTL_SMTP.WRITE_DATA(v_conn, 'Content-Type: text/plain; charset=UTF-8' || UTL_TCP.CRLF || UTL_TCP.CRLF);
             UTL_SMTP.WRITE_DATA(v_conn, DBMS_LOB.SUBSTR(p_cuerpo, 32000, 1) || UTL_TCP.CRLF);
