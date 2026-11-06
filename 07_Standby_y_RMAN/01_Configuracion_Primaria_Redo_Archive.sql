@@ -126,9 +126,44 @@ PROMPT =========================================================================
 -- Destino 1: Local (Fast Recovery Area o ruta dedicada)
 ALTER SYSTEM SET LOG_ARCHIVE_DEST_1 = 'LOCATION=USE_DB_RECOVERY_FILE_DEST VALID_FOR=(ALL_LOGFILES,ALL_ROLES)' SCOPE = BOTH;
 
--- Destino 2: Transporte hacia el nodo Standby
--- En Data Guard / Redo Transport Service hacia la instancia STANDBY_DB
+-- Destino 2: Transporte de redo por red hacia el Standby (solo Data Guard, Enterprise).
+-- Requiere la entrada STANDBY_TNS en tnsnames.ora apuntando a la IP de la PC standby.
 ALTER SYSTEM SET LOG_ARCHIVE_DEST_2 = 'SERVICE=STANDBY_TNS ASYNC NOAFFIRM VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=CADENA_STBY' SCOPE = BOTH;
+DECLARE
+    v_unico VARCHAR2(30);
+BEGIN
+    SELECT db_unique_name INTO v_unico FROM v$database;   -- p.ej. FREE o CADENA
+    EXECUTE IMMEDIATE 'ALTER SYSTEM SET LOG_ARCHIVE_CONFIG = ''DG_CONFIG=(' || v_unico || ',CADENA_STBY)'' SCOPE = BOTH';
+    EXECUTE IMMEDIATE 'ALTER SYSTEM SET FAL_SERVER = ''STANDBY_TNS'' SCOPE = BOTH';
+    DBMS_OUTPUT.PUT_LINE('[OK] LOG_ARCHIVE_CONFIG = DG_CONFIG=(' || v_unico || ',CADENA_STBY)');
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('[AVISO] Parametros Data Guard: ' || SQLERRM);
+END;
+/
+
+-- MODO MANUAL (Oracle XE / Free / Standard Edition, sin Data Guard):
+-- el traslado lo hace JOB_STANDBY_TRASLADO_ARCHIVELOG cada STANDBY_SYNC_MIN minutos,
+-- por eso se difiere el destino 2 para que no genere errores de red en el alert.log:
+--   ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2 = DEFER SCOPE = BOTH;
+
+-- Los datafiles nuevos de la principal se crean solos en el Standby (replicar acciones)
+ALTER SYSTEM SET STANDBY_FILE_MANAGEMENT = AUTO SCOPE = BOTH;
+
+-- Standby redo logs del mismo tamano (50 MB): los usa el Standby al recibir redo
+-- y la principal cuando cambia de rol en un switchover (cantidad = grupos + 1).
+BEGIN
+    FOR g IN 11 .. 14 LOOP
+        BEGIN
+            EXECUTE IMMEDIATE 'ALTER DATABASE ADD STANDBY LOGFILE THREAD 1 GROUP ' || g || ' SIZE 50M';
+            DBMS_OUTPUT.PUT_LINE('[OK] Standby redo log grupo ' || g || ' (50 MB) creado.');
+        EXCEPTION
+            WHEN OTHERS THEN
+                DBMS_OUTPUT.PUT_LINE('[AVISO] Standby redo log grupo ' || g || ': ' || SQLERRM);
+        END;
+    END LOOP;
+END;
+/
 
 -- Formato de nombres de archivelog
 ALTER SYSTEM SET LOG_ARCHIVE_FORMAT = 'cadena_arch_%t_%s_%r.arc' SCOPE = SPFILE;

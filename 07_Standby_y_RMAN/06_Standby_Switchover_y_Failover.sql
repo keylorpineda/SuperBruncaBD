@@ -95,6 +95,45 @@ PROMPT =========================================================================
    (o el Listener automatico mediante el servicio TNS transparente).
 */
 
+/* =====================================================================
+   MODO MANUAL (Oracle XE / Free / Standard Edition, SIN Data Guard)
+   El Standby se crea con 08_Creacion_Standby_Segunda_PC.rman y se
+   sincroniza con 09_Aplicar_Archivelogs_Standby.rman (tarea programada).
+   No existe MRP0 ni COMMIT TO SWITCHOVER: los roles se cambian asi:
+
+   SINCRONIZACION (demostracion en vivo)
+     PC principal : EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_SINCRONIZAR_AHORA;
+     PC standby   : .\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo AplicarStandby
+                    SELECT MAX(sequence#) FROM v$archived_log WHERE applied = 'YES';
+                    (debe coincidir con la ultima secuencia de la principal)
+
+   SWITCHOVER MANUAL (planificado, sin perdida de datos)
+     1. PC principal: detener la aplicacion y ejecutar
+          ALTER SYSTEM ARCHIVE LOG CURRENT;
+          EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_SINCRONIZAR_AHORA;
+          SHUTDOWN IMMEDIATE;
+     2. PC standby: aplicar el ultimo redo y activar
+          .\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo AplicarStandby
+          ALTER DATABASE ACTIVATE STANDBY DATABASE;
+          ALTER DATABASE OPEN;
+          ALTER PLUGGABLE DATABASE ALL OPEN;
+          ALTER PLUGGABLE DATABASE ALL SAVE STATE;
+     3. La antigua principal se recrea como standby desde un respaldo de la
+        nueva principal (mismos pasos 08 en sentido inverso).
+
+   FAILOVER MANUAL (la PC principal se perdio)
+     PC standby:
+          .\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo AplicarStandby
+          ALTER DATABASE ACTIVATE STANDBY DATABASE;
+          ALTER DATABASE OPEN;
+          ALTER PLUGGABLE DATABASE ALL OPEN;
+     Perdida maxima de datos = lo generado despues del ultimo traslado
+     (<= STANDBY_SYNC_MIN minutos; ARCHIVE_LAG_TARGET limita el redo abierto a 5 min).
+   ===================================================================== */
+
+-- Verificacion de rol y estado (ejecutar en cualquiera de las dos PC)
+SELECT name, db_unique_name, database_role, open_mode, log_mode FROM v$database;
+
 PROMPT ============================================================================
 PROMPT GUIAS DE SWITCHOVER Y FAILOVER DISPONIBLES EN EL SISTEMA
 PROMPT ============================================================================

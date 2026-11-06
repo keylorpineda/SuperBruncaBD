@@ -18,8 +18,17 @@ DESCRIPCION:
                    04_RMAN_Backup_Full_Incremental.rman y copia al Standby.
     Purga        : purga en la PRINCIPAL los archivelogs > N dias ya aplicados
                    en el Standby (03_Purga_Archivelogs_3Dias.rman).
-    PurgaStandby : se ejecuta EN LA PC STANDBY; purga los archivelogs ya
-                   aplicados > N dias (03_Purga_Archivelogs_Standby.rman).
+  En la PC STANDBY (segunda computadora):
+    CrearStandby : crea la base standby desde el respaldo trasladado
+                   (08_Creacion_Standby_Segunda_PC.rman). Se usa una sola vez.
+    AplicarStandby : sincroniza: aplica los archivelogs recibidos
+                   (09_Aplicar_Archivelogs_Standby.rman). Modo manual XE/Free.
+    PurgaStandby : purga los archivelogs ya aplicados > N dias
+                   (03_Purga_Archivelogs_Standby.rman).
+    RegistrarTareasStandby : programa AplicarStandby (cada -IntervaloMin min)
+                   y PurgaStandby (diaria) en el Programador de tareas de Windows,
+                   porque una base standby montada no ejecuta DBMS_SCHEDULER.
+  En cualquiera de las dos:
     Continuo     : ciclo Archivelogs cada -IntervaloMin minutos (alternativa
                    cuando no se usa DBMS_SCHEDULER).
 
@@ -32,13 +41,16 @@ DESCRIPCION:
 EJEMPLOS:
   .\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo OnDemand
   .\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo Backup -NivelBackup 0
-  .\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo PurgaStandby -DiasRetencion 3
+  En la PC standby:
+  .\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo CrearStandby -RutaBackupsStandby C:\app\oracle\standby_backups
+  .\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo RegistrarTareasStandby -RutaDestinoStandby C:\app\oracle\standby_archive
 ================================================================================
 #>
 
 [CmdletBinding()]
 param (
-    [ValidateSet("OnDemand", "Archivelogs", "Programado", "Backup", "Purga", "PurgaStandby", "Continuo")]
+    [ValidateSet("OnDemand", "Archivelogs", "Programado", "Backup", "Purga", "Continuo",
+                 "CrearStandby", "AplicarStandby", "PurgaStandby", "RegistrarTareasStandby")]
     [string]$Modo = "OnDemand",
 
     # Carpeta de archivelogs en la PRINCIPAL (STANDBY_RUTA_ARCHIVE_ORIGEN)
@@ -108,16 +120,26 @@ function Obtener-Ejecutable([string]$Nombre) {
 function Ruta-Rman([string]$Ruta) { return ($Ruta.TrimEnd('\', '/') -replace '\\', '/') }
 
 function Ejecutar-Rman {
-    param([string]$Archivo, [string[]]$Variables)
+    # -AplicaRedo: RMAN-06054 (pide un archivelog que aun no llega) significa
+    # que se aplico todo lo recibido; en un Standby eso es exito, no error.
+    param([string]$Archivo, [string[]]$Variables, [switch]$AplicaRedo)
     $rman = Obtener-Ejecutable "rman"
     $cmd  = Join-Path $ScriptDir $Archivo
     $log  = Join-Path (Split-Path $LogFile -Parent) ("rman_" + [IO.Path]::GetFileNameWithoutExtension($Archivo) + "_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".log")
     $usar = $Variables | ForEach-Object { "'" + $_ + "'" }
     Escribir-Log "RMAN: $Archivo  USING $($usar -join ' ')"
     & $rman target / "cmdfile=$cmd" "log=$log" using @usar | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $codigo = $LASTEXITCODE
+    if ($codigo -ne 0 -and $AplicaRedo -and (Test-Path $log)) {
+        $texto = Get-Content $log -Raw
+        if ($texto -match 'RMAN-06054' -and $texto -notmatch 'ORA-01153') {
+            Escribir-Log "[OK] Standby sincronizado: se aplico todo el redo recibido (RMAN-06054 esperado). Bitacora: $log"
+            return
+        }
+    }
+    if ($codigo -ne 0) {
         $script:HuboError = $true
-        Escribir-Log "[ERROR] RMAN termino con codigo $LASTEXITCODE. Revise $log"
+        Escribir-Log "[ERROR] RMAN termino con codigo $codigo. Revise $log"
     } else {
         Escribir-Log "[OK] RMAN finalizo correctamente. Bitacora: $log"
     }
@@ -191,6 +213,38 @@ function Tarea-Purga {
     Ejecutar-Rman -Archivo "03_Purga_Archivelogs_3Dias.rman" -Variables @("$DiasRetencion")
 }
 
+function Tarea-CrearStandby {
+    # En la PC Standby, -RutaBackupsStandby es la carpeta LOCAL donde llegaron los respaldos
+    $ctrl = Get-ChildItem -Path $RutaBackupsStandby -Filter "bkp_ctrl_stby_*.bkp" -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $ctrl) { throw "No hay controlfile de standby (bkp_ctrl_stby_*.bkp) en $RutaBackupsStandby. Ejecute antes el respaldo en la principal." }
+    Escribir-Log ">>> CREACION DE LA BASE STANDBY desde $($ctrl.Name)"
+    Ejecutar-Rman -Archivo "08_Creacion_Standby_Segunda_PC.rman" -Variables @((Ruta-Rman $ctrl.FullName), (Ruta-Rman $RutaBackupsStandby)) -AplicaRedo
+}
+
+function Tarea-AplicarStandby {
+    Escribir-Log ">>> SINCRONIZACION: aplicando archivelogs recibidos en $RutaDestinoStandby"
+    Ejecutar-Rman -Archivo "09_Aplicar_Archivelogs_Standby.rman" -Variables @((Ruta-Rman $RutaDestinoStandby)) -AplicaRedo
+}
+
+# Programa en Windows las tareas de la PC standby (alli no corre DBMS_SCHEDULER)
+function Tarea-RegistrarTareasStandby {
+    $ps     = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    $rutaScript = $PSCommandPath
+    $base   = "-NoProfile -ExecutionPolicy Bypass -File `"$rutaScript`" -RutaDestinoStandby `"$RutaDestinoStandby`" -DiasRetencion $DiasRetencion"
+    if ($OracleSid.Trim()) { $base += " -OracleSid $($OracleSid.Trim())" }
+    $tareas = @(
+        @{ Nombre = "CADENA_Standby_Aplicar"; Programa = @("/SC", "MINUTE", "/MO", "$IntervaloMin"); Modo = "AplicarStandby" },
+        @{ Nombre = "CADENA_Standby_Purga";   Programa = @("/SC", "DAILY", "/ST", "03:30");          Modo = "PurgaStandby" }
+    )
+    foreach ($t in $tareas) {
+        $accion = "`"$ps`" $base -Modo $($t.Modo)"
+        $salida = & schtasks.exe /Create /F /IT /TN $t.Nombre /TR $accion @($t.Programa) 2>&1
+        if ($LASTEXITCODE -eq 0) { Escribir-Log "[OK] Tarea programada $($t.Nombre): $($t.Programa -join ' ')" }
+        else { $script:HuboError = $true; Escribir-Log "[ERROR] $($t.Nombre): $salida" }
+    }
+}
+
 function Tarea-PurgaStandby {
     # En la PC Standby, -RutaDestinoStandby es la carpeta LOCAL donde llegan los logs
     Escribir-Log ">>> PURGA EN EL STANDBY (> $DiasRetencion dias, ya aplicados)"
@@ -210,7 +264,10 @@ try {
         "Programado"   { Tarea-Traslado }   # nombre anterior, se mantiene por compatibilidad
         "Backup"       { Tarea-Backup }
         "Purga"        { Tarea-Purga }
-        "PurgaStandby" { Tarea-PurgaStandby }
+        "CrearStandby"   { Tarea-CrearStandby }
+        "AplicarStandby" { Tarea-AplicarStandby }
+        "PurgaStandby"   { Tarea-PurgaStandby }
+        "RegistrarTareasStandby" { Tarea-RegistrarTareasStandby }
         "Continuo" {
             while ($true) {
                 Tarea-Traslado

@@ -1,0 +1,29 @@
+# ==============================================================================
+# PROYECTO: Sistema Integral de Cadena de Supermercados
+# MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
+# ARCHIVO:  07_Standby_y_RMAN/09_Aplicar_Archivelogs_Standby.rman
+# CURSO:    Administracion de Bases de Datos
+# DESCRIPCION:
+#   SINCRONIZACION del Standby: registra los archivelogs que el job de traslado
+#   copio a la PC standby y los aplica (Redo Apply manual) sobre la base montada.
+#
+#   Se usa en el MODO MANUAL (Oracle XE / Free / Standard Edition, sin Data Guard).
+#   Con Data Guard (Enterprise) el proceso MRP0 aplica solo y este script no se
+#   programa (si MRP0 esta activo RMAN responde ORA-01153).
+#
+#   Variable de sustitucion:
+#     &1 = Carpeta local de la PC standby donde llegan los archivelogs.
+#
+# EJECUCION (en la PC STANDBY, la programa -Modo RegistrarTareasStandby):
+#   .\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo AplicarStandby -RutaDestinoStandby C:\app\oracle\standby_archive
+# ==============================================================================
+
+CATALOG START WITH '&1' NOPROMPT;
+
+RUN {
+    ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+    RECOVER DATABASE;
+}
+# Mensaje RMAN-06054 al final = ya se aplico todo lo recibido (sincronizado).
+
+EXIT;

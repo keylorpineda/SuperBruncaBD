@@ -1,0 +1,33 @@
+# ==============================================================================
+# PROYECTO: Sistema Integral de Cadena de Supermercados
+# ARCHIVO:  07_Standby_y_RMAN/08_init_CADENA_STBY.ora
+# DESCRIPCION:
+#   Plantilla de PFILE para iniciar la instancia STANDBY en la SEGUNDA PC.
+#   Forma recomendada de obtenerla: en la PRINCIPAL ejecutar
+#       SQL> CREATE PFILE='C:\temp\initCADENA_STBY.ora' FROM SPFILE;
+#   copiar ese archivo a la PC standby y cambiar SOLO los valores marcados
+#   con <== . Los demas deben ser iguales a los de la principal.
+#   Ajuste las rutas si su instalacion no esta en C:\app\oracle (Linux: /opt/oracle).
+# ==============================================================================
+
+*.db_name='FREE'                                   # igual que la principal (SELECT name FROM v$database)
+*.db_unique_name='CADENA_STBY'                     # <== nombre unico del standby
+*.enable_pluggable_database=true
+*.compatible='21.0.0'                              # igual que la principal
+*.control_files='C:\app\oracle\oradata\FREE\control01.ctl','C:\app\oracle\oradata\FREE\control02.ctl'
+*.db_block_size=8192
+*.sga_target=1536M
+*.pga_aggregate_target=512M
+*.processes=300
+*.db_recovery_file_dest='C:\app\oracle\recovery_area'
+*.db_recovery_file_dest_size=20G
+*.log_archive_format='cadena_arch_%t_%s_%r.arc'
+*.log_archive_dest_1='LOCATION=USE_DB_RECOVERY_FILE_DEST VALID_FOR=(ALL_LOGFILES,ALL_ROLES)'
+*.standby_file_management='AUTO'                   # <== crea en el standby los datafiles nuevos
+*.remote_login_passwordfile='EXCLUSIVE'
+*.archive_lag_target=300
+*.audit_file_dest='C:\app\oracle\admin\FREE\adump'
+*.diagnostic_dest='C:\app\oracle'
+# Solo si usa Data Guard (Enterprise) con Oracle Net entre ambas PC:
+# *.log_archive_config='DG_CONFIG=(CADENA,CADENA_STBY)'
+# *.fal_server='PRIMARIA_TNS'

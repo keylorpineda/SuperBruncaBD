@@ -509,6 +509,7 @@ CREATE OR REPLACE PACKAGE BODY CADENA_NEG.PKG_ADM_STANDBY IS
         v_fallos      NUMBER := 0;
         v_seq_prim    NUMBER;
         v_seq_stby    NUMBER;
+        v_regs_dest2  NUMBER;
         v_estado_dest VARCHAR2(30);
         v_error_dest  VARCHAR2(256);
         v_problemas   VARCHAR2(4000);
@@ -552,18 +553,27 @@ CREATE OR REPLACE PACKAGE BODY CADENA_NEG.PKG_ADM_STANDBY IS
 
         -- 3) Redo aplicado en el Standby (destino 2) frente al generado (SQL dinamico:
         --    las vistas V$ pueden no estar disponibles en todos los entornos)
+        --    Con Data Guard (destino 2 activo) se compara lo generado con lo aplicado.
+        --    En modo manual (XE/Free) la principal no ve el standby: el avance lo
+        --    garantiza el traslado (punto 1) y se revisa en la PC standby.
         BEGIN
-            EXECUTE IMMEDIATE 'SELECT NVL(MAX(sequence#), 0) FROM v$archived_log WHERE dest_id = 1' INTO v_seq_prim;
-            EXECUTE IMMEDIATE 'SELECT NVL(MAX(sequence#), 0) FROM v$archived_log WHERE dest_id = 2 AND applied = ''YES''' INTO v_seq_stby;
-            registrar('REDO_APLICADO', v_seq_prim - v_seq_stby, 2,
-                      CASE WHEN v_seq_prim - v_seq_stby > 2 THEN 'S' ELSE 'N' END,
-                      'Secuencia generada ' || v_seq_prim || ', aplicada en Standby ' || v_seq_stby || '.');
+            EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM v$archived_log WHERE dest_id = 2' INTO v_regs_dest2;
+            IF v_regs_dest2 > 0 THEN
+                EXECUTE IMMEDIATE 'SELECT NVL(MAX(sequence#), 0) FROM v$archived_log WHERE dest_id = 1' INTO v_seq_prim;
+                EXECUTE IMMEDIATE 'SELECT NVL(MAX(sequence#), 0) FROM v$archived_log WHERE dest_id = 2 AND applied = ''YES''' INTO v_seq_stby;
+                registrar('REDO_APLICADO', v_seq_prim - v_seq_stby, 2,
+                          CASE WHEN v_seq_prim - v_seq_stby > 2 THEN 'S' ELSE 'N' END,
+                          'Data Guard: secuencia generada ' || v_seq_prim || ', aplicada en Standby ' || v_seq_stby || '.');
 
-            EXECUTE IMMEDIATE 'SELECT status, error FROM v$archive_dest_status WHERE dest_id = 2'
-                         INTO v_estado_dest, v_error_dest;
-            registrar('LOG_ARCHIVE_DEST_2', NULL, NULL,
-                      CASE WHEN v_estado_dest IN ('VALID', 'DEFERRED') AND v_error_dest IS NULL THEN 'N' ELSE 'S' END,
-                      'Destino Standby: ' || v_estado_dest || NVL2(v_error_dest, ' - ' || v_error_dest, ''));
+                EXECUTE IMMEDIATE 'SELECT status, error FROM v$archive_dest_status WHERE dest_id = 2'
+                             INTO v_estado_dest, v_error_dest;
+                registrar('LOG_ARCHIVE_DEST_2', NULL, NULL,
+                          CASE WHEN v_estado_dest IN ('VALID', 'DEFERRED', 'INACTIVE') THEN 'N' ELSE 'S' END,
+                          'Destino Standby: ' || v_estado_dest || NVL2(v_error_dest, ' - ' || v_error_dest, ''));
+            ELSE
+                registrar('REDO_APLICADO', NULL, NULL, 'N',
+                          'Modo manual: el redo se aplica en la PC standby con 09_Aplicar_Archivelogs_Standby.rman.');
+            END IF;
         EXCEPTION
             WHEN OTHERS THEN
                 registrar('V$ARCHIVED_LOG', NULL, NULL, 'N', 'No se pudo leer el estado del redo: ' || SQLERRM);

@@ -9,7 +9,11 @@
 #   La invocan los jobs DBMS_SCHEDULER (EXECUTABLE) de CADENA_NEG.PKG_ADM_STANDBY,
 #   que le pasan los valores de SEG_PARAMETRO como argumentos posicionales:
 #
-#   $1 MODO           ondemand | archivelogs | backup | purga | purgastandby | continuo
+#   $1 MODO           principal: ondemand | archivelogs | backup | purga | continuo
+#                     PC standby: crearstandby | aplicarstandby | purgastandby
+#                     (en la PC standby se programan con cron, p.ej.:
+#                      */10 * * * * /opt/oracle/proyecto/07_Standby_y_RMAN/02_...sh aplicarstandby x /opt/oracle/standby_archive x /opt/oracle/standby_backups
+#                      30 3 * * *   /opt/oracle/proyecto/07_Standby_y_RMAN/02_...sh purgastandby  x /opt/oracle/standby_archive x x 3)
 #   $2 RUTA_ORIGEN    archivelogs de la principal       (STANDBY_RUTA_ARCHIVE_ORIGEN)
 #   $3 RUTA_DESTINO   destino en el standby             (STANDBY_RUTA_ARCHIVE_DESTINO)
 #                     admite ruta remota rsync: oracle@pc-standby:/opt/oracle/standby_archive
@@ -48,6 +52,9 @@ ejecutar_rman() {
     log "RMAN: $archivo USING $*"
     if rman target / cmdfile="$SCRIPT_DIR/$archivo" log="$bitacora" using "$@" >/dev/null; then
         log "[OK] RMAN finalizo correctamente. Bitacora: $bitacora"
+    elif [ "$APLICA_REDO" = "1" ] && grep -q "RMAN-06054" "$bitacora" && ! grep -q "ORA-01153" "$bitacora"; then
+        # RMAN-06054 = pide un archivelog que aun no llega: todo lo recibido ya se aplico
+        log "[OK] Standby sincronizado (RMAN-06054 esperado). Bitacora: $bitacora"
     else
         HUBO_ERROR=1; log "[ERROR] RMAN fallo. Revise $bitacora"
     fi
@@ -99,6 +106,12 @@ case "$MODO" in
     backup)       tarea_backup ;;
     purga)        log ">>> PURGA EN LA PRINCIPAL (> $DIAS dias)"
                   ejecutar_rman 03_Purga_Archivelogs_3Dias.rman "$DIAS" ;;
+    crearstandby) CTRL=$(ls -t "$RUTA_BK_STBY"/bkp_ctrl_stby_*.bkp 2>/dev/null | head -1)
+                  if [ -z "$CTRL" ]; then log "[ERROR] No hay bkp_ctrl_stby_*.bkp en $RUTA_BK_STBY"; HUBO_ERROR=1
+                  else log ">>> CREACION DEL STANDBY desde $CTRL"; APLICA_REDO=1
+                       ejecutar_rman 08_Creacion_Standby_Segunda_PC.rman "'$CTRL'" "'$RUTA_BK_STBY'"; fi ;;
+    aplicarstandby) log ">>> SINCRONIZACION: aplicando archivelogs de $RUTA_DESTINO"; APLICA_REDO=1
+                  ejecutar_rman 09_Aplicar_Archivelogs_Standby.rman "'$RUTA_DESTINO'" ;;
     purgastandby) log ">>> PURGA EN EL STANDBY (> $DIAS dias)"
                   ejecutar_rman 03_Purga_Archivelogs_Standby.rman "$DIAS" "'$RUTA_DESTINO'" ;;
     continuo)     while true; do tarea_traslado; log "Esperando $INTERVALO_MIN min..."; sleep $((INTERVALO_MIN * 60)); done ;;

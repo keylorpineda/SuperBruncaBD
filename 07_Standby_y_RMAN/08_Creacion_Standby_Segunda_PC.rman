@@ -1,0 +1,45 @@
+# ==============================================================================
+# PROYECTO: Sistema Integral de Cadena de Supermercados
+# MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
+# ARCHIVO:  07_Standby_y_RMAN/08_Creacion_Standby_Segunda_PC.rman
+# CURSO:    Administracion de Bases de Datos
+# DESCRIPCION:
+#   Crea la base de datos STANDBY en la SEGUNDA computadora a partir del
+#   respaldo RMAN que el job JOB_RMAN_BACKUP_DIARIO ya traslada a esa PC.
+#   No requiere Data Guard ni conexion Oracle Net entre las bases: solo la
+#   carpeta compartida de respaldos. Funciona en Enterprise, XE y Free.
+#
+#   Requisitos previos en la PC STANDBY (ver Manual de Administracion, sec. 3):
+#     1. Misma version de Oracle y mismas rutas de instalacion que la principal.
+#     2. Archivo de claves copiado de la principal (PWD<SID>.ora / orapw<SID>).
+#     3. Instancia iniciada con 08_init_CADENA_STBY.ora en estado NOMOUNT:
+#          SQL> STARTUP NOMOUNT PFILE='...\08_init_CADENA_STBY.ora';
+#
+#   Variables de sustitucion:
+#     &1 = Pieza del controlfile de standby (archivo bkp_ctrl_stby_*.bkp mas reciente).
+#     &2 = Carpeta con los respaldos copiados desde la principal.
+#
+# EJECUCION (en la PC STANDBY):
+#   .\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo CrearStandby -RutaBackupsStandby C:\app\oracle\standby_backups
+#   (busca solo el controlfile mas reciente) o manualmente:
+#   rman target / cmdfile=08_Creacion_Standby_Segunda_PC.rman using 'C:/app/oracle/standby_backups/bkp_ctrl_stby_X.bkp' 'C:/app/oracle/standby_backups'
+# ==============================================================================
+
+# 1. Restaurar un controlfile con rol STANDBY y montar la base
+RESTORE STANDBY CONTROLFILE FROM '&1';
+ALTER DATABASE MOUNT;
+
+# 2. Registrar los respaldos y archivelogs que llegaron desde la principal
+CATALOG START WITH '&2' NOPROMPT;
+
+# 3. Restaurar los datafiles y aplicar todo el redo disponible
+RUN {
+    ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+    RESTORE DATABASE;
+    RECOVER DATABASE;
+}
+# Al terminar, RECOVER muestra RMAN-06054 (pide el siguiente archivelog que
+# todavia no existe): es lo esperado en un Standby, que queda MONTADO y listo
+# para seguir aplicando con 09_Aplicar_Archivelogs_Standby.rman.
+
+EXIT;
