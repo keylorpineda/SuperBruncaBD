@@ -43,22 +43,25 @@ El presente manual describe paso a paso el procedimiento oficial para la instala
 
 ## 2. Catálogo de Archivos Entregables
 
-La solución se entrega organizada en scripts modulares e independientes, gobernados por un instalador maestro automatizado:
+La solución se entrega organizada en scripts modulares e independientes, gobernados por un instalador maestro automatizado. Las rutas son relativas a la raíz del repositorio:
 
 | ARCHIVO | TIPO | PROPÓSITO |
 | :--- | :--- | :--- |
-| `00_Master_Instalacion_Avance2.sql` | SQL Maestro | Orquestador de instalación integral en orden determinista. |
-| `01_Estructuras_Avance2.sql` | DDL / DML | 11 tablas nuevas, secuencias, índices, 2 MV y datos semilla. |
-| `02_Paquetes_Seguridad_Auditoria_Notificaciones.sql` | PL/SQL | Seguridad AES-256, auditoría autónoma y correo UTL_SMTP. |
-| `03_Paquetes_Negocio_Monitoreo.sql` | PL/SQL | Padrón TSE, inventario, compras, ventas, mercadeo y salud. |
-| `04_Triggers_Negocio_y_Auditoria.sql` | PL/SQL | 11 triggers de negocio y 7 triggers de bitácora profunda. |
-| `05_Seguridad_Perfiles_Roles_Usuarios.sql` | SQL / DCL | Perfiles, 4 roles con clave cifrada, usuarios y pruebas de mínimos privilegios. |
-| `06_Scheduler_Optimizacion_y_Pruebas.sql` | PL/SQL | 5 Jobs DBMS_SCHEDULER, EXPLAIN PLAN y 12 suites de prueba de extremo a extremo. |
-| `padron_muestra.csv` | Datos externos | Archivo CSV muestra del padrón electoral para prueba de UTL_FILE. |
-| `Descargar_Padron_TSE.ps1` / `.sh` | Script SO | Descarga `padron_completo.zip` del TSE y deja `PADRON_COMPLETO.txt` y `DISTELEC.txt` en `DIR_PADRON`. |
-| `script_bd_v2.sql` | DDL Base | Línea base del Entregable #1 (tablas transaccionales y catálogos). |
-| `07_Standby_y_RMAN/` | Directorio | Configuración de la principal (redo 50 MB / 5 min), creación y sincronización de la standby en la segunda PC, RMAN, purga, switchover y failover. |
-| `07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql` | PL/SQL | Paquete `PKG_ADM_STANDBY` y 4 jobs DBMS_SCHEDULER: traslado cada 10 min, respaldo RMAN diario, purga de 3 días y monitoreo. |
+| `sql/script_bd_v2.sql` | DDL Base | Línea base del Entregable #1 (tablespaces, usuario `CADENA_NEG`, tablas transaccionales y catálogos). Se ejecuta antes del maestro. |
+| `sql/00_Master_Instalacion_Avance2.sql` | SQL Maestro | Orquestador de instalación integral en orden determinista. |
+| `sql/01_Estructuras_Avance2.sql` | DDL / DML | 11 tablas nuevas, secuencias, índices, 2 MV y datos semilla. |
+| `sql/02_Paquetes_Seguridad_Auditoria_Notificaciones.sql` | PL/SQL | Seguridad AES-256, auditoría autónoma y correo UTL_SMTP. |
+| `sql/03_Paquetes_Negocio_Monitoreo.sql` | PL/SQL | Padrón TSE, inventario, compras, ventas, mercadeo y salud. |
+| `sql/04_Triggers_Negocio_y_Auditoria.sql` | PL/SQL | 11 triggers de negocio y 7 triggers de bitácora profunda. |
+| `sql/05_Seguridad_Perfiles_Roles_Usuarios.sql` | SQL / DCL | Perfiles, 4 roles con clave cifrada, usuarios y pruebas de mínimos privilegios. |
+| `sql/06_Scheduler_Optimizacion_y_Pruebas.sql` | PL/SQL | 5 Jobs DBMS_SCHEDULER, EXPLAIN PLAN y 12 suites de prueba de extremo a extremo. |
+| `sql/07_Standby_y_RMAN/` | Directorio | Configuración de la principal (redo 50 MB / 5 min), creación y sincronización de la standby en la segunda PC, RMAN, purga, switchover y failover. |
+| `sql/07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql` | PL/SQL | Paquete `PKG_ADM_STANDBY` y 4 jobs DBMS_SCHEDULER: traslado cada 10 min, respaldo RMAN diario, purga de 3 días y monitoreo. |
+| `datos/padron/Descargar_Padron_TSE.ps1` / `.sh` | Script SO | Descarga `padron_completo.zip` del TSE y deja `PADRON_COMPLETO.txt` y `DISTELEC.txt` en `DIR_PADRON`. |
+| `datos/padron/padron_muestra.csv` | Datos externos | Archivo CSV muestra del padrón electoral para prueba de UTL_FILE. |
+| `docs/manuales/` | Documentación | Los 3 manuales oficiales (`.md` y `.pdf`) y `generar_manuales_pdf.py`, que regenera los PDF. |
+| `docs/entregable1/` | Documentación | Diccionario de datos, documentación técnica y modelo relacional del Entregable #1. |
+| `docs/` (guías) | Documentación | `GUIA_PASO_A_PASO.md`, `GUIA_PADRON_TSE.md` y `GUIA_DEFENSA.md`. |
 
 ---
 
@@ -69,24 +72,27 @@ Todos los scripts han sido desarrollados con **idempotencia estricta**. Esto gar
 ### Opción A: Despliegue en Contenedor Docker (Recomendado)
 Si la base de datos se ejecuta dentro de un contenedor Docker (ej. `oracle_una`):
 
-1. **Copiar los archivos al contenedor:**
+1. **Copiar los archivos al contenedor** (desde la raíz del repositorio):
    ```powershell
    docker cp . oracle_una:/opt/oracle/proyecto/
    ```
 
-2. **Ejecutar el instalador maestro como SYSDBA:**
+2. **Crear la base del Entregable #1 y ejecutar el instalador maestro como SYSDBA** (desde la carpeta `sql`):
    ```powershell
-   docker exec -i -w /opt/oracle/proyecto oracle_una sqlplus -s / as sysdba '@00_Master_Instalacion_Avance2.sql'
+   docker exec -i -w /opt/oracle/proyecto/sql oracle_una sqlplus -s / as sysdba '@script_bd_v2.sql'
+   docker exec -i -w /opt/oracle/proyecto/sql oracle_una sqlplus -s / as sysdba '@00_Master_Instalacion_Avance2.sql'
    ```
 
 ### Opción B: Despliegue desde SQL\*Plus Local o SQL Developer
-Si se conecta vía red o mediante cliente local:
+Si se conecta vía red o mediante cliente local, ubíquese en la carpeta `sql` del repositorio:
 
 ```bash
+cd sql
+sqlplus sys/TuPassword@localhost:1521/FREEPDB1 as sysdba @script_bd_v2.sql
 sqlplus sys/TuPassword@localhost:1521/FREEPDB1 as sysdba @00_Master_Instalacion_Avance2.sql
 ```
 
-> **Nota para SQL Developer:** Abra el archivo `00_Master_Instalacion_Avance2.sql` y presione **F5** (*Run Script*), asegurando que la conexión apunte a `FREEPDB1`.
+> **Nota para SQL Developer:** Abra el archivo `sql/00_Master_Instalacion_Avance2.sql` y presione **F5** (*Run Script*), asegurando que la conexión apunte a `FREEPDB1`. El maestro incluye `@@07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql`, que se resuelve respecto de la carpeta `sql`.
 
 ---
 
@@ -141,20 +147,21 @@ El script maestro ejecuta de forma consecutiva las siete fases del avance:
 6. `PKG_ADM_MONITOREO`: Inspección automatizada de tablespaces (>85%), detección de objetos inválidos, índices en estado corrupto y crecimiento de sesiones.
 
 ### Paso 4: Disparadores de Reglas de Negocio y Auditoría (`04_Triggers_Negocio_y_Auditoria.sql`)
-Compila 18 disparadores en estado `ENABLED`:
+Compila 21 disparadores en estado `ENABLED`:
 * **11 Triggers de Negocio:**
   * `TRG_VEN_FACTURA_CRED_BIU`: Bloquea facturas de venta a crédito si superan el límite del cliente.
+  * `TRG_COM_FACTURA_CRED_BIU`: Bloquea facturas de compra a crédito si superan el límite del proveedor.
   * `TRG_COM_FACTURA_CRED_AI`: Genera la cuenta por pagar (`COM_CUENTA_PAGAR`) al ingresar una compra a crédito.
   * `TRG_VEN_FACTURA_CRED_AI`: Genera la cuenta por cobrar (`VEN_CUENTA_COBRAR`) al emitir venta a crédito.
   * `TRG_VEN_ABONO_SALDO_AI`: Actualiza saldos de CxC y cliente al abonar; si el saldo llega a ₡0, cambia automáticamente el estado de la factura de `P` (Pendiente) a `C` (Cancelada).
   * `TRG_COM_ABONO_SALDO_AI`: Actualiza saldos de CxP y proveedor al abonar; si llega a ₡0, pasa factura a `C`.
   * `TRG_COM_FACTURA_DET_INV_AI`: Aumenta el stock en bodega y registra entrada en el kardex tras compras.
-  * `TRG_VEN_FACTURA_DET_INV_AI`: Valida existencia suficiente, descuenta stock y registra salida en kardex tras ventas.
-  * `TRG_PRO_HISTORIAL_PRECIO_AU`: Bitácora automática en `PRO_PRECIO_HIST` ante cambios de costo o precio.
-  * `TRG_PRM_ACCIONES_VENTA_AI`: Otorga acciones electrónicas al cliente al comprar productos patrocinadores.
-  * `TRG_VEN_DEVOLUCION_DET_AI`: Reintegra existencias a bodega al aceptar una devolución de cliente.
-  * `TRG_COM_DEVOLUCION_DET_AI`: Descuenta inventario al realizar una devolución a proveedor.
-* **7 Triggers de Auditoría Profunda:** Registran usuario, IP, terminal y valores antes/después en `AUD_REGISTRO_CAMBIO` para `VEN_FACTURA`, `COM_FACTURA_COMPRA`, `PER_CLIENTE`, `PER_PROVEEDOR`, `PRO_PRODUCTO`, `INV_EXISTENCIA` y `SEG_PARAMETRO`.
+  * `TRG_VEN_FACTURA_DET_INV_AI`: Valida existencia suficiente, descuenta stock, registra salida en kardex tras ventas y otorga las acciones de productos patrocinadores (`PKG_PRM_MERCADEO.PR_OTORGAR_ACCIONES_LINEA`).
+  * `TRG_PRO_HISTORIAL_PRECIO_AU`: Bitácora automática en `PRO_PRECIO_HIST` ante cambios del precio de costo.
+  * `TRG_VEN_DEVOLUCION_DET_INV_AI`: Reintegra existencias a bodega al aceptar una devolución de cliente.
+  * `TRG_COM_DEVOLUCION_DET_INV_AI`: Descuenta inventario al realizar una devolución a proveedor.
+* **9 Triggers de Auditoría Profunda** (`TRG_AUD_*`): Registran usuario, IP, terminal y valores antes/después en `AUD_REGISTRO_CAMBIO` para `VEN_FACTURA`, `COM_FACTURA_COMPRA`, `PRO_PRODUCTO`, `INV_MOVIMIENTO`, `PER_CLIENTE`, `PER_PROVEEDOR`, `PRM_PROMOCION`, `PRM_DESCUENTO` y `PRM_DESCUENTO_DET`.
+* **1 Trigger de parametrización:** `TRG_SEG_PARAM_PREMIACION_AU` reprograma `JOB_PREMIACION_SEMESTRAL` cuando cambia `MESES_FRECUENCIA_PREMIACION`.
 
 ### Paso 5: Seguridad, Perfiles, Roles con Clave y Mínimos Privilegios (`05_Seguridad_Perfiles_Roles_Usuarios.sql`)
 1. Crea los perfiles de seguridad:
@@ -187,7 +194,7 @@ Compila 18 disparadores en estado `ENABLED`:
    * Pruebas positivas de monitoreo, notificaciones de crédito (85% y 70%), padrón electoral TSE con resolución distrital, compras atómicas, ventas atómicas, abonos con liquidación de estado (P $\to$ C), mercadeo/descuentos, cierre diario por cajero y refresco de vistas materializadas.
    * Pruebas negativas y de integridad: Rechazo controlado por límite de crédito (`ORA-20010`) con verificación estricta de atomicidad (cero facturas o CxC huérfanas tras `ROLLBACK TO SAVEPOINT`), rechazo por falta de inventario (`ORA-20015`), y reconfiguración dinámica en caliente del Scheduler (`DBMS_SCHEDULER.SET_ATTRIBUTE`).
 
-### Paso 7: Jobs del Standby y RMAN (`07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql`)
+### Paso 7: Jobs del Standby y RMAN (`sql/07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql`)
 1. Otorga a `CADENA_NEG` los privilegios `CREATE EXTERNAL JOB` y `CREATE CREDENTIAL`.
 2. Registra en `SEG_PARAMETRO` las rutas y horarios del standby (detecta SO, SID, `ORACLE_HOME` y la ruta de archivelogs).
 3. Crea el paquete `PKG_ADM_STANDBY` y los jobs `JOB_STANDBY_TRASLADO_ARCHIVELOG`, `JOB_RMAN_BACKUP_DIARIO`, `JOB_STANDBY_PURGA_ARCHIVELOG` y `JOB_STANDBY_MONITOREO`.
@@ -207,9 +214,9 @@ El enunciado pide cargar el padrón **con la información actual**. Las pruebas 
    ```
 2. Descargar y descomprimir el padrón vigente (`padron_completo.zip`, ~74 MB, publicado cada mes en https://www.tse.go.cr/descarga_padron.html):
    ```powershell
-   .\Descargar_Padron_TSE.ps1 -Destino <carpeta de DIR_PADRON>
+   .\datos\padron\Descargar_Padron_TSE.ps1 -Destino <carpeta de DIR_PADRON>
    ```
-   En Docker: `docker exec -it oracle_una bash /opt/oracle/proyecto/Descargar_Padron_TSE.sh https://www.tse.go.cr/zip/padron/padron_completo.zip <carpeta>`
+   En Docker: `docker exec -it oracle_una bash /opt/oracle/proyecto/datos/padron/Descargar_Padron_TSE.sh https://www.tse.go.cr/zip/padron/padron_completo.zip <carpeta>`
 3. Cargarlo. Verificado en Oracle 26ai Free (Docker) con el padrón del 30/09/2026: 3.762.240 personas, 0 rechazos, 2.179 distritos electorales, unos 39 minutos y 553 MB. Las cargas mensuales siguientes solo reescriben a las personas que cambiaron. El padrón oficial no publica el sexo (su campo 3 es `RELLENO`), por eso se guarda `N` = no indicado.
    ```sql
    SET SERVEROUTPUT ON
@@ -227,7 +234,7 @@ Las líneas rechazadas quedan en `padron_tse.bad` y el detalle en `padron_tse.lo
 
 ## 5. Verificación Posterior y Validación del Estado Final
 
-Al concluir la ejecución de `00_Master_Instalacion_Avance2.sql`, el script imprime un resumen directo del diccionario de datos:
+Al concluir la ejecución de `sql/00_Master_Instalacion_Avance2.sql`, el script imprime un resumen directo del diccionario de datos:
 
 ```sql
 SELECT object_type, status, COUNT(*) AS cantidad

@@ -1,6 +1,6 @@
 # ==============================================================================
 # PROYECTO: Sistema Integral de Cadena de Supermercados
-# ARCHIVO:  07_Standby_y_RMAN/08_init_CADENA_STBY.ora
+# ARCHIVO:  sql/07_Standby_y_RMAN/08_init_CADENA_STBY.ora
 # DESCRIPCION:
 #   Plantilla de PFILE para iniciar la instancia STANDBY en la SEGUNDA PC.
 #   Forma recomendada de obtenerla: en la PRINCIPAL ejecutar

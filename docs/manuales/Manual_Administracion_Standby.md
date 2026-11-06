@@ -65,6 +65,8 @@ El modo manual cumple todos los puntos del enunciado y funciona con cualquier ed
 
 ### 1.3 Cumplimiento del enunciado
 
+Todos los archivos de esta tabla están en la carpeta `sql/07_Standby_y_RMAN/` del repositorio.
+
 | Requerimiento | Solución | Archivo |
 | :--- | :--- | :--- |
 | Dos servidores distintos | PC 1 principal y PC 2 standby | Sección 2 y 4 |
@@ -96,7 +98,7 @@ El modo manual cumple todos los puntos del enunciado y funciona con cualquier ed
 
 # 3. Configuración de la principal (`01_Configuracion_Primaria_Redo_Archive.sql`)
 
-Se ejecuta una vez en la PC 1, conectado como `SYSDBA` en `CDB$ROOT`. La base debe estar en modo `ARCHIVELOG`:
+Se ejecuta una vez en la PC 1, conectado como `SYSDBA` en `CDB$ROOT` (con SQL\*Plus abierto desde la carpeta `sql` del repositorio). La base debe estar en modo `ARCHIVELOG`:
 
 ```sql
 SHUTDOWN IMMEDIATE;
@@ -105,6 +107,8 @@ ALTER DATABASE ARCHIVELOG;
 ALTER DATABASE OPEN;
 @07_Standby_y_RMAN/01_Configuracion_Primaria_Redo_Archive.sql
 ```
+
+En Docker: `docker exec -it -w /opt/oracle/proyecto/sql/07_Standby_y_RMAN oracle_una sqlplus / as sysdba @01_Configuracion_Primaria_Redo_Archive.sql` (después de activar `ARCHIVELOG`).
 
 Lo que configura el script:
 
@@ -146,14 +150,14 @@ CREATE PFILE = 'C:\temp\initCADENA_STBY.ora' FROM SPFILE;
 oradim -NEW -SID FREE -STARTMODE manual
 set ORACLE_SID=FREE
 sqlplus / as sysdba
-SQL> STARTUP NOMOUNT PFILE='C:\app\oracle\proyecto\07_Standby_y_RMAN\08_init_CADENA_STBY.ora';
-SQL> CREATE SPFILE FROM PFILE='C:\app\oracle\proyecto\07_Standby_y_RMAN\08_init_CADENA_STBY.ora';
+SQL> STARTUP NOMOUNT PFILE='C:\app\oracle\proyecto\sql\07_Standby_y_RMAN\08_init_CADENA_STBY.ora';
+SQL> CREATE SPFILE FROM PFILE='C:\app\oracle\proyecto\sql\07_Standby_y_RMAN\08_init_CADENA_STBY.ora';
 ```
 
 6. Crear la standby con el orquestador: busca el controlfile de standby más reciente, lo restaura, monta la base, restaura los datafiles y aplica todo el redo disponible (`08_Creacion_Standby_Segunda_PC.rman`):
 
 ```powershell
-cd C:\app\oracle\proyecto\07_Standby_y_RMAN
+cd C:\app\oracle\proyecto\sql\07_Standby_y_RMAN
 .\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo CrearStandby -RutaBackupsStandby C:\app\oracle\standby_backups
 ```
 
@@ -186,7 +190,7 @@ El instalador maestro ejecuta este script como paso 7. Crea el paquete `CADENA_N
 | `STANDBY_RUTA_ARCHIVE_DESTINO` | `\\PC-STANDBY\standby_archive` | Carpeta compartida de la PC 2. |
 | `STANDBY_RUTA_BACKUP_ORIGEN` | `C:\app\oracle\backups` | Respaldos RMAN en la PC 1. |
 | `STANDBY_RUTA_BACKUP_DESTINO` | `\\PC-STANDBY\standby_backups` | Respaldos en la PC 2. |
-| `STANDBY_RUTA_SCRIPTS` | `C:\app\oracle\proyecto\07_Standby_y_RMAN` | Ubicación del orquestador y los `.rman`. |
+| `STANDBY_RUTA_SCRIPTS` | `C:\app\oracle\proyecto\sql\07_Standby_y_RMAN` (Linux: `/opt/oracle/proyecto/sql/07_Standby_y_RMAN`) | Ubicación del orquestador y los `.rman`. |
 | `STANDBY_SO`, `STANDBY_ORACLE_SID`, `STANDBY_ORACLE_HOME` | Detectados | Entorno que reciben los jobs externos. |
 
 Para cambiar un valor (por ejemplo, la IP real de la PC 2) y aplicarlo en caliente:
@@ -270,7 +274,7 @@ Si algo falla, el script termina con código 1; así DBMS_SCHEDULER marca el job
 * Cada día además: archivelogs no respaldados, controlfile, **controlfile de standby** y autobackup del controlfile.
 * Retención: ventana de recuperación de 14 días (`DELETE OBSOLETE`), `CROSSCHECK` y `RESTORE VALIDATE` para comprobar que el respaldo sirve.
 
-Ejecución manual: `rman target / cmdfile=04_RMAN_Backup_Full_Incremental.rman using 'C:/app/oracle/backups' 0` (`&1` = carpeta, `&2` = nivel).
+Ejecución manual (desde `sql/07_Standby_y_RMAN`): `rman target / cmdfile=04_RMAN_Backup_Full_Incremental.rman using 'C:/app/oracle/backups' 0` (`&1` = carpeta, `&2` = nivel).
 
 ### 8.2 Restauración y recuperación (`05_RMAN_Restore_Recovery_PointInTime.rman`)
 
@@ -323,7 +327,7 @@ El enunciado pide replicar todas las acciones de la principal. Estas son las que
 | :--- | :--- | :--- |
 | Operación `NOLOGGING` o carga directa | Bloques corruptos en la standby (`ORA-01578`) | Prevenido con `FORCE LOGGING`. Si se desactivó, volver a activarlo y respaldar/restaurar el datafile afectado en la standby. |
 | Se agrega un datafile o tablespace | `ORA-01111` / `ORA-01157` al aplicar | Prevenido con `STANDBY_FILE_MANAGEMENT=AUTO`. Si falla: en la standby `ALTER DATABASE CREATE DATAFILE '<UNNAMED>' AS '<ruta>';` y volver a aplicar. |
-| Archivos externos (`PADRON_COMPLETO.txt`, `DISTELEC.txt` en `DIR_PADRON`) | La tabla `CAT_PADRON` sí está replicada, pero los archivos del TSE no | Son archivos del sistema operativo, no viajan en el redo: tras activar la PC 2, ejecutar `Descargar_Padron_TSE.ps1` allí antes de la siguiente carga mensual. |
+| Archivos externos (`PADRON_COMPLETO.txt`, `DISTELEC.txt` en `DIR_PADRON`) | La tabla `CAT_PADRON` sí está replicada, pero los archivos del TSE no | Son archivos del sistema operativo, no viajan en el redo: tras activar la PC 2, ejecutar `datos/padron/Descargar_Padron_TSE.ps1` allí antes de la siguiente carga mensual. |
 | Cambio de claves de usuarios SYS o del archivo de claves | Fallan conexiones `SYSDBA` remotas | Volver a copiar `PWD<SID>.ora` a la PC 2. |
 | Falta un archivelog (hueco) | `RMAN-06054` pidiendo una secuencia vieja que no llega | `PR_SINCRONIZAR_AHORA` en la PC 1; si el archivo ya no existe, respaldo incremental desde el SCN de la standby (`BACKUP INCREMENTAL FROM SCN <scn> DATABASE`) y `RECOVER` en la PC 2. |
 | Carpeta compartida inaccesible (PC 2 apagada, red) | Job `FAILED`; correo "inconsistencia en la sincronización" | Revisar red/permisos y ejecutar `PR_SINCRONIZAR_AHORA`: la copia es incremental y se pone al día sola. |
@@ -337,7 +341,7 @@ El enunciado pide replicar todas las acciones de la principal. Estas son las que
 1. **PC 1:** `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_ESTADO_STANDBY;` – jobs habilitados y última sincronización.
 2. **PC 1:** insertar una factura de prueba y `COMMIT`.
 3. **PC 1:** `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_SINCRONIZAR_AHORA;` – se ve el archivelog copiado.
-4. **PC 2:** `.\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo AplicarStandby` y comparar secuencias (sección 9.1).
+4. **PC 2:** en `C:\app\oracle\proyecto\sql\07_Standby_y_RMAN`, `.\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo AplicarStandby` y comparar secuencias (sección 9.1).
 5. **PC 1:** `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_RESPALDAR_AHORA;` – respaldo y copia a la PC 2.
 6. **PC 1:** `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_PURGAR_AHORA;`
 7. **PC 2:** failover (sección 9.3) y consultar la factura de prueba en la base activada.

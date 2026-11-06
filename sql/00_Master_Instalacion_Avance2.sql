@@ -1,6 +1,6 @@
 -- ============================================================================
 -- PROYECTO: Sistema Integral de Cadena de Supermercados
--- ARCHIVO:  00_Master_Instalacion_Avance2.sql
+-- ARCHIVO:  sql/00_Master_Instalacion_Avance2.sql
 -- CURSO:    Administracion de Bases de Datos
 -- FECHA:    Octubre 2026 - Avance 2
 -- MOTOR:    Oracle Database 21c / 23ai / 26ai Free
@@ -10,6 +10,8 @@
 --   del Avance #2 (con su suite de pruebas) y el paquete de jobs del Standby.
 --
 -- INSTRUCCION DE USO:
+--   (desde la carpeta sql/ del repositorio, para que @@07_Standby_y_RMAN/... se resuelva)
+--   cd sql
 --   sqlplus system/oracle@localhost:1521/FREEPDB1 @00_Master_Instalacion_Avance2.sql
 -- ============================================================================
 

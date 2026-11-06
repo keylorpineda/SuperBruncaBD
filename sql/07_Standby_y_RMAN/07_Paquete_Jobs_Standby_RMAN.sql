@@ -1,7 +1,7 @@
 -- =============================================================================
 -- PROYECTO: Sistema Integral de Cadena de Supermercados
 -- MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
--- ARCHIVO:  07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql
+-- ARCHIVO:  sql/07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql
 -- CURSO:    Administracion de Bases de Datos
 -- DESCRIPCION:
 -- Automatiza con DBMS_SCHEDULER (Requerimiento 5) todas las tareas del
@@ -162,8 +162,8 @@ BEGIN
 
     crear_si_no_existe('STANDBY_RUTA_SCRIPTS', 'Carpeta de scripts 07_Standby_y_RMAN',
         'Ruta en la PC principal donde estan el orquestador .ps1/.sh y los scripts .rman.',
-        CASE WHEN v_es_win THEN 'C:\app\oracle\proyecto\07_Standby_y_RMAN'
-             ELSE '/opt/oracle/proyecto/07_Standby_y_RMAN' END);
+        CASE WHEN v_es_win THEN 'C:\app\oracle\proyecto\sql\07_Standby_y_RMAN'
+             ELSE '/opt/oracle/proyecto/sql/07_Standby_y_RMAN' END);
     crear_si_no_existe('STANDBY_RUTA_ARCHIVE_ORIGEN', 'Carpeta de archivelogs en la principal',
         'Origen de los Archived Redo Logs que se trasladan al standby.',
         CASE WHEN v_fra IS NOT NULL THEN v_fra || v_sep || UPPER(v_dbname) || v_sep || 'ARCHIVELOG'

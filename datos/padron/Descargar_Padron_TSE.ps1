@@ -1,7 +1,7 @@
 <#
 ================================================================================
 PROYECTO: Sistema Integral de Cadena de Supermercados
-ARCHIVO:  Descargar_Padron_TSE.ps1
+ARCHIVO:  datos/padron/Descargar_Padron_TSE.ps1
 CURSO:    Administracion de Bases de Datos
 DESCRIPCION:
   Descarga el Padron Nacional Electoral vigente publicado por el TSE

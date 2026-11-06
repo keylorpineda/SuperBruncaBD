@@ -2,7 +2,7 @@
 ================================================================================
 PROYECTO: Sistema Integral de Cadena de Supermercados
 MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai (Windows)
-ARCHIVO:  07_Standby_y_RMAN/02_Traslado_Archivelogs_10min_y_Ondemand.ps1
+ARCHIVO:  sql/07_Standby_y_RMAN/02_Traslado_Archivelogs_10min_y_Ondemand.ps1
 CURSO:    Administracion de Bases de Datos
 DESCRIPCION:
   Orquestador de las tareas de sistema operativo del Standby. Lo invocan los

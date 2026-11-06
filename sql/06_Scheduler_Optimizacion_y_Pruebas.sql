@@ -211,8 +211,8 @@ BEGIN
         'S = marcar como inactivas (ESTADO_PADR = I) las cedulas que ya no vienen en el padron vigente.', 'S');
     crear_si_no_existe('PADRON_SCRIPT_DESCARGA', 'Script de descarga del padron',
         'Ruta del script que descarga y descomprime el ZIP del TSE en DIR_PADRON.',
-        CASE WHEN v_es_win THEN 'C:\app\oracle\proyecto\Descargar_Padron_TSE.ps1'
-             ELSE '/opt/oracle/proyecto/Descargar_Padron_TSE.sh' END);
+        CASE WHEN v_es_win THEN 'C:\app\oracle\proyecto\datos\padron\Descargar_Padron_TSE.ps1'
+             ELSE '/opt/oracle/proyecto/datos/padron/Descargar_Padron_TSE.sh' END);
 
     CADENA_NEG.PKG_PER_PADRON.PR_CONFIGURAR_JOBS_PADRON;
 EXCEPTION

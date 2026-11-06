@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
 # PROYECTO: Sistema Integral de Cadena de Supermercados
-# ARCHIVO:  Descargar_Padron_TSE.sh   (version Linux de Descargar_Padron_TSE.ps1)
+# ARCHIVO:  datos/padron/Descargar_Padron_TSE.sh   (version Linux de Descargar_Padron_TSE.ps1)
 # CURSO:    Administracion de Bases de Datos
 # DESCRIPCION:
 #   Descarga padron_completo.zip del TSE y deja PADRON_COMPLETO.txt, DISTELEC.txt

@@ -1,7 +1,7 @@
 /* =====================================================================
    PROYECTO: Sistema Integral de Cadena de Supermercados
    MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
-   ARCHIVO:  07_Standby_y_RMAN/03_Purga_Archivelogs_3Dias.sql
+   ARCHIVO:  sql/07_Standby_y_RMAN/03_Purga_Archivelogs_3Dias.sql
    CURSO:    Administracion de Bases de Datos
    DESCRIPCION:
      Consulta administrativa y procedimiento de monitoreo para identificar
@@ -48,5 +48,5 @@ SELECT file_type,
 PROMPT ============================================================================
 PROMPT NOTA DE ADMINISTRACION:
 PROMPT Para ejecutar la purga fisica de archivos en disco, utilice el script RMAN:
-PROMPT   rman target / cmdfile=07_Standby_y_RMAN/03_Purga_Archivelogs_3Dias.rman
+PROMPT   rman target / cmdfile=sql/07_Standby_y_RMAN/03_Purga_Archivelogs_3Dias.rman
 PROMPT ============================================================================

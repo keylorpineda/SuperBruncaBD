@@ -1,7 +1,7 @@
 -- =====================================================================
 -- PROYECTO: Sistema Integral de Cadena de Supermercados
 -- MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
--- ARCHIVO:  07_Standby_y_RMAN/01_Configuracion_Primaria_Redo_Archive.sql
+-- ARCHIVO:  sql/07_Standby_y_RMAN/01_Configuracion_Primaria_Redo_Archive.sql
 -- CURSO:    Administracion de Bases de Datos
 -- DESCRIPCION:
 --   Prepara la base PRINCIPAL para alimentar al Standby:

@@ -2,7 +2,7 @@
 # ==============================================================================
 # PROYECTO: Sistema Integral de Cadena de Supermercados
 # MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai (Linux)
-# ARCHIVO:  07_Standby_y_RMAN/02_Traslado_Archivelogs_10min_y_Ondemand.sh
+# ARCHIVO:  sql/07_Standby_y_RMAN/02_Traslado_Archivelogs_10min_y_Ondemand.sh
 # CURSO:    Administracion de Bases de Datos
 # DESCRIPCION:
 #   Version Linux del orquestador de tareas del Standby (equivalente al .ps1).
@@ -12,8 +12,8 @@
 #   $1 MODO           principal: ondemand | archivelogs | backup | purga | continuo
 #                     PC standby: crearstandby | aplicarstandby | purgastandby
 #                     (en la PC standby se programan con cron, p.ej.:
-#                      */10 * * * * /opt/oracle/proyecto/07_Standby_y_RMAN/02_...sh aplicarstandby x /opt/oracle/standby_archive x /opt/oracle/standby_backups
-#                      30 3 * * *   /opt/oracle/proyecto/07_Standby_y_RMAN/02_...sh purgastandby  x /opt/oracle/standby_archive x x 3)
+#                      */10 * * * * /opt/oracle/proyecto/sql/07_Standby_y_RMAN/02_...sh aplicarstandby x /opt/oracle/standby_archive x /opt/oracle/standby_backups
+#                      30 3 * * *   /opt/oracle/proyecto/sql/07_Standby_y_RMAN/02_...sh purgastandby  x /opt/oracle/standby_archive x x 3)
 #   $2 RUTA_ORIGEN    archivelogs de la principal       (STANDBY_RUTA_ARCHIVE_ORIGEN)
 #   $3 RUTA_DESTINO   destino en el standby             (STANDBY_RUTA_ARCHIVE_DESTINO)
 #                     admite ruta remota rsync: oracle@pc-standby:/opt/oracle/standby_archive

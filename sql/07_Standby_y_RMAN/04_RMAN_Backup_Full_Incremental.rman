@@ -1,7 +1,7 @@
 # ==============================================================================
 # PROYECTO: Sistema Integral de Cadena de Supermercados
 # MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
-# ARCHIVO:  07_Standby_y_RMAN/04_RMAN_Backup_Full_Incremental.rman
+# ARCHIVO:  sql/07_Standby_y_RMAN/04_RMAN_Backup_Full_Incremental.rman
 # CURSO:    Administracion de Bases de Datos
 # DESCRIPCION:
 #   Respaldo diario de la base de datos PRINCIPAL con Oracle Recovery Manager.

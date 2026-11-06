@@ -5,7 +5,7 @@ from pathlib import Path
 import markdown_it
 import fitz
 
-BASE_DIR = Path(r"C:\Users\Keylo\Documents\UNA\II CICLO 2026\Admin BD\Proyecto")
+BASE_DIR = Path(__file__).resolve().parent  # docs/manuales: aqui estan los .md, el logo y los .pdf
 EDGE_EXE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 
 # Cargar logo oficial de la UNA y codificar en base64 para evitar problemas de ruta en Edge
@@ -388,6 +388,8 @@ def generate_pdf(md_filename: str, output_pdf_filename: str, doc_title: str):
     print(f"[{output_pdf_filename}] Cover Page images count: {len(imgs)}")
     if imgs:
         print(f"   Image rect: {p0.get_image_rects(imgs[0][0])}")
+    doc.close()
+    temp_html_path.unlink(missing_ok=True)  # borrar el HTML temporal
 
 if __name__ == "__main__":
     docs = [

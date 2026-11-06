@@ -666,9 +666,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_PER_PADRON IS
     BEGIN
         SELECT DIRECTORY_PATH INTO v_ruta FROM ALL_DIRECTORIES WHERE DIRECTORY_NAME = 'DIR_PADRON';
         IF v_es_win THEN
-            v_script := fn_param_txt('PADRON_SCRIPT_DESCARGA', 'C:\app\oracle\proyecto\Descargar_Padron_TSE.ps1');
+            v_script := fn_param_txt('PADRON_SCRIPT_DESCARGA', 'C:\app\oracle\proyecto\datos\padron\Descargar_Padron_TSE.ps1');
         ELSE
-            v_script := fn_param_txt('PADRON_SCRIPT_DESCARGA', '/opt/oracle/proyecto/Descargar_Padron_TSE.sh');
+            v_script := fn_param_txt('PADRON_SCRIPT_DESCARGA', '/opt/oracle/proyecto/datos/padron/Descargar_Padron_TSE.sh');
         END IF;
 
         -- Job externo de descarga (lo ejecuta JOB_PADRON_MENSUAL; no tiene horario propio)
