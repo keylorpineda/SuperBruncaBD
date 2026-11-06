@@ -75,7 +75,8 @@ DECLARE
     v_arch VARCHAR2(512);
     v_pos  NUMBER;
 BEGIN
-    SELECT file_name INTO v_arch FROM dba_data_files WHERE ROWNUM = 1;
+    -- Carpeta del tablespace SYSTEM del PDB: estable entre reinstalaciones (no un datafile OMF cualquiera)
+    SELECT file_name INTO v_arch FROM dba_data_files WHERE tablespace_name = 'SYSTEM' AND ROWNUM = 1;
     v_pos  := GREATEST(INSTR(v_arch, '/', -1), INSTR(v_arch, '\', -1));
     v_ruta := SUBSTR(v_arch, 1, v_pos - 1);
 
@@ -266,7 +267,7 @@ CREATE TABLE CAT_PADRON (
     ID_DISTRITO           NUMBER(10),
     CEDULA_PADR           VARCHAR2(15)  NOT NULL,
     COD_ELECTORAL_PADR    VARCHAR2(6)   NOT NULL,
-    SEXO_PADR             VARCHAR2(1)   DEFAULT 'M' NOT NULL,
+    SEXO_PADR             VARCHAR2(1)   DEFAULT 'N' NOT NULL,
     FECHA_VENC_CED_PADR   DATE          NOT NULL,
     JUNTA_RECEPTORA_PADR  VARCHAR2(5)   DEFAULT '00000' NOT NULL,
     NOMBRE_PADR           VARCHAR2(40)  NOT NULL,
@@ -284,7 +285,7 @@ CREATE TABLE CAT_PADRON (
     CONSTRAINT UK_PADR_CEDULA UNIQUE (CEDULA_PADR)
         USING INDEX TABLESPACE TBS_INDICES,
     CONSTRAINT CK_PADR_CEDULA CHECK (REGEXP_LIKE(CEDULA_PADR, '^[1-9][0-9]{8}$')),
-    CONSTRAINT CK_PADR_SEXO CHECK (SEXO_PADR IN ('M','F','O')),
+    CONSTRAINT CK_PADR_SEXO CHECK (SEXO_PADR IN ('M','F','O','N')),
     CONSTRAINT CK_PADR_ESTADO CHECK (ESTADO_PADR IN ('A','I'))
 ) TABLESPACE TBS_DATOS;
 
@@ -293,7 +294,7 @@ COMMENT ON COLUMN CAT_PADRON.ID_PADRON            IS 'Identificador unico del re
 COMMENT ON COLUMN CAT_PADRON.ID_DISTRITO          IS 'Distrito electoral asociado. FK a CAT_DISTRITO.';
 COMMENT ON COLUMN CAT_PADRON.CEDULA_PADR          IS 'Numero de cedula de identidad costarricense (9 digitos).';
 COMMENT ON COLUMN CAT_PADRON.COD_ELECTORAL_PADR   IS 'Codigo electoral de 6 digitos del TSE (Provincia-Canton-Distrito).';
-COMMENT ON COLUMN CAT_PADRON.SEXO_PADR            IS 'Sexo registrado: M=Masculino, F=Femenino, O=Otro.';
+COMMENT ON COLUMN CAT_PADRON.SEXO_PADR            IS 'Sexo registrado: M=Masculino, F=Femenino, O=Otro, N=No indicado (el padron del TSE no publica el sexo: su campo 3 es RELLENO).';
 COMMENT ON COLUMN CAT_PADRON.FECHA_VENC_CED_PADR  IS 'Fecha de vencimiento de la cedula de identidad.';
 COMMENT ON COLUMN CAT_PADRON.JUNTA_RECEPTORA_PADR IS 'Numero de junta receptora de votos.';
 COMMENT ON COLUMN CAT_PADRON.NOMBRE_PADR          IS 'Nombre de pila oficial segun el TSE.';
@@ -332,7 +333,7 @@ COMMENT ON COLUMN CAT_DISTRITO_ELECTORAL.FECHA_ACT_DIEL     IS 'Fecha de la ulti
 CREATE TABLE EXT_PADRON_TSE (
     CEDULA      VARCHAR2(20),
     CODELEC     VARCHAR2(20),
-    SEXO        VARCHAR2(5),
+    SEXO        VARCHAR2(5),     -- campo 3 del TSE = RELLENO (el padron oficial no publica el sexo)
     FECHACADUC  VARCHAR2(20),
     JUNTA       VARCHAR2(20),
     NOMBRE      VARCHAR2(100),

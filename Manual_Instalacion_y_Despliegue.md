@@ -210,7 +210,7 @@ El enunciado pide cargar el padrón **con la información actual**. Las pruebas 
    .\Descargar_Padron_TSE.ps1 -Destino <carpeta de DIR_PADRON>
    ```
    En Docker: `docker exec -it oracle_una bash /opt/oracle/proyecto/Descargar_Padron_TSE.sh https://www.tse.go.cr/zip/padron/padron_completo.zip <carpeta>`
-3. Cargarlo (~3,7 millones de personas; tarda algunos minutos):
+3. Cargarlo. Verificado en Oracle 26ai Free (Docker) con el padrón del 30/09/2026: 3.762.240 personas, 0 rechazos, 2.179 distritos electorales, unos 39 minutos y 553 MB. Las cargas mensuales siguientes solo reescriben a las personas que cambiaron. El padrón oficial no publica el sexo (su campo 3 es `RELLENO`), por eso se guarda `N` = no indicado.
    ```sql
    SET SERVEROUTPUT ON
    EXEC CADENA_NEG.PKG_PER_PADRON.PR_CARGAR_PADRON_MASIVO;

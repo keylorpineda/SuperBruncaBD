@@ -213,7 +213,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_PER_PADRON IS
                               WHEN UPPER(v_sexo) IN ('M','F','O') THEN UPPER(v_sexo)
                               WHEN v_sexo = '1' THEN 'M'
                               WHEN v_sexo = '2' THEN 'F'
-                              ELSE 'O'
+                              ELSE 'N'   -- el padron oficial no trae sexo (campo RELLENO)
                           END;
 
                 BEGIN
@@ -363,7 +363,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_PER_PADRON IS
                 SEXO_PEFI, FECHA_NACIMIENTO_PEFI, ID_PAIS_NACIONALIDAD, ID_PAIS_RESIDENCIA, ES_ASEGURADO_PEFI
             ) VALUES (
                 v_id_pers, 'N', INITCAP(r_padron.NOMBRE_PADR), INITCAP(r_padron.APELLIDO1_PADR),
-                INITCAP(r_padron.APELLIDO2_PADR), r_padron.SEXO_PADR,
+                INITCAP(r_padron.APELLIDO2_PADR),
+                -- El padron oficial no trae sexo (N); PER_PERSONA_FISICA solo acepta M/F/O
+                CASE r_padron.SEXO_PADR WHEN 'N' THEN 'O' ELSE r_padron.SEXO_PADR END,
                 ADD_MONTHS(TRUNC(SYSDATE), -300), v_id_pais, v_id_pais, 'S'
             );
         ELSE
@@ -376,7 +378,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_PER_PADRON IS
                SET NOMBRE_PEFI      = INITCAP(r_padron.NOMBRE_PADR),
                    APELLIDO1_PEFI   = INITCAP(r_padron.APELLIDO1_PADR),
                    APELLIDO2_PEFI   = INITCAP(r_padron.APELLIDO2_PADR),
-                   SEXO_PEFI        = r_padron.SEXO_PADR,
+                   -- si el padron no indica el sexo (N) se conserva el registrado en la persona
+                   SEXO_PEFI        = CASE r_padron.SEXO_PADR WHEN 'N' THEN SEXO_PEFI ELSE r_padron.SEXO_PADR END,
                    USUARIO_MOD_PEFI = USER,
                    FECHA_MOD_PEFI   = SYSTIMESTAMP
              WHERE ID_PERSONA_FISICA = v_id_pers;
@@ -529,7 +532,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_PER_PADRON IS
                   FROM (SELECT TRIM(CEDULA) AS cedula,
                                SUBSTR(TRIM(CODELEC), 1, 6) AS codelec,
                                CASE TRIM(SEXO) WHEN '1' THEN 'M' WHEN '2' THEN 'F'
-                                               WHEN 'M' THEN 'M' WHEN 'F' THEN 'F' ELSE 'O' END AS sexo,
+                                               WHEN 'M' THEN 'M' WHEN 'F' THEN 'F' ELSE 'N' END AS sexo,   -- campo 3 = RELLENO en el TSE
                                CASE WHEN REGEXP_LIKE(TRIM(FECHACADUC), '^(19|20)[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$')
                                     THEN TO_DATE(TRIM(FECHACADUC), 'YYYYMMDD')
                                     ELSE ADD_MONTHS(TRUNC(SYSDATE), 60) END AS fecha_venc,
