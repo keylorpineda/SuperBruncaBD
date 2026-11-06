@@ -522,6 +522,7 @@ CREATE OR REPLACE PACKAGE BODY CADENA_NEG.PKG_ADM_STANDBY IS
         v_seq_prim    NUMBER;
         v_seq_stby    NUMBER;
         v_regs_dest2  NUMBER;
+        v_gap         VARCHAR2(30);
         v_estado_dest VARCHAR2(30);
         v_error_dest  VARCHAR2(256);
         v_problemas   VARCHAR2(4000);
@@ -569,18 +570,23 @@ CREATE OR REPLACE PACKAGE BODY CADENA_NEG.PKG_ADM_STANDBY IS
         --    En modo manual (XE/Free) la principal no ve el standby: el avance lo
         --    garantiza el traslado (punto 1) y se revisa en la PC standby.
         BEGIN
-            EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM v$archived_log WHERE dest_id = 2' INTO v_regs_dest2;
+            -- Destino 2 configurado = Data Guard (Enterprise). V$ARCHIVE_DEST_STATUS da lo
+            -- enviado y lo aplicado de la encarnacion actual (sirve tambien tras un failover).
+            EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM v$archive_dest_status WHERE dest_id = 2 AND status <> ''INACTIVE'''
+                         INTO v_regs_dest2;
             IF v_regs_dest2 > 0 THEN
-                EXECUTE IMMEDIATE 'SELECT NVL(MAX(sequence#), 0) FROM v$archived_log WHERE dest_id = 1' INTO v_seq_prim;
-                EXECUTE IMMEDIATE 'SELECT NVL(MAX(sequence#), 0) FROM v$archived_log WHERE dest_id = 2 AND applied = ''YES''' INTO v_seq_stby;
-                registrar('REDO_APLICADO', v_seq_prim - v_seq_stby, 2,
-                          CASE WHEN v_seq_prim - v_seq_stby > 2 THEN 'S' ELSE 'N' END,
-                          'Data Guard: secuencia generada ' || v_seq_prim || ', aplicada en Standby ' || v_seq_stby || '.');
-
-                EXECUTE IMMEDIATE 'SELECT status, error FROM v$archive_dest_status WHERE dest_id = 2'
-                             INTO v_estado_dest, v_error_dest;
+                EXECUTE IMMEDIATE 'SELECT archived_seq# FROM v$archive_dest_status WHERE dest_id = 1' INTO v_seq_prim;
+                EXECUTE IMMEDIATE 'SELECT status, error, applied_seq#, gap_status FROM v$archive_dest_status WHERE dest_id = 2'
+                             INTO v_estado_dest, v_error_dest, v_seq_stby, v_gap;
+                -- APPLIED_SEQ# visto desde la principal se actualiza con retraso y
+                -- 'LOG SWITCH GAP' es pasajero: solo se alerta un hueco real de archivelogs.
+                registrar('REDO_APLICADO', v_seq_prim - v_seq_stby, NULL,
+                          CASE WHEN v_gap IN ('RESOLVABLE GAP', 'UNRESOLVABLE GAP', 'LOCALLY UNRESOLVABLE GAP')
+                               THEN 'S' ELSE 'N' END,
+                          'Data Guard: archivada ' || v_seq_prim || ', aplicada en Standby ' || v_seq_stby
+                          || ', huecos: ' || NVL(v_gap, 'N/D') || '.');
                 registrar('LOG_ARCHIVE_DEST_2', NULL, NULL,
-                          CASE WHEN v_estado_dest IN ('VALID', 'DEFERRED', 'INACTIVE') THEN 'N' ELSE 'S' END,
+                          CASE WHEN v_estado_dest IN ('VALID', 'DEFERRED') THEN 'N' ELSE 'S' END,
                           'Destino Standby: ' || v_estado_dest || NVL2(v_error_dest, ' - ' || v_error_dest, ''));
             ELSE
                 registrar('REDO_APLICADO', NULL, NULL, 'N',

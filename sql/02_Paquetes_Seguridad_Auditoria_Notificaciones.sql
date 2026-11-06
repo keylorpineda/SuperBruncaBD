@@ -622,17 +622,23 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
         BEGIN
             IF v_port = 465 THEN
                 -- Canal seguro SSL/TLS nativo (SMTPS puerto 465)
+                -- El wallet (SMTP_WALLET_PATH) trae los certificados raiz de Gmail;
+                -- sin el, Oracle 21c responde ORA-29024 (sql/08_Wallet_SMTP_Gmail.sh)
                 v_conn := UTL_SMTP.OPEN_CONNECTION(
                     host => v_host,
                     port => v_port,
                     tx_timeout => 10,
+                    wallet_path => v_wallet_path,
+                    wallet_password => v_wallet_pwd,
                     secure_connection_before_smtp => TRUE
                 );
             ELSE
                 v_conn := UTL_SMTP.OPEN_CONNECTION(
                     host => v_host,
                     port => v_port,
-                    tx_timeout => 10
+                    tx_timeout => 10,
+                    wallet_path => v_wallet_path,
+                    wallet_password => v_wallet_pwd
                 );
             END IF;
 
