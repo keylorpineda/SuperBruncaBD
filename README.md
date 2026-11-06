@@ -40,6 +40,7 @@ Oracle Database 21c Enterprise Edition (imagen Docker `container-registry.oracle
 ## Empiece aquí
 
 1. [Guía paso a paso](docs/GUIA_PASO_A_PASO.md): instalar todo desde cero en las dos computadoras.
+   - **¿Usted pone la segunda PC (standby)?** Siga [la guía del compañero](docs/GUIA_COMPANERO_PC_STANDBY.md): desde instalar Docker hasta la defensa, paso a paso.
 2. [Guía del padrón del TSE](docs/GUIA_PADRON_TSE.md): dónde va el archivo del padrón y cómo cargarlo.
 3. [Guía de la defensa](docs/GUIA_DEFENSA.md): qué archivo cumple cada requisito y qué ejecutar en vivo.
 

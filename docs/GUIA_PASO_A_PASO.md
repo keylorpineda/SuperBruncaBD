@@ -6,6 +6,9 @@ Los detalles técnicos están en los manuales oficiales de `docs/manuales/`. Aqu
 
 ---
 
+
+> **¿Le toca la PC standby?** Hay una guía solo para usted, con cada comando desde instalar Docker: [GUIA_COMPANERO_PC_STANDBY.md](GUIA_COMPANERO_PC_STANDBY.md).
+
 ## 1. Las dos bases y dónde corren
 
 | Base | Nombre (`DB_UNIQUE_NAME`) | Contenedor Docker | Qué corre ahí |
