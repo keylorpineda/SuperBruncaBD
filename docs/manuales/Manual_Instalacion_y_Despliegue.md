@@ -25,14 +25,14 @@ El presente manual describe paso a paso el procedimiento oficial para la instala
 
 ### 1.1 Requisitos de Hardware y Software
 * **Sistema Operativo:** Microsoft Windows 10/11 Pro/Enterprise o GNU/Linux (Ubuntu 22.04 LTS+, Oracle Linux 8/9).
-* **Motor de Base de Datos:** Oracle Database 21c Enterprise/XE, 23ai Free o 26ai Free con arquitectura multitenant y al menos un Pluggable Database (PDB) en modo `READ WRITE` (ej. `FREEPDB1`).
-* **Virtualización / Contenedores:** Docker Desktop 4.x+ con motor Linux y contenedor Oracle activo (ej. `oracle_una`), o bien instalación bare-metal / máquina virtual.
+* **Motor de Base de Datos:** **Oracle Database 21c Enterprise Edition** (la versión que pide el enunciado; incluye Data Guard para el Standby), con arquitectura multitenant: CDB `CADENA` y PDB `PDBCADENA` en modo `READ WRITE`. La instalación también funciona en XE o Free, pero el Standby queda en modo manual.
+* **Virtualización / Contenedores:** Docker Desktop 4.x+ con motor Linux y la imagen oficial `container-registry.oracle.com/database/enterprise:21.3.0.0` (contenedores `ora_principal` y `ora_standby`, ver `sql/07_Standby_y_RMAN/docker/README.md`), o bien instalación nativa / máquina virtual con Oracle 21c EE.
 * **Herramientas de Conexión:**
   * Oracle SQL\*Plus (versión 21c+).
   * Oracle SQL Developer 23.x+ o DBeaver Community.
   * Oracle Recovery Manager (`rman`).
 * **Intérprete de Comandos:** Windows PowerShell 5.1 / PowerShell 7+ o GNU Bash.
-* **Almacenamiento:** Mínimo 15 GB de espacio libre en disco para datafiles, redo logs multiplexados, respaldos RMAN y archivado continuo.
+* **Memoria y almacenamiento:** cada contenedor usa hasta 2,5 GB de RAM (`--memory 2560m`, SGA 1024 MB, PGA 300 MB). Mínimo 15 GB libres en disco por base para datafiles, redo logs multiplexados, respaldos RMAN y archivado continuo.
 
 ### 1.2 Parámetros de Red y Correo
 * **Puerto de Base de Datos:** 1521 TCP (Listener Oracle).
@@ -57,6 +57,8 @@ La solución se entrega organizada en scripts modulares e independientes, gobern
 | `sql/06_Scheduler_Optimizacion_y_Pruebas.sql` | PL/SQL | 5 Jobs DBMS_SCHEDULER, EXPLAIN PLAN y 12 suites de prueba de extremo a extremo. |
 | `sql/07_Standby_y_RMAN/` | Directorio | Configuración de la principal (redo 50 MB / 5 min), creación y sincronización de la standby en la segunda PC, RMAN, purga, switchover y failover. |
 | `sql/07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql` | PL/SQL | Paquete `PKG_ADM_STANDBY` y 4 jobs DBMS_SCHEDULER: traslado cada 10 min, respaldo RMAN diario, purga de 3 días y monitoreo. |
+| `sql/07_Standby_y_RMAN/docker/` | Configuración | `README.md` para levantar los contenedores `ora_principal` y `ora_standby`, y los archivos de red de Data Guard `tnsnames_dataguard.ora` y `listener_standby.ora`. El archivo local `oracle_ee.env` (clave) no se versiona. |
+| `sql/08_Wallet_SMTP_Gmail.sh` | Script SO | Crea el Oracle Wallet auto-login con los certificados raíz de Gmail para `UTL_SMTP` y registra `SMTP_WALLET_PATH` (Paso 8). |
 | `datos/padron/Descargar_Padron_TSE.ps1` / `.sh` | Script SO | Descarga `padron_completo.zip` del TSE y deja `PADRON_COMPLETO.txt` y `DISTELEC.txt` en `DIR_PADRON`. |
 | `datos/padron/padron_muestra.csv` | Datos externos | Archivo CSV muestra del padrón electoral para prueba de UTL_FILE. |
 | `docs/manuales/` | Documentación | Los 3 manuales oficiales (`.md` y `.pdf`) y `generar_manuales_pdf.py`, que regenera los PDF. |
@@ -70,29 +72,34 @@ La solución se entrega organizada en scripts modulares e independientes, gobern
 Todos los scripts han sido desarrollados con **idempotencia estricta**. Esto garantiza que el instalador maestro puede ejecutarse repetidamente sobre una base de datos limpia o en operación, detectando el PDB abierto, eliminando estructuras obsoletas de corridas previas y recreando el ambiente con **cero errores y cero objetos inválidos**.
 
 ### Opción A: Despliegue en Contenedor Docker (Recomendado)
-Si la base de datos se ejecuta dentro de un contenedor Docker (ej. `oracle_una`):
+Si la base de datos se ejecuta en el contenedor Docker de la principal, `ora_principal` (cómo crearlo: `sql/07_Standby_y_RMAN/docker/README.md`):
 
-1. **Copiar los archivos al contenedor** (desde la raíz del repositorio):
+1. **Copiar los archivos al contenedor y darle los permisos al usuario `oracle`** (desde la raíz del repositorio):
    ```powershell
-   docker cp . oracle_una:/opt/oracle/proyecto/
+   docker cp . ora_principal:/opt/oracle/proyecto
+   docker exec -u root ora_principal chown -R oracle:oinstall /opt/oracle/proyecto
    ```
 
 2. **Crear la base del Entregable #1 y ejecutar el instalador maestro como SYSDBA** (desde la carpeta `sql`):
    ```powershell
-   docker exec -i -w /opt/oracle/proyecto/sql oracle_una sqlplus -s / as sysdba '@script_bd_v2.sql'
-   docker exec -i -w /opt/oracle/proyecto/sql oracle_una sqlplus -s / as sysdba '@00_Master_Instalacion_Avance2.sql'
+   docker exec -i -u oracle -w /opt/oracle/proyecto/sql ora_principal sqlplus -s / as sysdba '@script_bd_v2.sql'
+   docker exec -i -u oracle -w /opt/oracle/proyecto/sql ora_principal sqlplus -s / as sysdba '@00_Master_Instalacion_Avance2.sql'
    ```
+
+   Verificado en Oracle 21c EE: 0 objetos inválidos y el mensaje `LAS 12 PRUEBAS ... 100% DE EXITO`.
 
 ### Opción B: Despliegue desde SQL\*Plus Local o SQL Developer
 Si se conecta vía red o mediante cliente local, ubíquese en la carpeta `sql` del repositorio:
 
 ```bash
 cd sql
-sqlplus sys/TuPassword@localhost:1521/FREEPDB1 as sysdba @script_bd_v2.sql
-sqlplus sys/TuPassword@localhost:1521/FREEPDB1 as sysdba @00_Master_Instalacion_Avance2.sql
+sqlplus sys/TuPassword@localhost:1531/PDBCADENA as sysdba @script_bd_v2.sql
+sqlplus sys/TuPassword@localhost:1531/PDBCADENA as sysdba @00_Master_Instalacion_Avance2.sql
 ```
 
-> **Nota para SQL Developer:** Abra el archivo `sql/00_Master_Instalacion_Avance2.sql` y presione **F5** (*Run Script*), asegurando que la conexión apunte a `FREEPDB1`. El maestro incluye `@@07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql`, que se resuelve respecto de la carpeta `sql`.
+`1531` es el puerto publicado del contenedor `ora_principal`; en una instalación nativa use `1521`.
+
+> **Nota para SQL Developer:** Abra el archivo `sql/00_Master_Instalacion_Avance2.sql` y presione **F5** (*Run Script*), asegurando que la conexión apunte a `PDBCADENA`. El maestro incluye `@@07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql`, que se resuelve respecto de la carpeta `sql`.
 
 ---
 
@@ -101,7 +108,7 @@ sqlplus sys/TuPassword@localhost:1521/FREEPDB1 as sysdba @00_Master_Instalacion_
 El script maestro ejecuta de forma consecutiva las siete fases del avance:
 
 ### Paso 1: Estructuras DDL, Tablas Nuevas y Vistas Materializadas (`01_Estructuras_Avance2.sql`)
-1. Detecta automáticamente el PDB activo (`FREEPDB1`) y conmuta la sesión mediante `ALTER SESSION SET CONTAINER`.
+1. Detecta automáticamente el PDB activo (`PDBCADENA`) y conmuta la sesión mediante `ALTER SESSION SET CONTAINER`.
 2. Configura el directorio lógico `DIR_PADRON` apuntando a la ruta física de datos para carga de archivos con `UTL_FILE`.
 3. Ejecuta limpieza idempotente de tablas, secuencias y vistas materializadas preexistentes.
 4. Modifica tablas base del Entregable #1 adicionando columnas de enlace electoral (`ID_PADRON` en `PER_CLIENTE`).
@@ -203,12 +210,44 @@ Compila 21 disparadores en estado `ENABLED`:
    EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_REGISTRAR_CREDENCIAL_OS('usuario_windows', 'clave_windows');
    ```
 
-La configuración de la segunda computadora (standby) se detalla en el **Manual de Administración del Standby**.
+En Docker el usuario es `oracle`, que en la imagen no tiene clave: asígnele una con `docker exec -it -u root ora_principal passwd oracle` antes de registrarla. (Pendiente de verificar en Docker; mientras tanto los mismos trabajos se ejecutan a mano con el orquestador `02_Traslado_Archivelogs_10min_y_Ondemand.sh`.)
 
-### Paso 8: Carga del Padrón Nacional Electoral oficial (TSE)
+La configuración de la segunda computadora (standby con Data Guard) se detalla en la sección 11 del **Manual de Administración del Standby**.
+
+### Paso 8: Oracle Wallet para el correo SSL/TLS (`sql/08_Wallet_SMTP_Gmail.sh`)
+Gmail solo acepta conexiones cifradas. En Oracle 21c, sin un wallet con los certificados raíz de Google, el envío falla con `ORA-29024: Certificate validation failure`.
+
+1. Ejecutar el script como usuario `oracle` en el servidor (en Docker, desde Windows):
+   ```powershell
+   docker exec -u oracle ora_principal bash /opt/oracle/proyecto/sql/08_Wallet_SMTP_Gmail.sh
+   ```
+2. El script toma del propio Linux los certificados raíz **GTS Root R1-R4** y **GlobalSign Root CA**, crea un wallet auto-login (`cwallet.sso`) en `/opt/oracle/oradata/wallet_smtp` y registra la ruta en `SEG_PARAMETRO` (`SMTP_WALLET_PATH = file:/opt/oracle/oradata/wallet_smtp`). Debe terminar con `[OK] Wallet listo.`
+3. Verificado en Oracle 21c EE: después del wallet el `ORA-29024` desaparece y el siguiente error es `535` (*Username and Password not accepted*) hasta guardar la clave de aplicación real (Paso 9).
+
+**Windows nativo (alternativa, no probada en este proyecto):** el mismo concepto con `orapki`. Se exportan desde `certmgr.msc` los certificados raíz GTS Root R1-R4 y GlobalSign Root CA en formato Base 64 (`.cer`) y luego:
+```bat
+orapki wallet create -wallet C:\app\oracle\wallet_smtp -pwd <clave del wallet> -auto_login
+orapki wallet add -wallet C:\app\oracle\wallet_smtp -trusted_cert -cert C:\temp\GTS_Root_R1.cer -pwd <clave del wallet>
+```
+(un `wallet add` por certificado) y se registra la ruta:
+```sql
+EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('SMTP_WALLET_PATH', 'CORREO', 'Ruta del Oracle Wallet SMTP', 'Wallet auto-login con los certificados raiz de Gmail para UTL_SMTP (SSL/TLS).', 'N', 'file:C:\app\oracle\wallet_smtp');
+```
+
+### Paso 9: Clave de aplicación de Gmail
+La clave sembrada por el instalador es solo de ejemplo. Antes de la defensa:
+
+1. En la cuenta de Google del correo emisor: **Gestionar tu cuenta** → **Seguridad** → **Verificación en 2 pasos** → **Contraseñas de aplicaciones**. Crear una y copiar las 16 letras.
+2. Guardarla cifrada con AES-256 (en `PDBCADENA`):
+   ```sql
+   EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', '<clave de aplicacion de 16 letras>');
+   ```
+3. Probar: `EXEC CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_PRODUCTOS_VENCIDOS;` y revisar `CADENA_NEG.AUD_ERROR_SISTEMA` si no llega.
+
+### Paso 10: Carga del Padrón Nacional Electoral oficial (TSE)
 El enunciado pide cargar el padrón **con la información actual**. Las pruebas del paso 6 usan un archivo pequeño (`PADRON_PRUEBA.TXT`); el padrón real se carga así:
 
-1. Ver la carpeta del directorio `DIR_PADRON`:
+1. Ver la carpeta del directorio `DIR_PADRON` (en Docker: `/opt/oracle/oradata/CADENA/PDBCADENA`):
    ```sql
    SELECT directory_path FROM all_directories WHERE directory_name = 'DIR_PADRON';
    ```
@@ -216,7 +255,7 @@ El enunciado pide cargar el padrón **con la información actual**. Las pruebas 
    ```powershell
    .\datos\padron\Descargar_Padron_TSE.ps1 -Destino <carpeta de DIR_PADRON>
    ```
-   En Docker: `docker exec -it oracle_una bash /opt/oracle/proyecto/datos/padron/Descargar_Padron_TSE.sh https://www.tse.go.cr/zip/padron/padron_completo.zip <carpeta>`
+   En Docker: `docker exec -it -u oracle ora_principal bash /opt/oracle/proyecto/datos/padron/Descargar_Padron_TSE.sh https://www.tse.go.cr/zip/padron/padron_completo.zip /opt/oracle/oradata/CADENA/PDBCADENA`
 3. Cargarlo. Verificado en Oracle 26ai Free (Docker) con el padrón del 30/09/2026: 3.762.240 personas, 0 rechazos, 2.179 distritos electorales, unos 39 minutos y 553 MB. Las cargas mensuales siguientes solo reescriben a las personas que cambiaron. El padrón oficial no publica el sexo (su campo 3 es `RELLENO`), por eso se guarda `N` = no indicado.
    ```sql
    SET SERVEROUTPUT ON
@@ -226,9 +265,6 @@ El enunciado pide cargar el padrón **con la información actual**. Las pruebas 
 4. Desde entonces `JOB_PADRON_MENSUAL` lo descarga y recarga solo el día `PADRON_DIA_CARGA` (5) de cada mes. La descarga automática usa la misma credencial del SO del paso 7.
 
 Las líneas rechazadas quedan en `padron_tse.bad` y el detalle en `padron_tse.log`, dentro de la misma carpeta.
-
-> **Antes de la defensa:** reemplazar la clave de aplicación de Gmail sembrada como ejemplo:
-> `EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', '<clave de aplicacion de 16 letras>');`
 
 ---
 
@@ -277,7 +313,7 @@ SELECT codigo_para, valor_texto_para
    * *Causa:* La sesión de SQL\*Plus se encuentra conectada en `CDB$ROOT` en lugar de un PDB.
    * *Solución:* Todos los scripts del proyecto incluyen detección dinámica de contenedor. Si ejecuta comandos manuales, ejecute primero:
      ```sql
-     ALTER SESSION SET CONTAINER = FREEPDB1;
+     ALTER SESSION SET CONTAINER = PDBCADENA;
      ```
 
 2. **Error `ORA-24247: network access denied by access control list (ACL)`:**
@@ -296,7 +332,11 @@ SELECT codigo_para, valor_texto_para
      /
      ```
 
-3. **Bloqueo de Cuenta por Intentos Fallidos (`ORA-28000: the account is locked`):**
+3. **Error `ORA-29024: Certificate validation failure` al enviar correo:**
+   * *Causa:* Oracle no tiene un wallet con los certificados raíz de Gmail.
+   * *Solución:* Paso 8 (`sql/08_Wallet_SMTP_Gmail.sh`). Si después aparece `535`, falta la clave de aplicación real (Paso 9).
+
+4. **Bloqueo de Cuenta por Intentos Fallidos (`ORA-28000: the account is locked`):**
    * *Causa:* Se superó el umbral de 3 intentos fallidos establecido en `PERFIL_CADENA_ADMIN` o `PERFIL_CADENA_OPER`.
    * *Solución:* Desbloquee el usuario desde SYSDBA:
      ```sql

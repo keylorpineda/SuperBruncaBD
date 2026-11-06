@@ -1,0 +1,11 @@
+
+# ==============================================================================
+# Servicio estatico del listener para la STANDBY (Data Guard, Oracle 21c EE)
+# Se AGREGA SOLO en la standby, al final de
+# /opt/oracle/oradata/dbconfig/CADENA/listener.ora, y luego:  lsnrctl reload
+#
+# Registra el servicio CADENA_STBY aunque la instancia este en NOMOUNT, para que
+# la principal (y RMAN) puedan conectarse mientras se crea la standby.
+# ==============================================================================
+
+SID_LIST_LISTENER=(SID_LIST=(SID_DESC=(GLOBAL_DBNAME=CADENA_STBY)(ORACLE_HOME=/opt/oracle/product/21c/dbhome_1)(SID_NAME=CADENA)))

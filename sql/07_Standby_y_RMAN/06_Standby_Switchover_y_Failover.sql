@@ -34,38 +34,56 @@ SELECT thread#, MAX(sequence#) AS ultima_secuencia_recibida,
 -- Consultar si existen gaps en la Standby
 SELECT * FROM v$archive_gap;
 
+-- Data Guard (21c Enterprise). Despues de un failover la numeracion de
+-- archivelogs reinicia (nueva encarnacion): por eso se mira el destino 2.
+-- En la principal: debe dar VALID / NO GAP
+SELECT dest_id, status, error, gap_status FROM v$archive_dest_status WHERE dest_id = 2;
+-- En la standby: transport lag y apply lag en +00 00:00:00
+SELECT name, value FROM v$dataguard_stats WHERE name LIKE '%lag';
+-- En la standby: MRP0 en APPLYING_LOG y procesos RFS recibiendo
+SELECT process, status, sequence# FROM v$managed_standby;
+
 
 PROMPT ============================================================================
 PROMPT 2. PROCEDIMIENTO DE SWITCHOVER (CONMUTACION PLANIFICADA DE ROLES)
 PROMPT ============================================================================
 
 /*
-   PASO A: EN EL SERVIDOR PRIMARIO (CADENA_PRIM)
-   1. Verificar si la base de datos esta lista para el switchover:
-      SELECT SWITCHOVER_STATUS FROM V$DATABASE;
-      (Debe devolver 'TO STANDBY' o 'SESSIONS ACTIVE')
+   DATA GUARD (Oracle 21c Enterprise) - sintaxis 12c+ VERIFICADA en el proyecto
+   Principal: DB_UNIQUE_NAME = CADENA       Standby: DB_UNIQUE_NAME = CADENA_STBY
+   Procedimiento completo: docs/manuales/Manual_Administracion_Standby.md, seccion 11.
 
-   2. Cambiar la Primaria a rol Standby:
-      ALTER DATABASE COMMIT TO SWITCHOVER TO PHYSICAL STANDBY WITH SESSION SHUTDOWN;
+   PASO A: EN LA PRINCIPAL (CADENA)
+   1. Comprobar que el cambio de roles es posible (no cambia nada):
+      ALTER DATABASE SWITCHOVER TO CADENA_STBY VERIFY;
+      (Si responde "Database altered." esta lista; si no, el error dice que falta)
 
-   3. Reiniciar la antigua primaria en modo MOUNT como Standby:
-      SHUTDOWN IMMEDIATE;
-      STARTUP MOUNT;
+   2. Cambiar los roles:
+      ALTER DATABASE SWITCHOVER TO CADENA_STBY;
+      La antigua principal se convierte en standby y se APAGA
+      (en Docker el contenedor se detiene: docker start ora_principal).
 
-   PASO B: EN EL SERVIDOR STANDBY (CADENA_STBY)
-   1. Verificar estado de la standby:
-      SELECT SWITCHOVER_STATUS FROM V$DATABASE;
-      (Debe devolver 'TO PRIMARY' o 'SWITCHOVER PENDING')
-
-   2. Promover la Standby a Primaria:
-      ALTER DATABASE COMMIT TO SWITCHOVER TO PRIMARY WITH SESSION SHUTDOWN;
-
-   3. Abrir la nueva base de datos primaria:
+   PASO B: EN LA NUEVA PRINCIPAL (CADENA_STBY)
       ALTER DATABASE OPEN;
+      ALTER PLUGGABLE DATABASE ALL OPEN;
 
-   PASO C: ACTIVAR APLICACION DE REDO EN LA NUEVA STANDBY
-   1. En la antigua primaria (ahora Standby):
-      ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT FROM SESSION;
+   PASO C: EN LA ANTIGUA PRINCIPAL (ahora standby)
+      STARTUP MOUNT;          -- si el contenedor la abrio sola queda READ ONLY (tambien sirve)
+      ALTER DATABASE RECOVER MANAGED STANDBY DATABASE USING CURRENT LOGFILE DISCONNECT FROM SESSION;
+
+   PARA VOLVER A LOS ROLES ORIGINALES (desde la que sea principal en ese momento):
+      ALTER DATABASE SWITCHOVER TO CADENA VERIFY;
+      ALTER DATABASE SWITCHOVER TO CADENA;
+      y los pasos B y C al reves.
+
+   ALTERNATIVA ANTIGUA (sintaxis anterior a 12c, sigue funcionando):
+      Principal: SELECT SWITCHOVER_STATUS FROM V$DATABASE;   -- 'TO STANDBY' o 'SESSIONS ACTIVE'
+                 ALTER DATABASE COMMIT TO SWITCHOVER TO PHYSICAL STANDBY WITH SESSION SHUTDOWN;
+                 SHUTDOWN IMMEDIATE;  STARTUP MOUNT;
+      Standby:   SELECT SWITCHOVER_STATUS FROM V$DATABASE;   -- 'TO PRIMARY' o 'SESSIONS ACTIVE'
+                 ALTER DATABASE COMMIT TO SWITCHOVER TO PRIMARY WITH SESSION SHUTDOWN;
+                 ALTER DATABASE OPEN;
+      Antigua principal: ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT FROM SESSION;
 */
 
 
@@ -77,22 +95,36 @@ PROMPT =========================================================================
    ESCENARIO: El servidor Primario sufrio destruccion fisica o falla irrecuperable.
    Se debe activar inmediatamente la base de datos Standby para asumir la produccion.
 
-   PASO 1: EN EL SERVIDOR STANDBY
-   1. Detener el proceso de recuperacion continua:
+   DATA GUARD (Oracle 21c Enterprise) - sintaxis 12c+ VERIFICADA en el proyecto
+   (prueba: se inserto una venta en la principal y se hizo docker kill ora_principal)
+
+   PASO 1: EN LA STANDBY (CADENA_STBY)
       ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
+      ALTER DATABASE FAILOVER TO CADENA_STBY;      -- aplica todo el redo recibido y la activa
 
-   2. Aplicar todos los archivelogs pendientes que hayan sido transferidos:
-      ALTER DATABASE RECOVER MANAGED STANDBY DATABASE FINISH;
-
-   3. Si faltan archivelogs y es un failover forzado con minima perdida:
-      ALTER DATABASE ACTIVATE PHYSICAL STANDBY;
-
-   PASO 2: ABRIR LA NUEVA BASE DE DATOS DE PRODUCCION
-   ALTER DATABASE OPEN;
+   PASO 2: ABRIR LA NUEVA BASE DE PRODUCCION
+      ALTER DATABASE OPEN;
+      ALTER PLUGGABLE DATABASE ALL OPEN;
+      ALTER PLUGGABLE DATABASE ALL SAVE STATE;
+      SELECT database_role, open_mode FROM v$database;   -- PRIMARY / READ WRITE
+      Resultado verificado: la ultima venta estaba (0 perdida, aplicacion en tiempo real).
 
    PASO 3: RECONFIGURACION DE APLICACIONES
-   Redirigir las cadenas de conexion TNS de la aplicacion hacia la IP del nodo Standby
-   (o el Listener automatico mediante el servicio TNS transparente).
+      Redirigir las cadenas de conexion TNS de la aplicacion hacia la IP del nodo Standby.
+
+   PASO 4: RECUPERAR LA ANTIGUA PRINCIPAL COMO STANDBY (verificado)
+      Respaldo nivel 0 en la nueva principal, copiarlo a la antigua, ahi SHUTDOWN ABORT,
+      borrar /opt/oracle/oradata/CADENA/*, STARTUP NOMOUNT y modo crearstandby del
+      orquestador (08_Creacion_Standby_Segunda_PC.rman). Luego un switchover devuelve
+      los roles. Tras el failover la numeracion de archivelogs reinicia (nueva encarnacion).
+
+   ALTERNATIVA ANTIGUA (sintaxis anterior a 12c):
+      ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
+      ALTER DATABASE RECOVER MANAGED STANDBY DATABASE FINISH;
+      ALTER DATABASE COMMIT TO SWITCHOVER TO PRIMARY;
+      -- o, si faltan archivelogs (failover forzado, con perdida):
+      ALTER DATABASE ACTIVATE PHYSICAL STANDBY DATABASE;
+      ALTER DATABASE OPEN;
 */
 
 /* =====================================================================

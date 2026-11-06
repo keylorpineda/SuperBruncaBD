@@ -34,7 +34,7 @@ El sistema opera sobre una arquitectura modular de tres capas de almacenamiento 
                        Conexión TNS / Mínimos Privilegios / Rol Cifrado
                                              ▼
 +-----------------------------------------------------------------------------------------+
-|                  MOTOR ORACLE DATABASE (ESQUEMA: CADENA_NEG / FREEPDB1)                 |
+|                  MOTOR ORACLE DATABASE (ESQUEMA: CADENA_NEG / PDBCADENA)                |
 |                                                                                         |
 |  +---------------------------+  +---------------------------+  +---------------------+  |
 |  |         TBS_DATOS         |  |        TBS_INDICES        |  |    TBS_AUDITORIA    |  |

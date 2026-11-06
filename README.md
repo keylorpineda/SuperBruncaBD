@@ -16,7 +16,7 @@ Es una base de datos Oracle (esquema `CADENA_NEG`) para la cadena de supermercad
 - **Notificaciones por correo** con `UTL_SMTP` (directo desde Oracle, sin VPN): créditos al 85 % y al 70 %, clientes morosos, productos vencidos, cierre diario y alertas al DBA.
 - **Monitoreo**: tablespaces, objetos inválidos, índices dañados, sesiones y crecimiento.
 - **Jobs con `DBMS_SCHEDULER`** para todo lo automático.
-- **Servidor Standby** en una segunda computadora, con traslado de archivelogs cada 10 minutos, respaldos RMAN diarios, purga a los 3 días, switchover y failover.
+- **Servidor Standby** con **Oracle Data Guard** (Oracle 21c Enterprise Edition) en una segunda computadora: el redo viaja por la red y se aplica solo, respaldos RMAN diarios, purga a los 3 días, switchover y failover.
 
 ## Carpetas
 
@@ -27,9 +27,15 @@ docs/manuales/     los 3 manuales oficiales (.md y .pdf) y el script que genera 
 docs/entregable1/  diccionario de datos, documentación técnica y modelo relacional del Entregable #1
 docs/enunciado/    enunciado del Entregable #2
 sql/               scripts de instalación: script_bd_v2.sql (base) y 00 a 06
+sql/08_Wallet_SMTP_Gmail.sh  wallet de certificados para el correo con Gmail (SSL/TLS)
 sql/07_Standby_y_RMAN/  standby, RMAN, purga, switchover/failover y sus jobs
+sql/07_Standby_y_RMAN/docker/  contenedores ora_principal / ora_standby y archivos de red de Data Guard
 datos/padron/      scripts de descarga del padrón del TSE y archivo de muestra
 ```
+
+## Entorno
+
+Oracle Database 21c Enterprise Edition (imagen Docker `container-registry.oracle.com/database/enterprise:21.3.0.0`). Base `CADENA` con el PDB `PDBCADENA`; la principal corre en el contenedor `ora_principal` y la standby (`CADENA_STBY`) en `ora_standby`.
 
 ## Empiece aquí
 

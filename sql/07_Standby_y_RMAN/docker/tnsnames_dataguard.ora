@@ -1,0 +1,15 @@
+
+# ==============================================================================
+# Entradas de Oracle Net para Data Guard (Oracle 21c EE)
+# Se AGREGAN al final de /opt/oracle/oradata/dbconfig/CADENA/tnsnames.ora
+# en LOS DOS servidores (principal y standby). Ver README.md de esta carpeta.
+#
+# ora-principal / ora-standby son los hostnames de los contenedores en la red
+# Docker "oranet". En dos PC distintas, cambielos por la IP real de cada PC.
+# (UR=A) permite conectarse a una instancia en NOMOUNT o MOUNT.
+# Verificar con: tnsping PRIMARIA_TNS   y   tnsping STANDBY_TNS
+# ==============================================================================
+
+PRIMARIA_TNS = (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=ora-principal)(PORT=1521))(CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=CADENA)(UR=A)))
+
+STANDBY_TNS = (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=ora-standby)(PORT=1521))(CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=CADENA_STBY)(UR=A)))

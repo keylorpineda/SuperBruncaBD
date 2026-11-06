@@ -28,7 +28,7 @@ Va en la carpeta del directorio Oracle **`DIR_PADRON`** del servidor (la PC 1). 
 SELECT directory_path FROM all_directories WHERE directory_name = 'DIR_PADRON';
 ```
 
-En Docker suele ser `/opt/oracle/oradata/<CDB>/<PDB>`, por ejemplo `/opt/oracle/oradata/ORCLCDB/ORCLPDB1`.
+En el contenedor `ora_principal` (Oracle 21c EE) es `/opt/oracle/oradata/CADENA/PDBCADENA`.
 
 Ahí deben quedar `PADRON_COMPLETO.txt` y `DISTELEC.txt`, **con esos nombres exactos** (las tablas externas los buscan así).
 
@@ -53,21 +53,22 @@ Los scripts de descarga están en `datos/padron/`. Bajan el ZIP, lo descomprimen
 En Docker, con el repositorio ya copiado en `/opt/oracle/proyecto`:
 
 ```powershell
-docker exec -it oracle_una bash /opt/oracle/proyecto/datos/padron/Descargar_Padron_TSE.sh https://www.tse.go.cr/zip/padron/padron_completo.zip /opt/oracle/oradata/ORCLCDB/ORCLPDB1
+docker exec -it -u oracle ora_principal bash /opt/oracle/proyecto/datos/padron/Descargar_Padron_TSE.sh https://www.tse.go.cr/zip/padron/padron_completo.zip /opt/oracle/oradata/CADENA/PDBCADENA
 ```
 
 El `.sh` necesita `curl` o `wget`, y `unzip` o `python3`. Si la descarga automática falla, baje el ZIP a mano desde la página del TSE, descomprímalo y cópielo al contenedor:
 
 ```powershell
-docker cp PADRON_COMPLETO.txt oracle_una:/opt/oracle/oradata/ORCLCDB/ORCLPDB1/
-docker cp DISTELEC.txt        oracle_una:/opt/oracle/oradata/ORCLCDB/ORCLPDB1/
+docker cp PADRON_COMPLETO.txt ora_principal:/opt/oracle/oradata/CADENA/PDBCADENA/
+docker cp DISTELEC.txt        ora_principal:/opt/oracle/oradata/CADENA/PDBCADENA/
+docker exec -u root ora_principal chown oracle:oinstall /opt/oracle/oradata/CADENA/PDBCADENA/PADRON_COMPLETO.txt /opt/oracle/oradata/CADENA/PDBCADENA/DISTELEC.txt
 ```
 
 ---
 
 ## 4. Cómo cargarlo
 
-Conectado como SYSDBA en el PDB (o como `CADENA_NEG`):
+Conectado como SYSDBA en el PDB `PDBCADENA` (o como `CADENA_NEG`). En Docker: `docker exec -it -u oracle ora_principal sqlplus / as sysdba` y luego `ALTER SESSION SET CONTAINER = PDBCADENA;`.
 
 ```sql
 SET SERVEROUTPUT ON
@@ -79,7 +80,11 @@ Qué hace:
 1. Lee los dos archivos con las **tablas externas** `EXT_PADRON_TSE` y `EXT_DISTELEC_TSE` (juego de caracteres Latin-1, que es el del TSE). No copia los archivos: Oracle los lee directamente.
 2. Carga los distritos y luego hace un **`MERGE` por provincia** en `CAT_PADRON`. En las cargas mensuales siguientes solo reescribe a las personas que cambiaron.
 
-Resultado verificado (Docker, padrón del 30/09/2026): **3.762.240 personas, 0 rechazos**, unos **39 minutos** y unos **553 MB** en la base.
+Resultado verificado (Oracle 26ai Free en Docker, padrón del 30/09/2026): **3.762.240 personas, 0 rechazos**, unos **39 minutos** y unos **553 MB** en la base.
+
+> PENDIENTE: carga del padrón real en Oracle 21c EE (en curso).
+
+Con Data Guard activo, la carga se replica sola a la standby (la tabla `CAT_PADRON` viaja en el redo); los archivos `.txt` no (ver la sección 10 del Manual del Standby).
 
 Las líneas rechazadas quedan en `padron_tse.bad` y el detalle en `padron_tse.log`, en la misma carpeta de `DIR_PADRON`.
 
@@ -146,7 +151,7 @@ Para la defensa hay que cargar el **padrón real** (el enunciado pide la informa
 | Error | Causa | Solución |
 | :--- | :--- | :--- |
 | `ORA-29913` + `KUP-04040: file PADRON_COMPLETO.txt in DIR_PADRON not found` | El archivo no está en la carpeta de `DIR_PADRON`, o tiene otro nombre. | Revise la carpeta con la consulta de la sección 2 y que el nombre sea exactamente `PADRON_COMPLETO.txt` (y `DISTELEC.txt`). |
-| `KUP-04001` / `KUP-04063` (no se puede abrir o leer) | El usuario `oracle` del SO no tiene permiso sobre el archivo. | En Docker: `docker exec -u root oracle_una chown oracle:oinstall <carpeta>/PADRON_COMPLETO.txt <carpeta>/DISTELEC.txt`. |
+| `KUP-04001` / `KUP-04063` (no se puede abrir o leer) | El usuario `oracle` del SO no tiene permiso sobre el archivo. | En Docker: `docker exec -u root ora_principal chown oracle:oinstall <carpeta>/PADRON_COMPLETO.txt <carpeta>/DISTELEC.txt`. |
 | Nombres con caracteres raros (tildes, ñ) | El archivo se convirtió a otro juego de caracteres al copiarlo. | Use el archivo tal como viene del ZIP (Latin-1), sin abrirlo y guardarlo con otro editor. |
 | Muchas líneas en `padron_tse.bad` | El archivo está incompleto o no es el oficial. | Vuelva a descargar el ZIP. |
 | `[ERROR] Se necesita unzip o python3` | El contenedor no tiene con qué descomprimir. | Descomprima en su PC y copie los `.txt` con `docker cp` (sección 3). |

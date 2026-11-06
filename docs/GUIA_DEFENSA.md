@@ -5,10 +5,10 @@ Esta guía tiene dos partes:
 1. Un **mapa** de cada requisito del enunciado (`docs/enunciado/`) al archivo, paquete, trigger o job que lo cumple, con el comando para demostrarlo.
 2. Un **guion** de unos 15 minutos para la demostración en vivo.
 
-Antes de empezar, en una sesión SQL*Plus como SYSDBA en la PC 1:
+Antes de empezar, abra una sesión SQL*Plus como SYSDBA en la PC 1 (en Docker: `docker exec -it -u oracle ora_principal sqlplus / as sysdba`):
 
 ```sql
-ALTER SESSION SET CONTAINER = ORCLPDB1;          -- su PDB
+ALTER SESSION SET CONTAINER = PDBCADENA;
 ALTER SESSION SET CURRENT_SCHEMA = CADENA_NEG;
 SET SERVEROUTPUT ON SIZE UNLIMITED
 SET LINESIZE 200
@@ -83,8 +83,8 @@ Los comandos de esta guía asumen esa sesión. Use números de factura y recibo 
 | 11 | Concurrencia con `SELECT FOR UPDATE`, `NOWAIT`, `WAIT` | `PKG_INV_GESTION.PR_AFECTAR_EXISTENCIA` (`WAIT 5`), `PKG_COM_OPERACION` (`WAIT 5` y `NOWAIT`), `PKG_VEN_OPERACION` (`WAIT 5`) | Mostrar el código: `grep -n "FOR UPDATE" sql/03_Paquetes_Negocio_Monitoreo.sql` |
 | 12 | Integridad con paquetes o triggers | Triggers `*_CRED_BIU` y `*_INV_AI`; prueba 11 (`ORA-20015`, venta sin existencias) | Bloque E del guion |
 | 13 | Paquete de monitoreo | `PKG_ADM_MONITOREO` | Sección 1.3 |
-| 14 | Standby con failover, switchover, recuperación y sincronización | `sql/07_Standby_y_RMAN/` y `PKG_ADM_STANDBY` | Sección 11 del Manual del Standby (bloque J del guion) |
-| 15 | RMAN: backup full, incremental, restore y recovery | `04_RMAN_Backup_Full_Incremental.rman` (nivel 0 domingo / nivel 1), `05_RMAN_Restore_Recovery_PointInTime.rman`, `JOB_RMAN_BACKUP_DIARIO` | `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_RESPALDAR_AHORA;` y en RMAN `LIST BACKUP SUMMARY;` |
+| 14 | Standby con failover, switchover, recuperación y sincronización | Oracle Data Guard (21c EE), `sql/07_Standby_y_RMAN/` y `PKG_ADM_STANDBY` | Secciones 11 y 12 del Manual del Standby (bloque J del guion) |
+| 15 | RMAN: backup full, incremental, restore y recovery | `04_RMAN_Backup_Full_Incremental.rman` (nivel 0 domingo / nivel 1), `05_RMAN_Restore_Recovery_PointInTime.rman`, `JOB_RMAN_BACKUP_DIARIO` | `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_RESPALDAR_AHORA;` (o el orquestador en modo `backup`, bloque J) y en RMAN `LIST BACKUP SUMMARY;` |
 
 ### 1.5 Standby
 
@@ -94,12 +94,12 @@ Todos los archivos están en `sql/07_Standby_y_RMAN/`. Detalle en el [Manual de 
 | :--- | :--- | :--- |
 | Dos servidores distintos | PC 1 (principal, `PRIMARY`) y PC 2 (standby, `db_unique_name = CADENA_STBY`) | En cada PC: `SELECT name, db_unique_name, database_role, open_mode FROM v$database;` |
 | Archivo de actualización cada 5 min o 50 MB (parametrizado) | `01_Configuracion_Primaria_Redo_Archive.sql`: redo de 50 MB y `ARCHIVE_LAG_TARGET = 300`; parámetros `STANDBY_SWITCH_MIN`, `STANDBY_SWITCH_MB` | `SELECT group#, bytes/1024/1024 mb, status FROM v$log;` y `SHOW PARAMETER archive_lag_target` |
-| Traslado cada 10 min (parametrizado) y a petición | `JOB_STANDBY_TRASLADO_ARCHIVELOG`, parámetro `STANDBY_SYNC_MIN`, `02_Traslado_Archivelogs_10min_y_Ondemand.ps1` / `.sh` | `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_SINCRONIZAR_AHORA;` |
-| Oracle 21c, Linux o Windows | Oracle 21c EE (Docker o VM) | `SELECT banner_full FROM v$version;` |
+| Traslado cada 10 min (parametrizado) y a petición | Data Guard: `LOG_ARCHIVE_DEST_2` envía el redo apenas se genera (lag 0). Respaldo: `JOB_STANDBY_TRASLADO_ARCHIVELOG`, parámetro `STANDBY_SYNC_MIN`, `02_Traslado_Archivelogs_10min_y_Ondemand.ps1` / `.sh` | `SELECT dest_id, status, gap_status FROM v$archive_dest_status WHERE dest_id = 2;` y `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_SINCRONIZAR_AHORA;` |
+| Oracle 21c, Linux o Windows | Oracle 21c Enterprise Edition en Docker (`ora_principal`, `ora_standby`) o VM | `SELECT banner_full FROM v$version;` |
 | Purga de lo trasladado y lo aplicado con más de 3 días (parametrizado) | `JOB_STANDBY_PURGA_ARCHIVELOG`, `03_Purga_Archivelogs_3Dias.rman` (PC 1), `03_Purga_Archivelogs_Standby.rman` (PC 2), parámetro `STANDBY_PURGE_DIAS` | `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_PURGAR_AHORA;` |
 | Respaldo diario automático, trasladado al standby y a petición | `JOB_RMAN_BACKUP_DIARIO`, parámetro `STANDBY_HORA_BACKUP` | `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_RESPALDAR_AHORA;` |
 | Monitoreo de la sincronización | `JOB_STANDBY_MONITOREO`, `PKG_ADM_STANDBY.PR_VERIFICAR_SINCRONIZACION`, parámetro `STANDBY_MAX_LAG_MIN` | `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_ESTADO_STANDBY;` |
-| Failover, switchover, recuperación, sincronización | `06_Standby_Switchover_y_Failover.sql`, `09_Aplicar_Archivelogs_Standby.rman` | Bloque J del guion |
+| Failover, switchover, recuperación, sincronización | Data Guard (`SWITCHOVER TO`, `FAILOVER TO`), `06_Standby_Switchover_y_Failover.sql`, `08_Creacion_Standby_Segunda_PC.rman` | Bloque J del guion |
 | Replicar todas las acciones y manual ante inconvenientes | `FORCE LOGGING`, `STANDBY_FILE_MANAGEMENT = AUTO` | Sección 10 del Manual del Standby; `SELECT force_logging FROM v$database;` |
 
 ### 1.6 Documentación
@@ -116,7 +116,7 @@ Todos los archivos están en `sql/07_Standby_y_RMAN/`. Detalle en el [Manual de 
 
 ## 2. Guion de demostración (unos 15 minutos)
 
-Tenga abiertas dos ventanas: SQL*Plus en la PC 1 (con la sesión preparada al inicio de esta guía) y una terminal en la PC 2. Tenga abierto también el correo de destino.
+Tenga abiertas dos ventanas: SQL*Plus en la PC 1 (con la sesión preparada al inicio de esta guía) y SQL*Plus como SYSDBA en la PC 2 (`docker exec -it -u oracle ora_standby sqlplus / as sysdba`). Tenga abierto también el correo de destino.
 
 ### Minuto 0–1: estado general
 
@@ -222,7 +222,7 @@ Explique que los mismos procedimientos los ejecutan `JOB_NOTIF_CREDITOS_DIARIO`,
 **Bloque G.** En otra terminal, entrar como digitador (la clave está en `sql/05_Seguridad_Perfiles_Roles_Usuarios.sql`):
 
 ```powershell
-docker exec -it oracle_una sqlplus USR_DIGITADOR@localhost:1521/ORCLPDB1
+docker exec -it -u oracle ora_principal sqlplus USR_DIGITADOR@localhost:1521/PDBCADENA
 ```
 
 ```sql
@@ -269,60 +269,85 @@ SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);
 
 Explique por qué con pocas filas el optimizador elige `FULL` y con muchas usaría `IX_CUCO_ESTADO_VENCIM` (sección 2 de `sql/06_Scheduler_Optimizacion_y_Pruebas.sql`).
 
-### Minuto 11–15: Standby y RMAN (bloque J)
+### Minuto 11–15: Standby con Data Guard y RMAN (bloque J)
 
-**Bloque J.** Es la sección 11 del [Manual de Administración del Standby](manuales/Manual_Administracion_Standby.md):
+**Bloque J.** Es la sección 12 del [Manual de Administración del Standby](manuales/Manual_Administracion_Standby.md); los comandos completos están en su sección 11. Antes de la defensa deje la standby sincronizada y en `READ ONLY WITH APPLY` (sección 11.9 del manual).
 
-1. **PC 1:** estado de los jobs y la última sincronización.
+1. **PC 1:** estado del destino de Data Guard y de los jobs.
 
    ```sql
+   SELECT dest_id, status, error, gap_status FROM v$archive_dest_status WHERE dest_id = 2;   -- VALID / NO GAP
    EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_ESTADO_STANDBY;
    ```
 
-2. **PC 1:** la factura `FAC-DEMO-001` del bloque A ya está guardada (con `COMMIT`).
-3. **PC 1:** traslado inmediato; se ve el archivelog copiado.
+2. **PC 2:** rol y atraso de la standby.
 
    ```sql
-   EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_SINCRONIZAR_AHORA;
-   SELECT MAX(sequence#) FROM v$archived_log WHERE dest_id = 1;
+   SELECT db_unique_name, database_role, open_mode FROM v$database;   -- CADENA_STBY / PHYSICAL STANDBY / READ ONLY WITH APPLY
+   SELECT name, value FROM v$dataguard_stats WHERE name LIKE '%lag';   -- transport lag y apply lag en 0
+   SELECT process, status, sequence# FROM v$managed_standby;           -- MRP0 APPLYING_LOG
    ```
 
-4. **PC 2:** aplicar lo recibido y comparar la secuencia (sección 9.1 del manual).
-
-   ```bash
-   cd /opt/oracle/proyecto/sql/07_Standby_y_RMAN
-   ./02_Traslado_Archivelogs_10min_y_Ondemand.sh aplicarstandby x /opt/oracle/standby_archive x /opt/oracle/standby_backups
-   ```
-
-   En Windows: `.\02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo AplicarStandby`.
+3. **PC 2:** la factura `FAC-DEMO-001` del bloque A (hecha con `COMMIT` en la PC 1) ya está en la standby, sin hacer nada:
 
    ```sql
-   SELECT MAX(sequence#) FROM v$archived_log WHERE applied = 'YES';   -- igual a la de la PC 1
-   SELECT database_role, open_mode FROM v$database;                   -- PHYSICAL STANDBY / MOUNTED
-   ```
-
-5. **PC 1:** respaldo RMAN a petición, que se copia a la PC 2.
-
-   ```sql
-   EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_RESPALDAR_AHORA;
-   ```
-
-6. **PC 1:** purga a petición (archivelogs con más de `STANDBY_PURGE_DIAS` días).
-
-   ```sql
-   EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_PURGAR_AHORA;
-   ```
-
-7. **PC 2:** failover (sección 9.3 del manual) y consultar la factura de prueba en la base activada.
-
-   ```sql
-   ALTER DATABASE ACTIVATE STANDBY DATABASE;
-   ALTER DATABASE OPEN;
-   ALTER PLUGGABLE DATABASE ALL OPEN;
-   ALTER SESSION SET CONTAINER = ORCLPDB1;
+   ALTER SESSION SET CONTAINER = PDBCADENA;
    SELECT NUM_FACTURA_FAVE, ESTADO_FAVE FROM CADENA_NEG.VEN_FACTURA WHERE NUM_FACTURA_FAVE = 'FAC-DEMO-001';
    ```
 
-> El failover convierte la PC 2 en principal y no tiene vuelta atrás: para volver a tener standby hay que recrearla (sección 4 del manual en sentido inverso). Hágalo al final. Si el académico pide switchover en lugar de failover, siga la sección 9.2 del manual.
+4. **PC 1:** respaldo RMAN y purga a petición. Con la credencial del SO registrada (Guía paso a paso, 6.2):
+
+   ```sql
+   EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_RESPALDAR_AHORA;
+   EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_PURGAR_AHORA;
+   ```
+
+   Sin la credencial, lo mismo con el orquestador en una terminal de la PC 1 (`docker exec -it -u oracle -w /opt/oracle/proyecto/sql/07_Standby_y_RMAN ora_principal bash`):
+
+   ```bash
+   NIVEL_BACKUP=0 bash 02_Traslado_Archivelogs_10min_y_Ondemand.sh backup /opt/oracle/oradata/CADENA/archive_logs x /opt/oracle/backups /tmp/stby_bk 3 CADENA $ORACLE_HOME 10
+   bash 02_Traslado_Archivelogs_10min_y_Ondemand.sh purga x x x x 3 CADENA $ORACLE_HOME 10
+   ```
+
+   La purga solo borra lo aplicado en la standby y respaldado (avisa `RMAN-08120` / `RMAN-08138` por lo que conserva).
+
+5. **Switchover** (cambio planificado, sin pérdida). En la PC 1:
+
+   ```sql
+   ALTER DATABASE SWITCHOVER TO CADENA_STBY VERIFY;
+   ALTER DATABASE SWITCHOVER TO CADENA_STBY;
+   ```
+
+   La PC 1 se apaga (en Docker: `docker start ora_principal` para volver a encenderla). En la PC 2, que ahora es la principal:
+
+   ```sql
+   ALTER DATABASE OPEN;
+   ALTER PLUGGABLE DATABASE ALL OPEN;
+   SELECT database_role, open_mode FROM v$database;   -- PRIMARY / READ WRITE
+   ```
+
+   En la PC 1 (ahora standby):
+
+   ```sql
+   STARTUP MOUNT;
+   ALTER DATABASE RECOVER MANAGED STANDBY DATABASE USING CURRENT LOGFILE DISCONNECT FROM SESSION;
+   ```
+
+   Para devolver los roles: `ALTER DATABASE SWITCHOVER TO CADENA;` en la PC 2 y los mismos pasos al revés.
+
+6. **Failover** (desastre), al final de la demostración. Apague la PC 1 de golpe (en Docker: `docker kill ora_principal`). En la PC 2:
+
+   ```sql
+   ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
+   ALTER DATABASE FAILOVER TO CADENA_STBY;
+   ALTER DATABASE OPEN;
+   ALTER PLUGGABLE DATABASE ALL OPEN;
+   ALTER PLUGGABLE DATABASE ALL SAVE STATE;
+   SELECT database_role, open_mode FROM v$database;   -- PRIMARY / READ WRITE
+   ALTER SESSION SET CONTAINER = PDBCADENA;
+   SELECT NUM_FACTURA_FAVE, ESTADO_FAVE FROM CADENA_NEG.VEN_FACTURA WHERE NUM_FACTURA_FAVE = 'FAC-DEMO-001';
+   ```
+
+> Después del failover la PC 1 ya no es parte de Data Guard: para volver a tener standby hay que recrearla desde un respaldo de la nueva principal (sección 11.12 del manual). Por eso se hace al final.
 
 Si sobra tiempo, explique la sección 10 del manual (acciones que pueden no replicarse) y la restauración a un punto en el tiempo (`05_RMAN_Restore_Recovery_PointInTime.rman`).

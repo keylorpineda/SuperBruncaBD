@@ -2,32 +2,64 @@
 # PROYECTO: Sistema Integral de Cadena de Supermercados
 # ARCHIVO:  sql/07_Standby_y_RMAN/08_init_CADENA_STBY.ora
 # DESCRIPCION:
-#   Plantilla de PFILE para iniciar la instancia STANDBY en la SEGUNDA PC.
-#   Forma recomendada de obtenerla: en la PRINCIPAL ejecutar
-#       SQL> CREATE PFILE='C:\temp\initCADENA_STBY.ora' FROM SPFILE;
-#   copiar ese archivo a la PC standby y cambiar SOLO los valores marcados
-#   con <== . Los demas deben ser iguales a los de la principal.
-#   Ajuste las rutas si su instalacion no esta en C:\app\oracle (Linux: /opt/oracle).
+#   Plantilla de PFILE de la instancia STANDBY (Data Guard, Oracle 21c EE),
+#   con las rutas reales de la imagen Docker
+#   container-registry.oracle.com/database/enterprise:21.3.0.0
+#   (ORACLE_HOME=/opt/oracle/product/21c/dbhome_1, datos en /opt/oracle/oradata).
+#
+# COMO OBTENER EL PFILE REAL (recomendado, en lugar de copiar esta plantilla):
+#   1. En la PRINCIPAL:
+#        SQL> CREATE PFILE='/opt/oracle/backups/initCADENA_STBY.ora' FROM SPFILE;
+#   2. Copiarlo a la standby (/opt/oracle/standby_backups/) junto con el respaldo.
+#   3. Borrar las lineas que empiezan con  CADENA.__  (memoria interna de la
+#      principal; la standby calcula las suyas).
+#   4. Cambiar SOLO los valores marcados con <== . db_name sigue siendo 'CADENA'.
+#      Los demas valores deben ser iguales a los de la principal; si el pfile
+#      de la principal trae parametros que no estan aqui, dejelos como vienen.
+#   Pasos completos: docs/manuales/Manual_Administracion_Standby.md, seccion 11.6.
+#
+# USO EN LA STANDBY:
+#   SQL> STARTUP NOMOUNT PFILE='/opt/oracle/standby_backups/initCADENA_STBY.ora';
+#   SQL> CREATE SPFILE='/opt/oracle/oradata/dbconfig/CADENA/spfileCADENA.ora'
+#        FROM PFILE='/opt/oracle/standby_backups/initCADENA_STBY.ora';
+#   SQL> SHUTDOWN IMMEDIATE;
+#   SQL> STARTUP NOMOUNT;
 # ==============================================================================
 
-*.db_name='FREE'                                   # igual que la principal (SELECT name FROM v$database)
-*.db_unique_name='CADENA_STBY'                     # <== nombre unico del standby
+*.db_name='CADENA'                                 # igual que la principal (SELECT name FROM v$database)
+*.db_unique_name='CADENA_STBY'                     # <== nombre unico del standby (la principal es CADENA)
 *.enable_pluggable_database=true
 *.compatible='21.0.0'                              # igual que la principal
-*.control_files='C:\app\oracle\oradata\FREE\control01.ctl','C:\app\oracle\oradata\FREE\control02.ctl'
+*.control_files='/opt/oracle/oradata/CADENA/control01.ctl'   # si la principal trae dos, deje los dos
 *.db_block_size=8192
-*.sga_target=1536M
-*.pga_aggregate_target=512M
+*.sga_target=1024m                                 # INIT_SGA_SIZE=1024 del contenedor
+*.pga_aggregate_target=300m                        # INIT_PGA_SIZE=300 del contenedor
 *.processes=300
-*.db_recovery_file_dest='C:\app\oracle\recovery_area'
-*.db_recovery_file_dest_size=20G
-*.log_archive_format='cadena_arch_%t_%s_%r.arc'
-*.log_archive_dest_1='LOCATION=USE_DB_RECOVERY_FILE_DEST VALID_FOR=(ALL_LOGFILES,ALL_ROLES)'
-*.standby_file_management='AUTO'                   # <== crea en el standby los datafiles nuevos
-*.remote_login_passwordfile='EXCLUSIVE'
-*.archive_lag_target=300
-*.audit_file_dest='C:\app\oracle\admin\FREE\adump'
-*.diagnostic_dest='C:\app\oracle'
-# Solo si usa Data Guard (Enterprise) con Oracle Net entre ambas PC:
-# *.log_archive_config='DG_CONFIG=(CADENA,CADENA_STBY)'
-# *.fal_server='PRIMARIA_TNS'
+*.audit_file_dest='/opt/oracle/admin/CADENA/adump'
+*.diagnostic_dest='/opt/oracle'
+*.remote_login_passwordfile='EXCLUSIVE'            # usa orapwCADENA copiado de la principal
+
+# Archivado local (la imagen Docker no tiene Fast Recovery Area)
+*.log_archive_dest_1='LOCATION=/opt/oracle/oradata/CADENA/archive_logs VALID_FOR=(ALL_LOGFILES,ALL_ROLES)'
+
+# Data Guard
+*.log_archive_config='DG_CONFIG=(CADENA,CADENA_STBY)'
+*.log_archive_dest_2='SERVICE=PRIMARIA_TNS ASYNC NOAFFIRM VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=CADENA'   # <== apunta a la principal (se usa si esta base pasa a principal)
+*.log_archive_dest_state_2='ENABLE'
+*.fal_server='PRIMARIA_TNS'                        # <== de donde pide los archivelogs que le falten
+*.standby_file_management='AUTO'                   # crea en el standby los datafiles nuevos
+*.archive_lag_target=300                           # igual que la principal (cambio de log cada 5 min)
+
+# ------------------------------------------------------------------------------
+# WINDOWS (instalacion nativa, rutas tipicas; NO probado en este proyecto):
+# *.control_files='C:\app\oracle\oradata\CADENA\control01.ctl','C:\app\oracle\oradata\CADENA\control02.ctl'
+# *.audit_file_dest='C:\app\oracle\admin\CADENA\adump'
+# *.diagnostic_dest='C:\app\oracle'
+# *.log_archive_dest_1='LOCATION=C:\app\oracle\oradata\CADENA\archive_logs VALID_FOR=(ALL_LOGFILES,ALL_ROLES)'
+#   (o con Fast Recovery Area:)
+# *.db_recovery_file_dest='C:\app\oracle\recovery_area'
+# *.db_recovery_file_dest_size=20G
+# *.log_archive_dest_1='LOCATION=USE_DB_RECOVERY_FILE_DEST VALID_FOR=(ALL_LOGFILES,ALL_ROLES)'
+#   Archivo de claves: %ORACLE_HOME%\database\PWDCADENA.ora
+#   Instancia: oradim -NEW -SID CADENA -STARTMODE manual
+# ------------------------------------------------------------------------------
