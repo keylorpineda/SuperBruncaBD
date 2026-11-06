@@ -119,21 +119,27 @@ PROMPT =========================================================================
 
 -- Principio de Seguridad: Cada rol esta blindado con una contrasena individual.
 -- No pueden ser activados por defecto; el usuario debe autenticarse ante el rol.
-CREATE ROLE ROL_GERENTE            IDENTIFIED BY "ClaveGerente2026*";
-CREATE ROLE ROL_JEFE_DEPARTAMENTO  IDENTIFIED BY "ClaveJefeDepto2026*";
-CREATE ROLE ROL_JEFE_PROVEEDURIA   IDENTIFIED BY "ClaveJefeProv2026*";
-CREATE ROLE ROL_DIGITADOR          IDENTIFIED BY "ClaveDigitador2026*";
+-- Los roles se crean sin clave en texto plano dentro del script. La clave real
+-- se toma YA CIFRADA de SEG_PARAMETRO (CLAVE_ROL_*) y se aplica con
+-- PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL (ALTER ROLE ... IDENTIFIED BY).
+CREATE ROLE ROL_GERENTE            NOT IDENTIFIED;
+CREATE ROLE ROL_JEFE_DEPARTAMENTO  NOT IDENTIFIED;
+CREATE ROLE ROL_JEFE_PROVEEDURIA   NOT IDENTIFIED;
+CREATE ROLE ROL_DIGITADOR          NOT IDENTIFIED;
 
 PROMPT [OK] Roles con clave creados: ROL_GERENTE, ROL_JEFE_DEPARTAMENTO, ROL_JEFE_PROVEEDURIA, ROL_DIGITADOR.
 
--- Registrar las contrasenas cifradas con AES-256 en la tabla de parametros del sistema
+-- Proteger cada rol con la clave almacenada CIFRADA (AES-256) en SEG_PARAMETRO.
+-- Al no enviar p_nueva_clave, el procedimiento descifra la clave de la tabla y
+-- ejecuta ALTER ROLE ... IDENTIFIED BY; ninguna clave queda escrita en este script.
+-- Para cambiar una clave: PR_ASIGNAR_CLAVE_ROL('ROL_X', 'CLAVE_ROL_X', 'NuevaClave').
 BEGIN
-    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_GERENTE',           'CLAVE_ROL_GERENTE',    'ClaveGerente2026*');
-    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_JEFE_DEPARTAMENTO', 'CLAVE_ROL_JEFE_DEPTO', 'ClaveJefeDepto2026*');
-    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_JEFE_PROVEEDURIA',  'CLAVE_ROL_JEFE_PROV',  'ClaveJefeProv2026*');
-    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_DIGITADOR',         'CLAVE_ROL_DIGITADOR',  'ClaveDigitador2026*');
+    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_GERENTE',           'CLAVE_ROL_GERENTE');
+    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_JEFE_DEPARTAMENTO', 'CLAVE_ROL_JEFE_DEPTO');
+    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_JEFE_PROVEEDURIA',  'CLAVE_ROL_JEFE_PROV');
+    CADENA_NEG.PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL('ROL_DIGITADOR',         'CLAVE_ROL_DIGITADOR');
     COMMIT;
-    DBMS_OUTPUT.PUT_LINE('[OK] Claves de roles cifradas y almacenadas en SEG_PARAMETRO mediante DBMS_CRYPTO.');
+    DBMS_OUTPUT.PUT_LINE('[OK] Roles protegidos con las claves cifradas de SEG_PARAMETRO (DBMS_CRYPTO).');
 END;
 /
 
