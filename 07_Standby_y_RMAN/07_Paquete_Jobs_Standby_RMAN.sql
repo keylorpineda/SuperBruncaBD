@@ -433,6 +433,8 @@ CREATE OR REPLACE PACKAGE BODY CADENA_NEG.PKG_ADM_STANDBY IS
 
         DBMS_OUTPUT.PUT_LINE('[OK] Credencial ' || c_credencial || ' registrada para ' || p_usuario_so || '.');
         PR_CONFIGURAR_JOBS;
+        -- La misma credencial habilita la descarga automatica mensual del padron del TSE
+        PKG_PER_PADRON.PR_CONFIGURAR_JOBS_PADRON;
     EXCEPTION
         WHEN OTHERS THEN
             PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_ADM_STANDBY', 'PR_REGISTRAR_CREDENCIAL_OS', SQLCODE, SQLERRM);

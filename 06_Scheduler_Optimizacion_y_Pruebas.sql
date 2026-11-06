@@ -182,6 +182,45 @@ BEGIN
 END;
 /
 
+-- ----------------------------------------------------------------------------
+-- 1.6 JOB_PADRON_MENSUAL (+ JOB_PADRON_DESCARGA)
+-- Frecuencia: dia PADRON_DIA_CARGA de cada mes a las 02:00 (el TSE publica mensualmente)
+-- Accion: descarga padron_completo.zip del TSE y lo carga con PR_CARGAR_PADRON_MASIVO
+-- ----------------------------------------------------------------------------
+DECLARE
+    v_es_win BOOLEAN := INSTR(UPPER(DBMS_UTILITY.PORT_STRING), 'WIN') > 0;
+
+    PROCEDURE crear_si_no_existe(p_codigo VARCHAR2, p_nombre VARCHAR2, p_desc VARCHAR2,
+                                 p_texto VARCHAR2 DEFAULT NULL, p_num NUMBER DEFAULT NULL) IS
+        v_existe NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_existe FROM CADENA_NEG.SEG_PARAMETRO WHERE CODIGO_PARA = p_codigo;
+        IF v_existe = 0 THEN
+            CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO(p_codigo, 'NEGOCIO', p_nombre, p_desc, 'N', p_texto, p_num);
+        END IF;
+    END;
+BEGIN
+    crear_si_no_existe('PADRON_URL_TSE', 'URL de descarga del padron completo',
+        'Archivo ZIP oficial publicado mensualmente por el TSE (descarga_padron.html).',
+        'https://www.tse.go.cr/zip/padron/padron_completo.zip');
+    crear_si_no_existe('PADRON_ARCHIVO', 'Archivo del padron dentro de DIR_PADRON',
+        'Nombre del TXT extraido del ZIP que lee la tabla externa EXT_PADRON_TSE.', 'PADRON_COMPLETO.txt');
+    crear_si_no_existe('PADRON_DIA_CARGA', 'Dia del mes de la carga del padron',
+        'Dia (1-28) en que JOB_PADRON_MENSUAL descarga y carga el padron vigente.', NULL, 5);
+    crear_si_no_existe('PADRON_INACTIVAR_AUSENTES', 'Inactivar personas ausentes del padron',
+        'S = marcar como inactivas (ESTADO_PADR = I) las cedulas que ya no vienen en el padron vigente.', 'S');
+    crear_si_no_existe('PADRON_SCRIPT_DESCARGA', 'Script de descarga del padron',
+        'Ruta del script que descarga y descomprime el ZIP del TSE en DIR_PADRON.',
+        CASE WHEN v_es_win THEN 'C:\app\oracle\proyecto\Descargar_Padron_TSE.ps1'
+             ELSE '/opt/oracle/proyecto/Descargar_Padron_TSE.sh' END);
+
+    CADENA_NEG.PKG_PER_PADRON.PR_CONFIGURAR_JOBS_PADRON;
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('[AVISO] Configurando JOB_PADRON_MENSUAL: ' || SQLERRM);
+END;
+/
+
 -- Verificacion de Jobs en el Diccionario de Datos
 SELECT job_name, state, next_run_date, repeat_interval, comments
   FROM all_scheduler_jobs
@@ -352,8 +391,8 @@ BEGIN
     -- PRUEBA 3: PKG_PER_PADRON (Padron electoral TSE, carga por lotes y cliente)
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 3] Verificando padron electoral y sincronizacion...');
-    PKG_PER_PADRON.PR_GENERAR_ARCHIVO_PADRON_TSE('DIR_PADRON', 'PADRON_COMPLETO.TXT');
-    PKG_PER_PADRON.PR_CARGAR_PADRON_TSE('DIR_PADRON', 'PADRON_COMPLETO.TXT');
+    PKG_PER_PADRON.PR_GENERAR_ARCHIVO_PADRON_TSE('DIR_PADRON', 'PADRON_PRUEBA.TXT');
+    PKG_PER_PADRON.PR_CARGAR_PADRON_TSE('DIR_PADRON', 'PADRON_PRUEBA.TXT');
 
     SELECT COUNT(*) INTO v_lineas_padron FROM CAT_PADRON;
     DBMS_OUTPUT.PUT_LINE('[OK PRUEBA 3.1] Padron electoral cargado. Total registros en CAT_PADRON: ' || v_lineas_padron);

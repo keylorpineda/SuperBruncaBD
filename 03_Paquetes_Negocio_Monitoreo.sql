@@ -38,17 +38,36 @@ ALTER SESSION SET CURRENT_SCHEMA = CADENA_NEG;
 --------------------------------------------------------------------------------
 CREATE OR REPLACE PACKAGE PKG_PER_PADRON IS
 
-    -- Genera un archivo de padron electoral en formato oficial TSE dentro de DIR_PADRON
+    -- Genera un archivo PEQUENO de prueba en formato TSE (no reemplaza al padron oficial)
     PROCEDURE PR_GENERAR_ARCHIVO_PADRON_TSE (
         p_directorio IN VARCHAR2 DEFAULT 'DIR_PADRON',
-        p_archivo    IN VARCHAR2 DEFAULT 'PADRON_COMPLETO.TXT'
+        p_archivo    IN VARCHAR2 DEFAULT 'PADRON_PRUEBA.TXT'
     );
 
-    -- Carga automaticamente el Padron Nacional desde un archivo de texto (formato TSE)
+    -- Carga fila por fila con validacion detallada (archivos pequenos o de prueba).
+    -- Para el padron oficial completo se usa PR_CARGAR_PADRON_MASIVO.
     PROCEDURE PR_CARGAR_PADRON_TSE (
         p_directorio IN VARCHAR2 DEFAULT 'DIR_PADRON',
-        p_archivo    IN VARCHAR2 DEFAULT 'PADRON_COMPLETO.TXT'
+        p_archivo    IN VARCHAR2 DEFAULT 'PADRON_PRUEBA.TXT'
     );
+
+    -- CARGA DEL PADRON OFICIAL (padron_completo.zip del TSE, ~3.7 millones de personas).
+    -- Lee PADRON_COMPLETO.txt y DISTELEC.txt de DIR_PADRON con tablas externas
+    -- (Latin-1) y hace MERGE masivo por provincia. Archivo por defecto: PADRON_ARCHIVO.
+    PROCEDURE PR_CARGAR_PADRON_MASIVO (
+        p_archivo          IN VARCHAR2 DEFAULT NULL,
+        p_archivo_distelec IN VARCHAR2 DEFAULT 'DISTELEC.txt'
+    );
+
+    -- Proceso mensual: descarga el padron vigente del TSE (si hay credencial del SO) y lo carga
+    PROCEDURE PR_ACTUALIZAR_PADRON_MENSUAL;
+
+    -- Crea JOB_PADRON_DESCARGA (externo) y JOB_PADRON_MENSUAL (dia PADRON_DIA_CARGA)
+    PROCEDURE PR_CONFIGURAR_JOBS_PADRON;
+
+    c_job_mensual  CONSTANT VARCHAR2(30) := 'JOB_PADRON_MENSUAL';
+    c_job_descarga CONSTANT VARCHAR2(30) := 'JOB_PADRON_DESCARGA';
+    c_credencial   CONSTANT VARCHAR2(30) := 'CRED_STANDBY_OS';
 
     -- Registra o sincroniza un cliente nacional obteniendo sus datos basicos desde CAT_PADRON
     PROCEDURE PR_CREAR_CLIENTE_DESDE_PADRON (
@@ -90,7 +109,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_PER_PADRON IS
 
     PROCEDURE PR_GENERAR_ARCHIVO_PADRON_TSE (
         p_directorio IN VARCHAR2 DEFAULT 'DIR_PADRON',
-        p_archivo    IN VARCHAR2 DEFAULT 'PADRON_COMPLETO.TXT'
+        p_archivo    IN VARCHAR2 DEFAULT 'PADRON_PRUEBA.TXT'
     ) IS
         v_arch UTL_FILE.FILE_TYPE;
     BEGIN
@@ -121,7 +140,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_PER_PADRON IS
 
     PROCEDURE PR_CARGAR_PADRON_TSE (
         p_directorio IN VARCHAR2 DEFAULT 'DIR_PADRON',
-        p_archivo    IN VARCHAR2 DEFAULT 'PADRON_COMPLETO.TXT'
+        p_archivo    IN VARCHAR2 DEFAULT 'PADRON_PRUEBA.TXT'
     ) IS
         v_archivo      UTL_FILE.FILE_TYPE;
         v_linea        VARCHAR2(4000);
@@ -214,7 +233,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_PER_PADRON IS
                                  JOIN CAT_CANTON c ON c.ID_CANTON = d.ID_CANTON
                                  JOIN CAT_PROVINCIA p ON p.ID_PROVINCIA = c.ID_PROVINCIA
                            WHERE d.CODIGO_POSTAL_DIST = SUBSTR(v_codelec, 1, 3) || SUBSTR(v_codelec, 5, 2)
-                              OR (p.CODIGO_PROV = SUBSTR(v_codelec, 1, 1) AND c.CODIGO_CANT = SUBSTR(v_codelec, 2, 2))
+                              OR (p.CODIGO_PROVI = SUBSTR(v_codelec, 1, 1) AND c.CODIGO_CANT = SUBSTR(v_codelec, 2, 2))
                            ORDER BY CASE WHEN d.CODIGO_POSTAL_DIST = SUBSTR(v_codelec, 1, 3) || SUBSTR(v_codelec, 5, 2) THEN 1 ELSE 2 END
                       )
                      WHERE ROWNUM = 1;
@@ -409,6 +428,307 @@ CREATE OR REPLACE PACKAGE BODY PKG_PER_PADRON IS
             PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_PER_PADRON', 'PR_CREAR_CLIENTE_DESDE_PADRON', SQLCODE, SQLERRM);
             RAISE;
     END PR_CREAR_CLIENTE_DESDE_PADRON;
+
+    -- -------------------------------------------------------------------------
+    -- CARGA MASIVA DEL PADRON OFICIAL DEL TSE
+    -- -------------------------------------------------------------------------
+    FUNCTION fn_param_txt(p_codigo IN VARCHAR2, p_defecto IN VARCHAR2) RETURN VARCHAR2 IS
+        v_valor SEG_PARAMETRO.VALOR_TEXTO_PARA%TYPE;
+    BEGIN
+        SELECT VALOR_TEXTO_PARA INTO v_valor FROM SEG_PARAMETRO
+         WHERE CODIGO_PARA = p_codigo AND ESTADO_PARA = 'A';
+        RETURN NVL(v_valor, p_defecto);
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN RETURN p_defecto;
+    END fn_param_txt;
+
+    FUNCTION fn_param_num(p_codigo IN VARCHAR2, p_defecto IN NUMBER) RETURN NUMBER IS
+        v_valor SEG_PARAMETRO.VALOR_NUM_PARA%TYPE;
+    BEGIN
+        SELECT VALOR_NUM_PARA INTO v_valor FROM SEG_PARAMETRO
+         WHERE CODIGO_PARA = p_codigo AND ESTADO_PARA = 'A';
+        RETURN NVL(v_valor, p_defecto);
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN RETURN p_defecto;
+    END fn_param_num;
+
+    -- Apunta una tabla externa al archivo indicado (dentro de DIR_PADRON)
+    PROCEDURE pr_apuntar_archivo(p_tabla IN VARCHAR2, p_archivo IN VARCHAR2) IS
+    BEGIN
+        IF NOT REGEXP_LIKE(p_archivo, '^[A-Za-z0-9_.-]+$') THEN
+            RAISE_APPLICATION_ERROR(-20035, 'Nombre de archivo de padron invalido: ' || p_archivo);
+        END IF;
+        EXECUTE IMMEDIATE 'ALTER TABLE ' || DBMS_ASSERT.SIMPLE_SQL_NAME(p_tabla)
+                       || ' LOCATION (' || DBMS_ASSERT.ENQUOTE_LITERAL(p_archivo) || ')';
+    END pr_apuntar_archivo;
+
+    PROCEDURE PR_CARGAR_PADRON_MASIVO (
+        p_archivo          IN VARCHAR2 DEFAULT NULL,
+        p_archivo_distelec IN VARCHAR2 DEFAULT 'DISTELEC.txt'
+    ) IS
+        v_archivo     VARCHAR2(200) := NVL(p_archivo, fn_param_txt('PADRON_ARCHIVO', 'PADRON_COMPLETO.txt'));
+        v_inicio      TIMESTAMP := SYSTIMESTAMP;
+        v_lineas      NUMBER := 0;
+        v_validas     NUMBER := 0;
+        v_procesadas  NUMBER := 0;
+        v_lote        NUMBER;
+        v_distritos   NUMBER := 0;
+        v_activos     NUMBER := 0;
+        v_inactivados NUMBER := 0;
+        v_segundos    NUMBER;
+    BEGIN
+        -- 1) Nombres de distritos electorales (DISTELEC.txt). Si no esta, se continua.
+        BEGIN
+            pr_apuntar_archivo('EXT_DISTELEC_TSE', p_archivo_distelec);
+            MERGE INTO CAT_DISTRITO_ELECTORAL d
+            USING (SELECT TRIM(CODELEC) AS codelec,
+                          SUBSTR(UPPER(TRIM(PROVINCIA)), 1, 60) AS provincia,
+                          SUBSTR(UPPER(TRIM(CANTON)), 1, 60)    AS canton,
+                          SUBSTR(UPPER(TRIM(RTRIM(DISTRITO, ' ' || CHR(13)))), 1, 100) AS distrito
+                     FROM EXT_DISTELEC_TSE
+                    WHERE REGEXP_LIKE(TRIM(CODELEC), '^[0-9]{6}$')) s
+               ON (d.COD_ELECTORAL_DIEL = s.codelec)
+            WHEN MATCHED THEN UPDATE SET d.PROVINCIA_DIEL = s.provincia, d.CANTON_DIEL = s.canton,
+                                         d.DISTRITO_DIEL = s.distrito, d.FECHA_ACT_DIEL = SYSTIMESTAMP
+            WHEN NOT MATCHED THEN INSERT (COD_ELECTORAL_DIEL, PROVINCIA_DIEL, CANTON_DIEL, DISTRITO_DIEL)
+                                  VALUES (s.codelec, s.provincia, s.canton, s.distrito);
+            v_distritos := SQL%ROWCOUNT;
+            COMMIT;
+        EXCEPTION
+            WHEN OTHERS THEN
+                ROLLBACK;
+                DBMS_OUTPUT.PUT_LINE('[AVISO] No se cargo ' || p_archivo_distelec || ': ' || SQLERRM);
+        END;
+
+        -- 2) Validar que el archivo del padron exista y sea legible
+        pr_apuntar_archivo('EXT_PADRON_TSE', v_archivo);
+        BEGIN
+            SELECT COUNT(*),
+                   COUNT(CASE WHEN REGEXP_LIKE(CEDULA, '^[1-9][0-9]{8}$')
+                               AND TRIM(NOMBRE) IS NOT NULL AND TRIM(APELLIDO1) IS NOT NULL THEN 1 END)
+              INTO v_lineas, v_validas
+              FROM EXT_PADRON_TSE;
+        EXCEPTION
+            WHEN OTHERS THEN
+                RAISE_APPLICATION_ERROR(-20036, 'No se puede leer ' || v_archivo || ' en DIR_PADRON. '
+                    || 'Descargue padron_completo.zip del TSE y extraigalo ahi. Detalle: ' || SQLERRM);
+        END;
+
+        IF v_validas = 0 THEN
+            RAISE_APPLICATION_ERROR(-20037, 'El archivo ' || v_archivo || ' no tiene registros validos del padron.');
+        END IF;
+
+        -- 3) MERGE por provincia (primer digito del codigo electoral) con COMMIT por
+        --    lote: limita el UNDO de una carga de millones de filas y permite reanudar.
+        FOR v_prov IN 0 .. 9 LOOP
+            SAVEPOINT sp_lote_padron;
+            MERGE INTO CAT_PADRON d
+            USING (
+                SELECT e.cedula, e.codelec, e.sexo, e.fecha_venc, e.junta,
+                       e.nombre, e.apellido1, e.apellido2, m.id_distrito
+                  FROM (SELECT TRIM(CEDULA) AS cedula,
+                               SUBSTR(TRIM(CODELEC), 1, 6) AS codelec,
+                               CASE TRIM(SEXO) WHEN '1' THEN 'M' WHEN '2' THEN 'F'
+                                               WHEN 'M' THEN 'M' WHEN 'F' THEN 'F' ELSE 'O' END AS sexo,
+                               CASE WHEN REGEXP_LIKE(TRIM(FECHACADUC), '^(19|20)[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$')
+                                    THEN TO_DATE(TRIM(FECHACADUC), 'YYYYMMDD')
+                                    ELSE ADD_MONTHS(TRUNC(SYSDATE), 60) END AS fecha_venc,
+                               NVL(SUBSTR(TRIM(JUNTA), 1, 5), '00000') AS junta,
+                               SUBSTRB(UPPER(TRIM(NOMBRE)), 1, 40) AS nombre,
+                               SUBSTRB(UPPER(TRIM(APELLIDO1)), 1, 40) AS apellido1,
+                               SUBSTRB(UPPER(TRIM(RTRIM(APELLIDO2, ' ' || CHR(13)))), 1, 40) AS apellido2
+                          FROM EXT_PADRON_TSE
+                         WHERE REGEXP_LIKE(CEDULA, '^[1-9][0-9]{8}$')
+                           AND TRIM(NOMBRE) IS NOT NULL
+                           AND TRIM(APELLIDO1) IS NOT NULL
+                           AND SUBSTR(TRIM(CODELEC), 1, 1) = TO_CHAR(v_prov)) e
+                  LEFT JOIN (SELECT p.CODIGO_PROVI AS prov, c.CODIGO_CANT AS cant, MIN(dt.ID_DISTRITO) AS id_distrito
+                               FROM CAT_DISTRITO dt
+                               JOIN CAT_CANTON c    ON c.ID_CANTON = dt.ID_CANTON
+                               JOIN CAT_PROVINCIA p ON p.ID_PROVINCIA = c.ID_PROVINCIA
+                              GROUP BY p.CODIGO_PROVI, c.CODIGO_CANT) m
+                    ON m.prov = SUBSTR(e.codelec, 1, 1) AND m.cant = SUBSTR(e.codelec, 2, 2)
+            ) s
+            ON (d.CEDULA_PADR = s.cedula)
+            WHEN MATCHED THEN UPDATE SET
+                d.COD_ELECTORAL_PADR   = s.codelec,
+                d.SEXO_PADR            = s.sexo,
+                d.FECHA_VENC_CED_PADR  = s.fecha_venc,
+                d.JUNTA_RECEPTORA_PADR = s.junta,
+                d.NOMBRE_PADR          = s.nombre,
+                d.APELLIDO1_PADR       = s.apellido1,
+                d.APELLIDO2_PADR       = s.apellido2,
+                d.ID_DISTRITO          = NVL(s.id_distrito, d.ID_DISTRITO),
+                d.ESTADO_PADR          = 'A',
+                d.USUARIO_MOD_PADR     = USER,
+                d.FECHA_MOD_PADR       = SYSTIMESTAMP
+             -- solo reescribe las personas que cambiaron (la carga mensual toca pocas filas)
+             WHERE d.COD_ELECTORAL_PADR <> s.codelec OR d.FECHA_VENC_CED_PADR <> s.fecha_venc
+                OR d.NOMBRE_PADR <> s.nombre OR d.APELLIDO1_PADR <> s.apellido1
+                OR NVL(d.APELLIDO2_PADR, '#') <> NVL(s.apellido2, '#')
+                OR d.JUNTA_RECEPTORA_PADR <> s.junta OR d.SEXO_PADR <> s.sexo OR d.ESTADO_PADR <> 'A'
+            WHEN NOT MATCHED THEN INSERT (
+                ID_PADRON, ID_DISTRITO, CEDULA_PADR, COD_ELECTORAL_PADR, SEXO_PADR,
+                FECHA_VENC_CED_PADR, JUNTA_RECEPTORA_PADR, NOMBRE_PADR, APELLIDO1_PADR,
+                APELLIDO2_PADR, ESTADO_PADR
+            ) VALUES (
+                SEQ_CAT_PADRON.NEXTVAL, s.id_distrito, s.cedula, s.codelec, s.sexo,
+                s.fecha_venc, s.junta, s.nombre, s.apellido1, s.apellido2, 'A'
+            );
+            v_lote := SQL%ROWCOUNT;
+            v_procesadas := v_procesadas + v_lote;
+            COMMIT;
+            IF v_lote > 0 THEN
+                DBMS_OUTPUT.PUT_LINE('  Provincia ' || v_prov || ': ' || v_lote || ' persona(s) insertadas/actualizadas.');
+            END IF;
+        END LOOP;
+
+        -- 4) Personas que ya no estan en el padron vigente (fallecidas, etc.) => inactivas.
+        --    Proteccion: solo si el archivo trae al menos el 90% de los activos actuales
+        --    (evita inactivar el padron completo al cargar un archivo de prueba pequeno).
+        SELECT COUNT(*) INTO v_activos FROM CAT_PADRON WHERE ESTADO_PADR = 'A';
+        IF fn_param_txt('PADRON_INACTIVAR_AUSENTES', 'S') = 'S' AND v_validas >= v_activos * 0.9 THEN
+            UPDATE CAT_PADRON
+               SET ESTADO_PADR = 'I', USUARIO_MOD_PADR = USER, FECHA_MOD_PADR = SYSTIMESTAMP
+             WHERE ESTADO_PADR = 'A'
+               AND CEDULA_PADR NOT IN (SELECT TRIM(CEDULA) FROM EXT_PADRON_TSE
+                                        WHERE REGEXP_LIKE(CEDULA, '^[1-9][0-9]{8}$'));
+            v_inactivados := SQL%ROWCOUNT;
+            COMMIT;
+        END IF;
+
+        v_segundos := ROUND((CAST(SYSTIMESTAMP AS DATE) - CAST(v_inicio AS DATE)) * 86400);
+
+        PKG_AUD_CONTROL.PR_REGISTRAR_OPERACION(
+            p_tabla       => 'CAT_PADRON',
+            p_llave       => v_archivo,
+            p_operacion   => 'INSERT',
+            p_modulo      => 'Padron',
+            p_descripcion => 'Carga masiva TSE: lineas ' || v_lineas || ', validas ' || v_validas
+                             || ', insertadas/actualizadas ' || v_procesadas || ', inactivadas ' || v_inactivados
+                             || ', distritos ' || v_distritos || ' (' || v_segundos || ' s)');
+
+        DBMS_OUTPUT.PUT_LINE('============================================================');
+        DBMS_OUTPUT.PUT_LINE('  CARGA MASIVA DEL PADRON NACIONAL ELECTORAL (TSE)');
+        DBMS_OUTPUT.PUT_LINE('============================================================');
+        DBMS_OUTPUT.PUT_LINE('Archivo                    : ' || v_archivo);
+        DBMS_OUTPUT.PUT_LINE('Lineas leidas              : ' || v_lineas);
+        DBMS_OUTPUT.PUT_LINE('Registros validos          : ' || v_validas);
+        DBMS_OUTPUT.PUT_LINE('Rechazados (ver .bad/.log) : ' || (v_lineas - v_validas));
+        DBMS_OUTPUT.PUT_LINE('Insertados o actualizados  : ' || v_procesadas);
+        DBMS_OUTPUT.PUT_LINE('Inactivados (ya no estan)  : ' || v_inactivados);
+        DBMS_OUTPUT.PUT_LINE('Distritos electorales      : ' || v_distritos);
+        DBMS_OUTPUT.PUT_LINE('Duracion                   : ' || v_segundos || ' segundos');
+        DBMS_OUTPUT.PUT_LINE('============================================================');
+    EXCEPTION
+        WHEN OTHERS THEN
+            BEGIN
+                ROLLBACK TO sp_lote_padron;   -- deshace solo el lote en curso
+            EXCEPTION
+                WHEN OTHERS THEN ROLLBACK;
+            END;
+            PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_PER_PADRON', 'PR_CARGAR_PADRON_MASIVO', SQLCODE, SQLERRM);
+            RAISE;
+    END PR_CARGAR_PADRON_MASIVO;
+
+    PROCEDURE PR_ACTUALIZAR_PADRON_MENSUAL IS
+        v_existe NUMBER;
+    BEGIN
+        -- 1) Descargar el padron vigente del TSE (job externo, requiere credencial del SO)
+        SELECT COUNT(*) INTO v_existe FROM USER_SCHEDULER_JOBS
+         WHERE JOB_NAME = c_job_descarga AND CREDENTIAL_NAME IS NOT NULL;
+        IF v_existe > 0 THEN
+            DBMS_SCHEDULER.RUN_JOB(job_name => c_job_descarga, use_current_session => TRUE);
+            DBMS_OUTPUT.PUT_LINE('[OK] Padron descargado del TSE y extraido en DIR_PADRON.');
+        ELSE
+            DBMS_OUTPUT.PUT_LINE('[AVISO] Sin descarga automatica (falta credencial del SO); se usa el archivo existente.');
+        END IF;
+
+        -- 2) Cargarlo
+        PR_CARGAR_PADRON_MASIVO;
+    EXCEPTION
+        WHEN OTHERS THEN
+            PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_PER_PADRON', 'PR_ACTUALIZAR_PADRON_MENSUAL', SQLCODE, SQLERRM);
+            RAISE;
+    END PR_ACTUALIZAR_PADRON_MENSUAL;
+
+    PROCEDURE PR_CONFIGURAR_JOBS_PADRON IS
+        v_es_win  BOOLEAN := INSTR(UPPER(DBMS_UTILITY.PORT_STRING), 'WIN') > 0;
+        v_dia     NUMBER  := fn_param_num('PADRON_DIA_CARGA', 5);
+        v_ruta    VARCHAR2(4000);
+        v_script  VARCHAR2(500);
+        v_url     VARCHAR2(500) := fn_param_txt('PADRON_URL_TSE', 'https://www.tse.go.cr/zip/padron/padron_completo.zip');
+        v_cred    NUMBER;
+        v_existe  NUMBER;
+    BEGIN
+        SELECT DIRECTORY_PATH INTO v_ruta FROM ALL_DIRECTORIES WHERE DIRECTORY_NAME = 'DIR_PADRON';
+        IF v_es_win THEN
+            v_script := fn_param_txt('PADRON_SCRIPT_DESCARGA', 'C:\app\oracle\proyecto\Descargar_Padron_TSE.ps1');
+        ELSE
+            v_script := fn_param_txt('PADRON_SCRIPT_DESCARGA', '/opt/oracle/proyecto/Descargar_Padron_TSE.sh');
+        END IF;
+
+        -- Job externo de descarga (lo ejecuta JOB_PADRON_MENSUAL; no tiene horario propio)
+        SELECT COUNT(*) INTO v_existe FROM USER_SCHEDULER_JOBS WHERE JOB_NAME = c_job_descarga;
+        IF v_existe > 0 THEN
+            DBMS_SCHEDULER.DROP_JOB(c_job_descarga, force => TRUE);
+        END IF;
+
+        IF v_es_win THEN
+            DBMS_SCHEDULER.CREATE_JOB(job_name => c_job_descarga, job_type => 'EXECUTABLE',
+                job_action => 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
+                number_of_arguments => 9, enabled => FALSE, auto_drop => FALSE,
+                comments => 'Descarga padron_completo.zip del TSE y lo extrae en DIR_PADRON');
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 1, '-NoProfile');
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 2, '-ExecutionPolicy');
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 3, 'Bypass');
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 4, '-File');
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 5, v_script);
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 6, '-Url');
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 7, v_url);
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 8, '-Destino');
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 9, v_ruta);
+        ELSE
+            DBMS_SCHEDULER.CREATE_JOB(job_name => c_job_descarga, job_type => 'EXECUTABLE',
+                job_action => '/bin/bash', number_of_arguments => 3, enabled => FALSE, auto_drop => FALSE,
+                comments => 'Descarga padron_completo.zip del TSE y lo extrae en DIR_PADRON');
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 1, v_script);
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 2, v_url);
+            DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE(c_job_descarga, 3, v_ruta);
+        END IF;
+
+        -- Reutiliza la credencial del SO registrada con PKG_ADM_STANDBY.PR_REGISTRAR_CREDENCIAL_OS
+        SELECT COUNT(*) INTO v_cred FROM USER_CREDENTIALS WHERE CREDENTIAL_NAME = c_credencial;
+        IF v_cred > 0 THEN
+            DBMS_SCHEDULER.SET_ATTRIBUTE(c_job_descarga, 'credential_name', c_credencial);
+            DBMS_SCHEDULER.ENABLE(c_job_descarga);
+        END IF;
+
+        -- Job mensual: el TSE publica el padron actualizado cada mes
+        SELECT COUNT(*) INTO v_existe FROM USER_SCHEDULER_JOBS WHERE JOB_NAME = c_job_mensual;
+        IF v_existe > 0 THEN
+            DBMS_SCHEDULER.DROP_JOB(c_job_mensual, force => TRUE);
+        END IF;
+        DBMS_SCHEDULER.CREATE_JOB(
+            job_name        => c_job_mensual,
+            job_type        => 'PLSQL_BLOCK',
+            job_action      => 'BEGIN CADENA_NEG.PKG_PER_PADRON.PR_ACTUALIZAR_PADRON_MENSUAL; END;',
+            start_date      => SYSTIMESTAMP,
+            repeat_interval => 'FREQ=MONTHLY; BYMONTHDAY=' || v_dia || '; BYHOUR=2; BYMINUTE=0; BYSECOND=0',
+            enabled         => TRUE,
+            auto_drop       => FALSE,
+            comments        => 'Descarga y carga mensual del Padron Nacional Electoral (PADRON_DIA_CARGA)');
+
+        IF v_cred > 0 THEN
+            DBMS_OUTPUT.PUT_LINE('[OK] JOB_PADRON_MENSUAL: dia ' || v_dia || ' de cada mes a las 02:00, con descarga automatica.');
+        ELSE
+            DBMS_OUTPUT.PUT_LINE('[OK] JOB_PADRON_MENSUAL: dia ' || v_dia || ' de cada mes a las 02:00 (descarga automatica pendiente de credencial del SO).');
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_PER_PADRON', 'PR_CONFIGURAR_JOBS_PADRON', SQLCODE, SQLERRM);
+            RAISE;
+    END PR_CONFIGURAR_JOBS_PADRON;
 
 END PKG_PER_PADRON;
 /

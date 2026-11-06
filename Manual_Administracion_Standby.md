@@ -320,7 +320,7 @@ El enunciado pide replicar todas las acciones de la principal. Estas son las que
 | :--- | :--- | :--- |
 | Operación `NOLOGGING` o carga directa | Bloques corruptos en la standby (`ORA-01578`) | Prevenido con `FORCE LOGGING`. Si se desactivó, volver a activarlo y respaldar/restaurar el datafile afectado en la standby. |
 | Se agrega un datafile o tablespace | `ORA-01111` / `ORA-01157` al aplicar | Prevenido con `STANDBY_FILE_MANAGEMENT=AUTO`. Si falla: en la standby `ALTER DATABASE CREATE DATAFILE '<UNNAMED>' AS '<ruta>';` y volver a aplicar. |
-| Archivos externos (`padron_muestra.csv`, directorio `DIR_PADRON`, respaldos) | El padrón no está en la PC 2 al activarla | Son archivos del sistema operativo, no viajan en el redo: copiar el CSV a la misma ruta en la PC 2. |
+| Archivos externos (`PADRON_COMPLETO.txt`, `DISTELEC.txt` en `DIR_PADRON`) | La tabla `CAT_PADRON` sí está replicada, pero los archivos del TSE no | Son archivos del sistema operativo, no viajan en el redo: tras activar la PC 2, ejecutar `Descargar_Padron_TSE.ps1` allí antes de la siguiente carga mensual. |
 | Cambio de claves de usuarios SYS o del archivo de claves | Fallan conexiones `SYSDBA` remotas | Volver a copiar `PWD<SID>.ora` a la PC 2. |
 | Falta un archivelog (hueco) | `RMAN-06054` pidiendo una secuencia vieja que no llega | `PR_SINCRONIZAR_AHORA` en la PC 1; si el archivo ya no existe, respaldo incremental desde el SCN de la standby (`BACKUP INCREMENTAL FROM SCN <scn> DATABASE`) y `RECOVER` en la PC 2. |
 | Carpeta compartida inaccesible (PC 2 apagada, red) | Job `FAILED`; correo "inconsistencia en la sincronización" | Revisar red/permisos y ejecutar `PR_SINCRONIZAR_AHORA`: la copia es incremental y se pone al día sola. |

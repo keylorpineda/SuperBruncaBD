@@ -55,6 +55,7 @@ La solución se entrega organizada en scripts modulares e independientes, gobern
 | `05_Seguridad_Perfiles_Roles_Usuarios.sql` | SQL / DCL | Perfiles, 4 roles con clave cifrada, usuarios y pruebas de mínimos privilegios. |
 | `06_Scheduler_Optimizacion_y_Pruebas.sql` | PL/SQL | 5 Jobs DBMS_SCHEDULER, EXPLAIN PLAN y 12 suites de prueba de extremo a extremo. |
 | `padron_muestra.csv` | Datos externos | Archivo CSV muestra del padrón electoral para prueba de UTL_FILE. |
+| `Descargar_Padron_TSE.ps1` / `.sh` | Script SO | Descarga `padron_completo.zip` del TSE y deja `PADRON_COMPLETO.txt` y `DISTELEC.txt` en `DIR_PADRON`. |
 | `script_bd_v2.sql` | DDL Base | Línea base del Entregable #1 (tablas transaccionales y catálogos). |
 | `07_Standby_y_RMAN/` | Directorio | Configuración de la principal (redo 50 MB / 5 min), creación y sincronización de la standby en la segunda PC, RMAN, purga, switchover y failover. |
 | `07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql` | PL/SQL | Paquete `PKG_ADM_STANDBY` y 4 jobs DBMS_SCHEDULER: traslado cada 10 min, respaldo RMAN diario, purga de 3 días y monitoreo. |
@@ -100,6 +101,8 @@ El script maestro ejecuta de forma consecutiva las siete fases del avance:
 4. Modifica tablas base del Entregable #1 adicionando columnas de enlace electoral (`ID_PADRON` en `PER_CLIENTE`).
 5. Crea las **11 tablas nuevas**:
    * `CAT_PADRON`: Almacenamiento optimizado del padrón electoral nacional.
+   * `CAT_DISTRITO_ELECTORAL`: Nombres oficiales de provincia, cantón y distrito electoral (`DISTELEC.txt`).
+   * `EXT_PADRON_TSE` y `EXT_DISTELEC_TSE`: Tablas externas (Latin-1) que leen los archivos oficiales del TSE sin copiarlos; vista `V_PADRON_DETALLE`.
    * `SEG_PARAMETRO`: Configuración general del sistema con soporte para valores cifrados en `RAW(2000)`.
    * `COM_CUENTA_PAGAR`: Cuentas por pagar a proveedores derivadas de compras a crédito.
    * `VEN_CUENTA_COBRAR`: Cuentas por cobrar a clientes derivadas de ventas a crédito.
@@ -130,7 +133,7 @@ El script maestro ejecuta de forma consecutiva las siete fases del avance:
 5. Configura la lista de control de acceso de red (ACL) en el puerto 587 para permitir la salida SMTP desde Oracle.
 
 ### Paso 3: Paquetes de Negocio y Monitoreo (`03_Paquetes_Negocio_Monitoreo.sql`)
-1. `PKG_PER_PADRON`: Carga masiva de datos electorales desde archivo de texto con `UTL_FILE` y procedimiento `PR_CREAR_CLIENTE_DESDE_PADRON`.
+1. `PKG_PER_PADRON`: Carga masiva del padrón oficial del TSE (`PR_CARGAR_PADRON_MASIVO`, tablas externas y `MERGE` por provincia), carga fila por fila con validación para archivos pequeños (`PR_CARGAR_PADRON_TSE`), actualización mensual automática (`JOB_PADRON_MENSUAL`) y `PR_CREAR_CLIENTE_DESDE_PADRON`.
 2. `PKG_INV_GESTION`: Control de inventario con bloqueo pesimista `SELECT FOR UPDATE WAIT 5`, actualización de stock, kardex inmutable y reporte de productos críticos a mercadeo.
 3. `PKG_COM_OPERACION`: Facturación de compras a proveedores con registro automático de cuentas por pagar y abonos.
 4. `PKG_VEN_OPERACION`: Facturación en punto de venta, control de crédito, abonos de clientes y cierre contable diario consolidado y por cajero (`PR_EJECUTAR_CIERRE_DIARIO`).
@@ -195,6 +198,28 @@ Compila 18 disparadores en estado `ENABLED`:
 
 La configuración de la segunda computadora (standby) se detalla en el **Manual de Administración del Standby**.
 
+### Paso 8: Carga del Padrón Nacional Electoral oficial (TSE)
+El enunciado pide cargar el padrón **con la información actual**. Las pruebas del paso 6 usan un archivo pequeño (`PADRON_PRUEBA.TXT`); el padrón real se carga así:
+
+1. Ver la carpeta del directorio `DIR_PADRON`:
+   ```sql
+   SELECT directory_path FROM all_directories WHERE directory_name = 'DIR_PADRON';
+   ```
+2. Descargar y descomprimir el padrón vigente (`padron_completo.zip`, ~74 MB, publicado cada mes en https://www.tse.go.cr/descarga_padron.html):
+   ```powershell
+   .\Descargar_Padron_TSE.ps1 -Destino <carpeta de DIR_PADRON>
+   ```
+   En Docker: `docker exec -it oracle_una bash /opt/oracle/proyecto/Descargar_Padron_TSE.sh https://www.tse.go.cr/zip/padron/padron_completo.zip <carpeta>`
+3. Cargarlo (~3,7 millones de personas; tarda algunos minutos):
+   ```sql
+   SET SERVEROUTPUT ON
+   EXEC CADENA_NEG.PKG_PER_PADRON.PR_CARGAR_PADRON_MASIVO;
+   SELECT * FROM CADENA_NEG.V_PADRON_DETALLE WHERE cedula_padr = '<una cedula real>';
+   ```
+4. Desde entonces `JOB_PADRON_MENSUAL` lo descarga y recarga solo el día `PADRON_DIA_CARGA` (5) de cada mes. La descarga automática usa la misma credencial del SO del paso 7.
+
+Las líneas rechazadas quedan en `padron_tse.bad` y el detalle en `padron_tse.log`, dentro de la misma carpeta.
+
 > **Antes de la defensa:** reemplazar la clave de aplicación de Gmail sembrada como ejemplo:
 > `EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', '<clave de aplicacion de 16 letras>');`
 
@@ -213,14 +238,14 @@ SELECT object_type, status, COUNT(*) AS cantidad
 ```
 
 ### 5.1 Cifras Oficiales Obtenidas en Verificación en Vivo
-* **TABLE:** 62 (todas `VALID`).
+* **TABLE:** 65 (todas `VALID`; incluye las tablas externas `EXT_PADRON_TSE` y `EXT_DISTELEC_TSE`).
 * **INDEX:** 224 (todos `VALID`).
 * **SEQUENCE:** 60 (todas `VALID`).
 * **PACKAGE:** 10 (todos `VALID`, incluye `PKG_ADM_STANDBY`).
 * **PACKAGE BODY:** 10 (todos `VALID`).
 * **TRIGGER:** 18 (todos `VALID` y `ENABLED`).
-* **JOB (Scheduler):** 9: los 5 de negocio y `JOB_STANDBY_MONITOREO` en `SCHEDULED`; los 3 jobs externos del standby pasan a `SCHEDULED` al registrar la credencial.
-* **VIEW:** 6 (todas `VALID`).
+* **JOB (Scheduler):** 11: los 5 de negocio, `JOB_PADRON_MENSUAL` y `JOB_STANDBY_MONITOREO` en `SCHEDULED`; los jobs externos (3 del standby y `JOB_PADRON_DESCARGA`) se habilitan al registrar la credencial.
+* **VIEW:** 7 (todas `VALID`, incluye `V_PADRON_DETALLE`).
 * **MATERIALIZED VIEW:** 2 (`MV_VENTAS_MENSUALES`, `MV_INVENTARIO_CONSOLIDADO`, `VALID`).
 * **PROCEDURE:** 1 (`PRC_ACTIVAR_ROL_SESION`, `VALID`).
 * **TOTAL DE OBJETOS INVÁLIDOS:** **0**.
