@@ -2,7 +2,6 @@
    PROYECTO: Sistema Integral de Cadena de Supermercados
    MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
    ARCHIVO:  07_Standby_y_RMAN/06_Standby_Switchover_y_Failover.sql
-   AUTOR:    Keylor Pineda Alvarez
    CURSO:    Administracion de Bases de Datos
    DESCRIPCION:
      Guia operativa y sentencias SQL para la ejecucion de Switchover

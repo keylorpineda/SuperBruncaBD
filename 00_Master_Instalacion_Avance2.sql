@@ -1,7 +1,6 @@
 -- ============================================================================
 -- PROYECTO: Sistema Integral de Cadena de Supermercados
 -- ARCHIVO:  00_Master_Instalacion_Avance2.sql
--- AUTOR:    Keylor Pineda Alvarez
 -- CURSO:    Administracion de Bases de Datos
 -- FECHA:    Octubre 2026 - Avance 2
 -- MOTOR:    Oracle Database 21c / 23ai / 26ai Free

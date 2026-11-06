@@ -3,7 +3,6 @@
 # PROYECTO: Sistema Integral de Cadena de Supermercados
 # MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai (Linux)
 # ARCHIVO:  07_Standby_y_RMAN/02_Traslado_Archivelogs_10min_y_Ondemand.sh
-# AUTOR:    Keylor Pineda Alvarez
 # CURSO:    Administracion de Bases de Datos
 # ==============================================================================
 

@@ -1,7 +1,6 @@
 -- ============================================================================
 -- PROYECTO: Sistema Integral de Cadena de Supermercados
 -- ARCHIVO:  05_Seguridad_Perfiles_Roles_Usuarios.sql
--- AUTOR:    Keylor Pineda Alvarez
 -- CURSO:    Administracion de Bases de Datos
 -- FECHA:    Octubre 2026 - Avance 2
 -- MOTOR:    Oracle Database 21c / 23ai / 26ai Free
