@@ -117,20 +117,26 @@ BEGIN
 
     -- Destino 2 (red hacia el Standby): solo Data Guard (Enterprise) con la entrada
     -- STANDBY_TNS en tnsnames.ora. En XE/Free/Standard se usa el MODO MANUAL
-    -- (JOB_STANDBY_TRASLADO_ARCHIVELOG) y el destino 2 queda diferido.
+    -- (JOB_STANDBY_TRASLADO_ARCHIVELOG) y el destino 2 se deja VACIO: si existiera
+    -- (aunque diferido), RMAN nunca purgaria porque la principal no puede saber
+    -- que aplico el standby (RMAN-08120 "not yet applied by standby").
     SELECT db_unique_name INTO v_unico FROM v$database;
     SELECT banner INTO v_banner FROM v$version WHERE ROWNUM = 1;
-    EXECUTE IMMEDIATE 'ALTER SYSTEM SET LOG_ARCHIVE_CONFIG = ''DG_CONFIG=(' || v_unico || ',CADENA_STBY)'' SCOPE = BOTH';
-    EXECUTE IMMEDIATE 'ALTER SYSTEM SET LOG_ARCHIVE_DEST_2 = ''SERVICE=STANDBY_TNS ASYNC NOAFFIRM '
-                   || 'VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=CADENA_STBY'' SCOPE = BOTH';
-    EXECUTE IMMEDIATE 'ALTER SYSTEM SET FAL_SERVER = ''STANDBY_TNS'' SCOPE = BOTH';
     IF INSTR(UPPER(v_banner), 'ENTERPRISE') > 0 THEN
+        EXECUTE IMMEDIATE 'ALTER SYSTEM SET LOG_ARCHIVE_CONFIG = ''DG_CONFIG=(' || v_unico || ',CADENA_STBY)'' SCOPE = BOTH';
+        EXECUTE IMMEDIATE 'ALTER SYSTEM SET LOG_ARCHIVE_DEST_2 = ''SERVICE=STANDBY_TNS ASYNC NOAFFIRM '
+                       || 'VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=CADENA_STBY'' SCOPE = BOTH';
         EXECUTE IMMEDIATE 'ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2 = ENABLE SCOPE = BOTH';
+        EXECUTE IMMEDIATE 'ALTER SYSTEM SET FAL_SERVER = ''STANDBY_TNS'' SCOPE = BOTH';
         DBMS_OUTPUT.PUT_LINE('[OK] Enterprise: Data Guard habilitado hacia CADENA_STBY.');
     ELSE
-        EXECUTE IMMEDIATE 'ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2 = DEFER SCOPE = BOTH';
-        DBMS_OUTPUT.PUT_LINE('[OK] Modo manual (sin Data Guard): LOG_ARCHIVE_DEST_2 diferido; traslado por job.');
+        EXECUTE IMMEDIATE 'ALTER SYSTEM SET LOG_ARCHIVE_DEST_2 = '''' SCOPE = BOTH';
+        DBMS_OUTPUT.PUT_LINE('[OK] Modo manual (sin Data Guard): traslado por JOB_STANDBY_TRASLADO_ARCHIVELOG.');
     END IF;
+
+    -- El controlfile debe recordar los respaldos al menos tanto como la ventana
+    -- de recuperacion de RMAN (14 dias), si no RMAN avisa RMAN-07553.
+    EXECUTE IMMEDIATE 'ALTER SYSTEM SET CONTROL_FILE_RECORD_KEEP_TIME = 21 SCOPE = BOTH';
 
     -- Replicar acciones: los datafiles nuevos se crean solos en el Standby
     EXECUTE IMMEDIATE 'ALTER SYSTEM SET STANDBY_FILE_MANAGEMENT = AUTO SCOPE = BOTH';
@@ -167,7 +173,8 @@ PROMPT 5. VERIFICACION FINAL
 PROMPT ============================================================================
 SELECT name, value FROM v$parameter
  WHERE name IN ('archive_lag_target', 'log_archive_dest_1', 'log_archive_dest_state_2',
-                'standby_file_management', 'log_archive_config');
+                'standby_file_management', 'log_archive_config', 'log_archive_dest_2',
+                'control_file_record_keep_time');
 
 SELECT group#, thread#, sequence#, bytes / 1024 / 1024 AS tamano_mb, members, status
   FROM v$log ORDER BY group#;

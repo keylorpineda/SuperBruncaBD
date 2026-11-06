@@ -114,7 +114,8 @@ Lo que configura el script:
 | `ARCHIVE_LAG_TARGET = 300` | Si en 5 minutos no se llenaron los 50 MB, Oracle cambia de log igual. Nadie tiene que intervenir. |
 | `FORCE LOGGING` | Ninguna operación (ni las `NOLOGGING`) se salta el redo; así todo se replica. |
 | `LOG_ARCHIVE_DEST_1` en la Fast Recovery Area | Dónde quedan los archivelogs en la PC 1. |
-| `LOG_ARCHIVE_DEST_2`, `LOG_ARCHIVE_CONFIG`, `FAL_SERVER` | Solo para Data Guard. En **modo manual** se difiere: `ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2 = DEFER SCOPE = BOTH;` |
+| `LOG_ARCHIVE_DEST_2`, `LOG_ARCHIVE_CONFIG`, `FAL_SERVER` | Solo en Enterprise (Data Guard). En **modo manual** el script deja `LOG_ARCHIVE_DEST_2` vacío; si existiera, RMAN nunca purgaría (`RMAN-08120 not yet applied by standby`). |
+| `CONTROL_FILE_RECORD_KEEP_TIME = 21` | El controlfile recuerda los respaldos más que la ventana de 14 días de RMAN. |
 | `STANDBY_FILE_MANAGEMENT = AUTO` | Si se agrega un datafile en la principal, se crea solo en la standby. |
 | Standby redo logs (grupos 11–14, 50 MB) | Necesarios para recibir redo y para cambiar de rol en un switchover. |
 
@@ -254,7 +255,9 @@ Si algo falla, el script termina con código 1; así DBMS_SCHEDULER marca el job
 | PC 1 | `03_Purga_Archivelogs_3Dias.rman` (job diario) | `ARCHIVELOG DELETION POLICY TO APPLIED ON ALL STANDBY BACKED UP 1 TIMES` y `DELETE ARCHIVELOG ALL COMPLETED BEFORE 'SYSDATE-&1'`. |
 | PC 2 | `03_Purga_Archivelogs_Standby.rman` (tarea diaria) | `CATALOG` de la carpeta recibida, política `APPLIED ON ALL STANDBY` y borrado de lo aplicado con más de `&1` días. |
 
-`&1` es el valor de `STANDBY_PURGE_DIAS`. RMAN no borra un archivelog que no cumpla la política: muestra `RMAN-08120` y lo conserva. Así nunca se pierde redo que la standby todavía necesita.
+`&1` es el valor de `STANDBY_PURGE_DIAS`. RMAN no borra un archivelog que no cumpla la política: muestra `RMAN-08120` y lo conserva. En modo manual RMAN avisa `RMAN-08591` (no hay destino standby registrado) y exige solo el respaldo; que el archivo ya llegó a la PC 2 lo garantiza el traslado cada 10 minutos, vigilado por `JOB_STANDBY_MONITOREO`.
+
+> Verificado en Oracle 26ai Free (Docker): con 86 archivelogs, la purga eliminó los 41 que tenían más de 3 días y ya estaban respaldados.
 
 ---
 

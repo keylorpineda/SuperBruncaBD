@@ -10,6 +10,9 @@
 #     c) tienen al menos un respaldo RMAN.
 #   Las condiciones b) y c) las garantiza la ARCHIVELOG DELETION POLICY:
 #   RMAN no borra (y avisa con RMAN-08120) un log que no cumpla la politica.
+#   En MODO MANUAL (sin Data Guard) no hay destino standby registrado: RMAN avisa
+#   RMAN-08591 y aplica solo "BACKED UP 1 TIMES"; que el log llego al standby lo
+#   garantiza el traslado cada 10 min (vigilado por JOB_STANDBY_MONITOREO).
 #
 #   Variable de sustitucion:
 #     &1 = Dias de retencion (valor de STANDBY_PURGE_DIAS en SEG_PARAMETRO).

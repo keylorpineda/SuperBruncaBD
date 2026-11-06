@@ -239,11 +239,11 @@ SELECT object_type, status, COUNT(*) AS cantidad
 
 ### 5.1 Cifras Oficiales Obtenidas en Verificación en Vivo
 * **TABLE:** 65 (todas `VALID`; incluye las tablas externas `EXT_PADRON_TSE` y `EXT_DISTELEC_TSE`).
-* **INDEX:** 224 (todos `VALID`).
+* **INDEX:** 225 (todos `VALID`).
 * **SEQUENCE:** 60 (todas `VALID`).
 * **PACKAGE:** 10 (todos `VALID`, incluye `PKG_ADM_STANDBY`).
 * **PACKAGE BODY:** 10 (todos `VALID`).
-* **TRIGGER:** 18 (todos `VALID` y `ENABLED`).
+* **TRIGGER:** 21 (todos `VALID` y `ENABLED`).
 * **JOB (Scheduler):** 11: los 5 de negocio, `JOB_PADRON_MENSUAL` y `JOB_STANDBY_MONITOREO` en `SCHEDULED`; los jobs externos (3 del standby y `JOB_PADRON_DESCARGA`) se habilitan al registrar la credencial.
 * **VIEW:** 7 (todas `VALID`, incluye `V_PADRON_DETALLE`).
 * **MATERIALIZED VIEW:** 2 (`MV_VENTAS_MENSUALES`, `MV_INVENTARIO_CONSOLIDADO`, `VALID`).
