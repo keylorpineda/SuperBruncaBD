@@ -43,7 +43,6 @@ def build_cover_html(title: str) -> str:
         </div>
         <p class="p-date">Octubre del 2026</p>
     </div>
-    <div class="page-break"></div>
     """
 
 CSS_STYLES = """

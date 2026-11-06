@@ -36,7 +36,7 @@ El presente manual describe paso a paso el procedimiento oficial para la instala
 
 ### 1.2 Parámetros de Red y Correo
 * **Puerto de Base de Datos:** 1521 TCP (Listener Oracle).
-* **Puerto de Envío SMTP:** 587 TCP (STARTTLS / `smtp.gmail.com`).
+* **Puerto de Envío SMTP:** 465 TCP (SMTPS con SSL / `smtp.gmail.com`); 587 con STARTTLS como alternativa.
 * **Destinatario Institucional de Pruebas:** `keylorpineda729@gmail.com` (configurado en `CADENA_NEG.SEG_PARAMETRO` para coordinadores, gerencia y DBA).
 
 ---
@@ -56,7 +56,8 @@ La solución se entrega organizada en scripts modulares e independientes, gobern
 | `06_Scheduler_Optimizacion_y_Pruebas.sql` | PL/SQL | 5 Jobs DBMS_SCHEDULER, EXPLAIN PLAN y 12 suites de prueba de extremo a extremo. |
 | `padron_muestra.csv` | Datos externos | Archivo CSV muestra del padrón electoral para prueba de UTL_FILE. |
 | `script_bd_v2.sql` | DDL Base | Línea base del Entregable #1 (tablas transaccionales y catálogos). |
-| `07_Standby_y_RMAN/` | Directorio | Scripts de configuración Standby, Redo 50 MB, RMAN y Failover. |
+| `07_Standby_y_RMAN/` | Directorio | Configuración de la principal (redo 50 MB / 5 min), creación y sincronización de la standby en la segunda PC, RMAN, purga, switchover y failover. |
+| `07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql` | PL/SQL | Paquete `PKG_ADM_STANDBY` y 4 jobs DBMS_SCHEDULER: traslado cada 10 min, respaldo RMAN diario, purga de 3 días y monitoreo. |
 
 ---
 
@@ -90,7 +91,7 @@ sqlplus sys/TuPassword@localhost:1521/FREEPDB1 as sysdba @00_Master_Instalacion_
 
 ## 4. Desglose Técnico de los Pasos de Instalación
 
-El script maestro ejecuta de forma consecutiva las seis fases del avance:
+El script maestro ejecuta de forma consecutiva las siete fases del avance:
 
 ### Paso 1: Estructuras DDL, Tablas Nuevas y Vistas Materializadas (`01_Estructuras_Avance2.sql`)
 1. Detecta automáticamente el PDB activo (`FREEPDB1`) y conmuta la sesión mediante `ALTER SESSION SET CONTAINER`.
@@ -183,6 +184,20 @@ Compila 18 disparadores en estado `ENABLED`:
    * Pruebas positivas de monitoreo, notificaciones de crédito (85% y 70%), padrón electoral TSE con resolución distrital, compras atómicas, ventas atómicas, abonos con liquidación de estado (P $\to$ C), mercadeo/descuentos, cierre diario por cajero y refresco de vistas materializadas.
    * Pruebas negativas y de integridad: Rechazo controlado por límite de crédito (`ORA-20010`) con verificación estricta de atomicidad (cero facturas o CxC huérfanas tras `ROLLBACK TO SAVEPOINT`), rechazo por falta de inventario (`ORA-20015`), y reconfiguración dinámica en caliente del Scheduler (`DBMS_SCHEDULER.SET_ATTRIBUTE`).
 
+### Paso 7: Jobs del Standby y RMAN (`07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql`)
+1. Otorga a `CADENA_NEG` los privilegios `CREATE EXTERNAL JOB` y `CREATE CREDENTIAL`.
+2. Registra en `SEG_PARAMETRO` las rutas y horarios del standby (detecta SO, SID, `ORACLE_HOME` y la ruta de archivelogs).
+3. Crea el paquete `PKG_ADM_STANDBY` y los jobs `JOB_STANDBY_TRASLADO_ARCHIVELOG`, `JOB_RMAN_BACKUP_DIARIO`, `JOB_STANDBY_PURGA_ARCHIVELOG` y `JOB_STANDBY_MONITOREO`.
+4. **Acción manual única:** los tres jobs externos quedan deshabilitados hasta registrar el usuario del sistema operativo:
+   ```sql
+   EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_REGISTRAR_CREDENCIAL_OS('usuario_windows', 'clave_windows');
+   ```
+
+La configuración de la segunda computadora (standby) se detalla en el **Manual de Administración del Standby**.
+
+> **Antes de la defensa:** reemplazar la clave de aplicación de Gmail sembrada como ejemplo:
+> `EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', '<clave de aplicacion de 16 letras>');`
+
 ---
 
 ## 5. Verificación Posterior y Validación del Estado Final
@@ -201,10 +216,10 @@ SELECT object_type, status, COUNT(*) AS cantidad
 * **TABLE:** 62 (todas `VALID`).
 * **INDEX:** 224 (todos `VALID`).
 * **SEQUENCE:** 60 (todas `VALID`).
-* **PACKAGE:** 9 (todos `VALID`).
-* **PACKAGE BODY:** 9 (todos `VALID`).
+* **PACKAGE:** 10 (todos `VALID`, incluye `PKG_ADM_STANDBY`).
+* **PACKAGE BODY:** 10 (todos `VALID`).
 * **TRIGGER:** 18 (todos `VALID` y `ENABLED`).
-* **JOB (Scheduler):** 5 (todos `VALID` y `SCHEDULED`).
+* **JOB (Scheduler):** 9: los 5 de negocio y `JOB_STANDBY_MONITOREO` en `SCHEDULED`; los 3 jobs externos del standby pasan a `SCHEDULED` al registrar la credencial.
 * **VIEW:** 6 (todas `VALID`).
 * **MATERIALIZED VIEW:** 2 (`MV_VENTAS_MENSUALES`, `MV_INVENTARIO_CONSOLIDADO`, `VALID`).
 * **PROCEDURE:** 1 (`PRC_ACTIVAR_ROL_SESION`, `VALID`).
@@ -234,14 +249,14 @@ SELECT codigo_para, valor_texto_para
      ```
 
 2. **Error `ORA-24247: network access denied by access control list (ACL)`:**
-   * *Causa:* Restricción de seguridad en el puerto 587 para envíos con `UTL_SMTP`.
+   * *Causa:* Restricción de seguridad en el puerto SMTP (465 o 587) para envíos con `UTL_SMTP`.
    * *Solución:* El paquete de notificaciones captura el error de forma segura en bitácora local (`AUD_ERROR_SISTEMA`) sin abortar la transacción de negocio. Para habilitar la salida real en entornos locales, ejecute como SYSDBA:
      ```sql
      BEGIN
          DBMS_NETWORK_ACL_ADMIN.APPEND_HOST_ACE(
              host => '*',
-             lower_port => 587,
-             upper_port => 587,
+             lower_port => 465,
+             upper_port => 465,
              ace => xs$ace_type(privilege_list => xs$name_list('connect'),
                                  principal_name => 'CADENA_NEG',
                                  principal_type => xs_acl.ptype_db));

@@ -21,7 +21,7 @@ Octubre del 2026
 
 # 1. Resumen Ejecutivo y Arquitectura del Sistema
 
-El presente manual proporciona el fundamento técnico, las especificaciones de diseño, los algoritmos de seguridad, las directrices de mantenimiento y la documentación técnica detallada del **Sistema Integral de Cadena de Supermercados** para el Avance #2.
+El presente manual proporciona el fundamento técnico, las especificaciones de diseño, los algoritmos de seguridad, las directrices de mantenimiento y la documentación técnica detallada del **sistema de la cadena de supermercados** para el Avance #2.
 
 El sistema opera sobre una arquitectura modular de tres capas de almacenamiento y procesamiento:
 
@@ -43,7 +43,7 @@ El sistema opera sobre una arquitectura modular de tres capas de almacenamiento 
 |  +---------------------------+  +---------------------------+  +---------------------+  |
 |                                                                                         |
 |  • Seguridad Criptográfica: Cifrado simétrico AES-256 (DBMS_CRYPTO) en SEG_PARAMETRO.    |
-|  • Automatización: 5 Jobs DBMS_SCHEDULER (Cierres, Monitoreo, Alertas, Premiación).     |
+|  • Automatización: 9 Jobs DBMS_SCHEDULER (negocio + traslado, RMAN, purga y Standby).   |
 |  • Notificaciones Directas: UTL_SMTP sin VPN hacia keylorpineda729@gmail.com.           |
 |  • Vistas Materializadas: MV_VENTAS_MENSUALES y MV_INVENTARIO_CONSOLIDADO.              |
 |  • Disparadores Autónomos: Validación estricta de crédito, stock y kardex en tiempo real|
@@ -182,9 +182,15 @@ El modelo impide inconsistencias mediante el supertipo `PER_PERSONA` y la clave 
 | `CADENA_NEG.JOB_NOTIF_CREDITOS_DIARIO` | Diario a las 07:00 | Ejecuta `PKG_ADM_NOTIFICACION`: detecta clientes con saldo >= 85% de límite, proveedores con saldo >= 70% de crédito, clientes morosos (>1 mes sin abono) y productos vencidos. |
 | `CADENA_NEG.JOB_MERCADEO_SEMANAL` | Lunes a las 05:00 | Ejecuta `PKG_INV_GESTION.PR_REPORTE_SEMANAL_MERCADEO` y activa descuentos en `PRM_DESCUENTO` sobre lotes con caducidad próxima (<7 días) o sin rotación (>6 meses). |
 | `CADENA_NEG.JOB_PREMIACION_SEMESTRAL` | 30 jun y 31 dic (23:30) | Ejecuta `PKG_PRM_MERCADEO.PR_PREMIAR_MEJORES_CLIENTES`, premiando al Top 10 de clientes con órdenes de compra de ₡100,000 c/u emitidas en `PRM_ORDEN_PREMIACION`. |
+| `CADENA_NEG.JOB_STANDBY_TRASLADO_ARCHIVELOG` | Cada `STANDBY_SYNC_MIN` (10) min | Job EXECUTABLE: copia archivelogs y respaldos RMAN nuevos a la PC standby. |
+| `CADENA_NEG.JOB_RMAN_BACKUP_DIARIO` | Diario, `STANDBY_HORA_BACKUP` (01:00) | Job EXECUTABLE: RMAN nivel 0 (domingo) o nivel 1 y copia del respaldo a la PC standby. |
+| `CADENA_NEG.JOB_STANDBY_PURGA_ARCHIVELOG` | Diario, `STANDBY_HORA_PURGA` (03:00) | Job EXECUTABLE: purga archivelogs con más de `STANDBY_PURGE_DIAS` (3) días ya aplicados. |
+| `CADENA_NEG.JOB_STANDBY_MONITOREO` | Cada hora | `PKG_ADM_STANDBY.PR_VERIFICAR_SINCRONIZACION`: atraso y fallos del standby en `AUD_MONITOREO_BD`, aviso al DBA. |
+
+Los jobs del standby se reconfiguran en caliente con `PKG_ADM_STANDBY.PR_CONFIGURAR_JOBS` después de cambiar un parámetro, y se ejecutan a petición con `PR_SINCRONIZAR_AHORA`, `PR_RESPALDAR_AHORA` y `PR_PURGAR_AHORA` (ver Manual de Administración del Standby).
 
 ### 6.2 Envío Directo de Correo Electrónico (`UTL_SMTP`)
-* **Sin Dependencia de VPN:** Se conecta de forma directa a servidores SMTP estándar (`smtp.gmail.com` en puerto 587) utilizando negociación TLS.
+* **Sin Dependencia de VPN:** Se conecta de forma directa a servidores SMTP estándar (`smtp.gmail.com` en puerto 465 con SSL; 587 con STARTTLS como alternativa) usando el wallet de Oracle.
 * **Tolerancia a Fallos de Red:** Si la conexión a Internet o el servidor SMTP no responde, la excepción es capturada y registrada en bitácora local (`AUD_ERROR_SISTEMA`), evitando que la facturación de los cajeros se interrumpa.
 
 ---
