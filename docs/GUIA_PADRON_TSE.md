@@ -82,7 +82,7 @@ Qué hace:
 
 Resultado verificado (Oracle 26ai Free en Docker, padrón del 30/09/2026): **3.762.240 personas, 0 rechazos**, unos **39 minutos** y unos **553 MB** en la base.
 
-> PENDIENTE: carga del padrón real en Oracle 21c EE (en curso).
+> **Verificado en Oracle 21c EE con Data Guard activo:** padrón del 30/09/2026, 3.762.240 personas, 0 rechazos, 2.179 distritos electorales, ~52 minutos (más lento que sin Data Guard porque cada cambio viaja también a la standby). Al terminar, la standby seguía sincronizada: `transport lag` y `apply lag` en 0 y `GAP_STATUS = NO GAP`.
 
 Con Data Guard activo, la carga se replica sola a la standby (la tabla `CAT_PADRON` viaja en el redo); los archivos `.txt` no (ver la sección 10 del Manual del Standby).
 

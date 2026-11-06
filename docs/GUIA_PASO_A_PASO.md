@@ -475,4 +475,4 @@ Verificado en dos contenedores Docker con `container-registry.oracle.com/databas
 | Jobs `EXECUTABLE` con credencial del SO (traslado, respaldo diario, purga, descarga del padrón) | En Docker el usuario `oracle` no tiene clave; se probaron sus mismos trabajos ejecutando el orquestador a mano. |
 | Wallet en Windows nativo con `orapki` | Solo se probó en Linux / Docker. |
 
-> PENDIENTE: carga del padrón real en Oracle 21c EE (en curso).
+> **Verificado en Oracle 21c EE con Data Guard activo:** padrón del 30/09/2026, 3.762.240 personas, 0 rechazos, 2.179 distritos electorales, ~52 minutos (más lento que sin Data Guard porque cada cambio viaja también a la standby). Al terminar, la standby seguía sincronizada: `transport lag` y `apply lag` en 0 y `GAP_STATUS = NO GAP`.
