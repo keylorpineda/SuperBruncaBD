@@ -194,7 +194,7 @@ function Copiar-Nuevos {
 function Tarea-Traslado {
     Escribir-Log ">>> TRASLADO HACIA EL STANDBY"
     Forzar-ArchiveLog
-    Copiar-Nuevos -Origen $RutaOrigen  -Destino $RutaDestinoStandby -Patrones @("*.arc", "*.dbf", "*.log") -Descripcion "Archivelogs"
+    Copiar-Nuevos -Origen $RutaOrigen  -Destino $RutaDestinoStandby -Patrones @("*.arc", "arch*.dbf") -Descripcion "Archivelogs"
     Copiar-Nuevos -Origen $RutaBackups -Destino $RutaBackupsStandby -Patrones @("*.bkp")                -Descripcion "Respaldos RMAN"
 }
 

@@ -102,6 +102,9 @@ PROMPT >>> EJECUTANDO PASO 7: 07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql
 PROMPT ----------------------------------------------------------------------------
 @@07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql
 
+-- Recompilar vistas y vistas materializadas invalidadas por los ALTER TABLE de los pasos previos
+EXEC DBMS_UTILITY.COMPILE_SCHEMA('CADENA_NEG', FALSE);
+
 PROMPT 
 PROMPT ============================================================================
 PROMPT   RESUMEN FINAL DE OBJETOS CREADOS EN EL ESQUEMA CADENA_NEG

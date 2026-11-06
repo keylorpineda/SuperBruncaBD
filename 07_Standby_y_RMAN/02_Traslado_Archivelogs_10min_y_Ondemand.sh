@@ -72,23 +72,35 @@ EOF
     fi
 }
 
-# Copia incremental (rsync solo envia archivos nuevos o modificados)
+# Copia incremental: solo archivos nuevos o con tamano distinto.
+# Destino local (cp) o remoto "usuario@host:/ruta" (scp; se recuerda lo enviado).
+# Uso: copiar_nuevos <origen> <destino> <descripcion> <patron> [patron...]
 copiar_nuevos() {
     local origen="$1" destino="$2" descripcion="$3"; shift 3
+    local enviados="$LOG_DIR/enviados_standby.lst" total=0 copiados=0 f nombre expr=()
     if [ ! -d "$origen" ]; then log "[AVISO] No existe $origen"; return; fi
     case "$destino" in *:*) ;; *) mkdir -p "$destino" ;; esac
-    if rsync -a "$@" "$origen/" "$destino/" >>"$LOG_FILE" 2>&1; then
-        log "[OK] $descripcion trasladados a $destino"
-    else
-        HUBO_ERROR=1; log "[ERROR] Fallo el traslado de $descripcion hacia $destino"
-    fi
+    touch "$enviados"
+    for p in "$@"; do [ ${#expr[@]} -gt 0 ] && expr+=(-o); expr+=(-name "$p"); done
+    while IFS= read -r f; do
+        total=$((total + 1)); nombre=$(basename "$f")
+        case "$destino" in
+            *:*) grep -qxF "$destino/$nombre" "$enviados" && continue
+                 if scp -q -o BatchMode=yes "$f" "$destino/"; then echo "$destino/$nombre" >> "$enviados"
+                 else HUBO_ERROR=1; log "[ERROR] scp fallo: $nombre"; continue; fi ;;
+            *)   [ -f "$destino/$nombre" ] && [ "$(stat -c %s "$f")" = "$(stat -c %s "$destino/$nombre")" ] && continue
+                 cp -f "$f" "$destino/" || { HUBO_ERROR=1; log "[ERROR] cp fallo: $nombre"; continue; } ;;
+        esac
+        copiados=$((copiados + 1)); log "  -> $nombre"
+    done < <(find "$origen/" -type f \( "${expr[@]}" \))   # "/" final: sigue el enlace dbs de Docker
+    log "[OK] $descripcion: $copiados nuevo(s) de $total trasladado(s) a $destino"
 }
 
 tarea_traslado() {
     log ">>> TRASLADO HACIA EL STANDBY"
     forzar_archive_log
-    copiar_nuevos "$RUTA_ORIGEN"  "$RUTA_DESTINO" "Archivelogs"
-    copiar_nuevos "$RUTA_BACKUPS" "$RUTA_BK_STBY" "Respaldos RMAN" --include='*.bkp' --exclude='*'
+    copiar_nuevos "$RUTA_ORIGEN"  "$RUTA_DESTINO" "Archivelogs" '*.arc' 'arch*.dbf'
+    copiar_nuevos "$RUTA_BACKUPS" "$RUTA_BK_STBY" "Respaldos RMAN" '*.bkp'
 }
 
 tarea_backup() {
@@ -97,7 +109,7 @@ tarea_backup() {
     log ">>> RESPALDO RMAN NIVEL $nivel"
     mkdir -p "$RUTA_BACKUPS"
     ejecutar_rman 04_RMAN_Backup_Full_Incremental.rman "'$RUTA_BACKUPS'" "$nivel"
-    copiar_nuevos "$RUTA_BACKUPS" "$RUTA_BK_STBY" "Respaldos RMAN" --include='*.bkp' --exclude='*'
+    copiar_nuevos "$RUTA_BACKUPS" "$RUTA_BK_STBY" "Respaldos RMAN" '*.bkp'
 }
 
 log "========== INICIO (SID=$ORACLE_SID) =========="

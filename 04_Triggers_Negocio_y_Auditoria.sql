@@ -1089,10 +1089,10 @@ BEGIN
             p_modulo      => 'DESCUENTOS',
             p_operacion   => v_operacion,
             p_llave       => v_llave,
-            p_descripcion => 'Nuevo descuento creado: ' || :NEW.CODIGO_DESC || ' - ' || :NEW.NOMBRE_DESC || ' (' || :NEW.PORCENTAJE_DESC || '%)'
+            p_descripcion => 'Nuevo descuento creado: ' || :NEW.CODIGO_DSCT || ' - ' || :NEW.NOMBRE_DSCT || ' (' || :NEW.PORCENTAJE_DSCT || '%)'
         );
-        PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'PORCENTAJE_DESC', NULL, TO_CHAR(:NEW.PORCENTAJE_DESC));
-        PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'ESTADO_DESC', NULL, :NEW.ESTADO_DESC);
+        PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'PORCENTAJE_DSCT', NULL, TO_CHAR(:NEW.PORCENTAJE_DSCT));
+        PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'ESTADO_DSCT', NULL, :NEW.ESTADO_DSCT);
     ELSIF UPDATING THEN
         v_operacion := 'UPDATE';
         v_llave := TO_CHAR(:NEW.ID_DESCUENTO);
@@ -1101,13 +1101,13 @@ BEGIN
             p_modulo      => 'DESCUENTOS',
             p_operacion   => v_operacion,
             p_llave       => v_llave,
-            p_descripcion => 'Modificacion de descuento ' || :NEW.CODIGO_DESC || ' - ' || :NEW.NOMBRE_DESC
+            p_descripcion => 'Modificacion de descuento ' || :NEW.CODIGO_DSCT || ' - ' || :NEW.NOMBRE_DSCT
         );
-        IF NVL(:OLD.PORCENTAJE_DESC, -1) != NVL(:NEW.PORCENTAJE_DESC, -1) THEN
-            PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'PORCENTAJE_DESC', TO_CHAR(:OLD.PORCENTAJE_DESC), TO_CHAR(:NEW.PORCENTAJE_DESC));
+        IF NVL(:OLD.PORCENTAJE_DSCT, -1) != NVL(:NEW.PORCENTAJE_DSCT, -1) THEN
+            PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'PORCENTAJE_DSCT', TO_CHAR(:OLD.PORCENTAJE_DSCT), TO_CHAR(:NEW.PORCENTAJE_DSCT));
         END IF;
-        IF NVL(:OLD.ESTADO_DESC, 'X') != NVL(:NEW.ESTADO_DESC, 'X') THEN
-            PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'ESTADO_DESC', :OLD.ESTADO_DESC, :NEW.ESTADO_DESC);
+        IF NVL(:OLD.ESTADO_DSCT, 'X') != NVL(:NEW.ESTADO_DSCT, 'X') THEN
+            PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'ESTADO_DSCT', :OLD.ESTADO_DSCT, :NEW.ESTADO_DSCT);
         END IF;
     ELSIF DELETING THEN
         v_operacion := 'DELETE';
@@ -1117,9 +1117,9 @@ BEGIN
             p_modulo      => 'DESCUENTOS',
             p_operacion   => v_operacion,
             p_llave       => v_llave,
-            p_descripcion => 'Eliminacion de descuento ' || :OLD.CODIGO_DESC
+            p_descripcion => 'Eliminacion de descuento ' || :OLD.CODIGO_DSCT
         );
-        PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'REGISTRO_ELIMINADO', :OLD.NOMBRE_DESC, 'ELIMINADO');
+        PKG_AUD_CONTROL.PR_REGISTRAR_CAMBIO('PRM_DESCUENTO', 'DESCUENTOS', v_operacion, v_llave, 'REGISTRO_ELIMINADO', :OLD.NOMBRE_DSCT, 'ELIMINADO');
     END IF;
 END;
 /

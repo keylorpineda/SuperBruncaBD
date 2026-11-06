@@ -1,39 +1,39 @@
-/* =============================================================================
-   PROYECTO: Sistema Integral de Cadena de Supermercados
-   MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
-   ARCHIVO:  07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql
-   CURSO:    Administracion de Bases de Datos
-   DESCRIPCION:
-     Automatiza con DBMS_SCHEDULER (Requerimiento 5) todas las tareas del
-     Standby y de RMAN, leyendo sus valores de SEG_PARAMETRO (Requerimiento 10):
-
-       JOB_STANDBY_TRASLADO_ARCHIVELOG  cada STANDBY_SYNC_MIN minutos (10)
-           Copia archivelogs y respaldos RMAN de la PC principal a la PC standby.
-       JOB_RMAN_BACKUP_DIARIO           diario a la hora STANDBY_HORA_BACKUP (01:00)
-           Respaldo RMAN nivel 0 (domingo) / nivel 1 (resto) y copia al standby.
-       JOB_STANDBY_PURGA_ARCHIVELOG     diario a la hora STANDBY_HORA_PURGA (03:00)
-           Purga archivelogs > STANDBY_PURGE_DIAS (3) ya aplicados en el standby.
-       JOB_STANDBY_MONITOREO            cada hora
-           Verifica que la sincronizacion este al dia y notifica al DBA.
-
-     Los tres primeros son jobs EXECUTABLE que llaman al orquestador
-     02_Traslado_Archivelogs_10min_y_Ondemand.ps1 (Windows) o .sh (Linux),
-     pasandole las rutas, dias y SID como argumentos.
-
-     Ejecucion a peticion del academico (revision en vivo):
-       EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_SINCRONIZAR_AHORA;
-       EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_RESPALDAR_AHORA;
-       EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_PURGAR_AHORA;
-       EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_ESTADO_STANDBY;
-
-   REQUISITO UNICO DE INSTALACION (una vez, en la PC principal):
-     Los jobs EXECUTABLE corren en el sistema operativo con una credencial.
-       EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_REGISTRAR_CREDENCIAL_OS('usuario_so', 'clave_so');
-     En Windows el usuario debe pertenecer al grupo ORA_DBA y debe estar
-     iniciado el servicio OracleJobScheduler<SID>.
-
-   EJECUCION: como SYSDBA (lo invoca 00_Master_Instalacion_Avance2.sql).
-   ============================================================================= */
+-- =============================================================================
+-- PROYECTO: Sistema Integral de Cadena de Supermercados
+-- MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
+-- ARCHIVO:  07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql
+-- CURSO:    Administracion de Bases de Datos
+-- DESCRIPCION:
+-- Automatiza con DBMS_SCHEDULER (Requerimiento 5) todas las tareas del
+-- Standby y de RMAN, leyendo sus valores de SEG_PARAMETRO (Requerimiento 10):
+--
+-- JOB_STANDBY_TRASLADO_ARCHIVELOG  cada STANDBY_SYNC_MIN minutos (10)
+-- Copia archivelogs y respaldos RMAN de la PC principal a la PC standby.
+-- JOB_RMAN_BACKUP_DIARIO           diario a la hora STANDBY_HORA_BACKUP (01:00)
+-- Respaldo RMAN nivel 0 (domingo) / nivel 1 (resto) y copia al standby.
+-- JOB_STANDBY_PURGA_ARCHIVELOG     diario a la hora STANDBY_HORA_PURGA (03:00)
+-- Purga archivelogs > STANDBY_PURGE_DIAS (3) ya aplicados en el standby.
+-- JOB_STANDBY_MONITOREO            cada hora
+-- Verifica que la sincronizacion este al dia y notifica al DBA.
+--
+-- Los tres primeros son jobs EXECUTABLE que llaman al orquestador
+-- 02_Traslado_Archivelogs_10min_y_Ondemand.ps1 (Windows) o .sh (Linux),
+-- pasandole las rutas, dias y SID como argumentos.
+--
+-- Ejecucion a peticion del academico (revision en vivo):
+-- EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_SINCRONIZAR_AHORA;
+-- EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_RESPALDAR_AHORA;
+-- EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_PURGAR_AHORA;
+-- EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_ESTADO_STANDBY;
+--
+-- REQUISITO UNICO DE INSTALACION (una vez, en la PC principal):
+-- Los jobs EXECUTABLE corren en el sistema operativo con una credencial.
+-- EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_REGISTRAR_CREDENCIAL_OS('usuario_so', 'clave_so');
+-- En Windows el usuario debe pertenecer al grupo ORA_DBA y debe estar
+-- iniciado el servicio OracleJobScheduler<SID>.
+--
+-- EJECUCION: como SYSDBA (lo invoca 00_Master_Instalacion_Avance2.sql).
+-- =============================================================================
 
 SET SERVEROUTPUT ON SIZE UNLIMITED;
 SET LINESIZE 200;
@@ -104,6 +104,7 @@ DECLARE
     v_home     VARCHAR2(500);
     v_fra      VARCHAR2(500);
     v_dbname   VARCHAR2(30);
+    v_arch_dir VARCHAR2(500);
 
     -- Crea el parametro solo si no existe (respeta valores ajustados por el DBA)
     PROCEDURE crear_si_no_existe(p_codigo VARCHAR2, p_nombre VARCHAR2, p_desc VARCHAR2,
@@ -140,6 +141,14 @@ BEGIN
     EXCEPTION
         WHEN OTHERS THEN v_fra := NULL;
     END;
+    -- Carpeta real donde Oracle esta dejando los archivelogs (la del ultimo generado)
+    BEGIN
+        SELECT SUBSTR(name, 1, INSTR(name, v_sep, -1) - 1) INTO v_arch_dir
+          FROM (SELECT name FROM v$archived_log WHERE dest_id = 1 AND name IS NOT NULL ORDER BY completion_time DESC)
+         WHERE ROWNUM = 1;
+    EXCEPTION
+        WHEN OTHERS THEN v_arch_dir := NULL;
+    END;
 
     guardar('STANDBY_SO', 'Sistema operativo del servidor principal',
             'WINDOWS o LINUX: define si los jobs usan el orquestador .ps1 o .sh.',
@@ -157,8 +166,9 @@ BEGIN
              ELSE '/opt/oracle/proyecto/07_Standby_y_RMAN' END);
     crear_si_no_existe('STANDBY_RUTA_ARCHIVE_ORIGEN', 'Carpeta de archivelogs en la principal',
         'Origen de los Archived Redo Logs que se trasladan al standby.',
-        NVL(v_fra, CASE WHEN v_es_win THEN 'C:\app\oracle\recovery_area' ELSE '/opt/oracle/fast_recovery_area' END)
-            || v_sep || UPPER(v_dbname) || v_sep || 'ARCHIVELOG');
+        CASE WHEN v_fra IS NOT NULL THEN v_fra || v_sep || UPPER(v_dbname) || v_sep || 'ARCHIVELOG'
+             ELSE NVL(v_arch_dir, CASE WHEN v_es_win THEN 'C:\app\oracle\recovery_area' ELSE '/opt/oracle/fast_recovery_area' END)
+        END);
     crear_si_no_existe('STANDBY_RUTA_ARCHIVE_DESTINO', 'Carpeta de archivelogs en la PC standby',
         'Carpeta compartida (Windows UNC) o destino rsync (Linux) de la segunda computadora.',
         CASE WHEN v_es_win THEN '\\PC-STANDBY\standby_archive'
@@ -193,11 +203,11 @@ CREATE OR REPLACE PACKAGE CADENA_NEG.PKG_ADM_STANDBY IS
     -- -------------------------------------------------------------------------
 
     -- Nombres de los jobs administrados por el paquete
-    c_job_traslado CONSTANT VARCHAR2(30) := 'JOB_STANDBY_TRASLADO_ARCHIVELOG';
-    c_job_backup   CONSTANT VARCHAR2(30) := 'JOB_RMAN_BACKUP_DIARIO';
-    c_job_purga    CONSTANT VARCHAR2(30) := 'JOB_STANDBY_PURGA_ARCHIVELOG';
-    c_job_monitor  CONSTANT VARCHAR2(30) := 'JOB_STANDBY_MONITOREO';
-    c_credencial   CONSTANT VARCHAR2(30) := 'CRED_STANDBY_OS';
+    c_job_traslado CONSTANT VARCHAR2(128) := 'JOB_STANDBY_TRASLADO_ARCHIVELOG';
+    c_job_backup   CONSTANT VARCHAR2(128) := 'JOB_RMAN_BACKUP_DIARIO';
+    c_job_purga    CONSTANT VARCHAR2(128) := 'JOB_STANDBY_PURGA_ARCHIVELOG';
+    c_job_monitor  CONSTANT VARCHAR2(128) := 'JOB_STANDBY_MONITOREO';
+    c_credencial   CONSTANT VARCHAR2(128) := 'CRED_STANDBY_OS';
 
     -- Registra (cifrada por Oracle) la credencial del SO con la que corren los
     -- jobs externos y vuelve a crear los jobs ya habilitados.

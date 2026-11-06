@@ -3441,6 +3441,7 @@ SET SERVEROUTPUT ON
 SET FEEDBACK OFF
 
 DECLARE
+    v_n NUMBER;   -- las variables deben declararse antes de los subprogramas (PLS-00103)
     PROCEDURE chequear(p_nombre IN VARCHAR2, p_obtenido IN NUMBER, p_esperado IN NUMBER) IS
     BEGIN
         DBMS_OUTPUT.PUT_LINE(
@@ -3448,7 +3449,6 @@ DECLARE
             CASE WHEN p_obtenido = p_esperado THEN 'OK'
                  ELSE 'esperado ' || p_esperado END);
     END;
-    v_n NUMBER;
 BEGIN
     DBMS_OUTPUT.PUT_LINE(CHR(10) || '=== VERIFICACION ===' || CHR(10));
     -- Se consultan las vistas ALL_ filtrando por el esquema, porque el script corre

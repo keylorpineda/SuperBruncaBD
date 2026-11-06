@@ -242,10 +242,10 @@ END;
 /
 
 -- Actualizar estadisticas del catalogo para el CBO
-EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'VEN_CUENTA_COBRAR', CASCADE => TRUE);
-EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'PER_CLIENTE', CASCADE => TRUE);
-EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'INV_EXISTENCIA', CASCADE => TRUE);
-EXEC DBMS_STATS.GATHER_TABLE_STATS(USER, 'VEN_FACTURA', CASCADE => TRUE);
+EXEC DBMS_STATS.GATHER_TABLE_STATS('CADENA_NEG', 'VEN_CUENTA_COBRAR', CASCADE => TRUE);
+EXEC DBMS_STATS.GATHER_TABLE_STATS('CADENA_NEG', 'PER_CLIENTE', CASCADE => TRUE);
+EXEC DBMS_STATS.GATHER_TABLE_STATS('CADENA_NEG', 'INV_EXISTENCIA', CASCADE => TRUE);
+EXEC DBMS_STATS.GATHER_TABLE_STATS('CADENA_NEG', 'VEN_FACTURA', CASCADE => TRUE);
 
 -- 2.0 Consulta 1 en estado natural (sin hints): Muestra la eleccion autonoma del CBO
 -- En tablas de pocos bloques (<5 bloques, 5-10 filas), el CBO elige de forma natural TABLE ACCESS FULL
@@ -285,13 +285,13 @@ SELECT /*+ INDEX(c IX_CUCO_ESTADO_VENCIM) */
 PROMPT --- Evaluando Consulta 2: Existencias por Bodega (FTS vs Index Scan) ---
 
 EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_INV_FTS' FOR
-SELECT /*+ FULL(e) */ e.ID_BODEGA, p.CODIGO_BARRA_PROD, p.NOMBRE_PROD, e.CANTIDAD_EXIS
+SELECT /*+ FULL(e) */ e.ID_BODEGA, p.CODIGO_PROD, p.NOMBRE_PROD, e.CANTIDAD_EXIS
   FROM INV_EXISTENCIA e
   JOIN PRO_PRODUCTO p ON p.ID_PRODUCTO = e.ID_PRODUCTO
  WHERE e.ID_BODEGA = 1 AND e.CANTIDAD_EXIS > 0;
 
 EXPLAIN PLAN SET STATEMENT_ID = 'PLAN_INV_IDX' FOR
-SELECT /*+ INDEX(e UK_EXIS_BODE_PROD_LOTE) */ e.ID_BODEGA, p.CODIGO_BARRA_PROD, p.NOMBRE_PROD, e.CANTIDAD_EXIS
+SELECT /*+ INDEX(e UK_EXIS_BODE_PROD_LOTE) */ e.ID_BODEGA, p.CODIGO_PROD, p.NOMBRE_PROD, e.CANTIDAD_EXIS
   FROM INV_EXISTENCIA e
   JOIN PRO_PRODUCTO p ON p.ID_PRODUCTO = e.ID_PRODUCTO
  WHERE e.ID_BODEGA = 1 AND e.CANTIDAD_EXIS > 0;
@@ -533,8 +533,9 @@ BEGIN
     -- Probar reconfiguracion dinamica de frecuencia de premiacion y sincronizacion del Scheduler
     PKG_PRM_MERCADEO.PR_CONFIGURAR_FRECUENCIA_PREMIACION(3);
     SELECT repeat_interval INTO v_interval_sched
-      FROM user_scheduler_jobs
-     WHERE job_name = 'JOB_PREMIACION_SEMESTRAL';
+      FROM all_scheduler_jobs
+     WHERE owner = 'CADENA_NEG'
+       AND job_name = 'JOB_PREMIACION_SEMESTRAL';
     IF v_interval_sched NOT LIKE '%INTERVAL=3%' THEN
         RAISE_APPLICATION_ERROR(-20094, 'Fallo reconfiguracion dinamica de Scheduler: repeat_interval no contiene INTERVAL=3.');
     END IF;
@@ -576,6 +577,7 @@ BEGIN
         porc_impuesto   => 13
     );
 
+    v_id_factura := NULL;   -- evita contar la CxC de una factura de una prueba anterior
     BEGIN
         -- Intentar facturar venta atomica que excede el limite de credito del cliente 4
         PKG_VEN_OPERACION.PR_FACTURAR_VENTA_ATOMICA (
@@ -603,7 +605,8 @@ BEGIN
 
     -- Verificar atomicidad estricta: el ROLLBACK no dejo facturas huerfanas ni CxC creadas
     SELECT COUNT(*) INTO v_count_fac FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE = v_num_fac_neg;
-    SELECT COUNT(*) INTO v_count_cxc FROM VEN_CUENTA_COBRAR WHERE ID_FACTURA_VENTA = v_id_factura;
+    SELECT COUNT(*) INTO v_count_cxc FROM VEN_CUENTA_COBRAR cc
+     WHERE cc.ID_FACTURA_VENTA IN (SELECT f.ID_FACTURA_VENTA FROM VEN_FACTURA f WHERE f.NUM_FACTURA_FAVE = v_num_fac_neg);
     IF v_count_fac > 0 OR v_count_cxc > 0 THEN
         RAISE_APPLICATION_ERROR(-20092, 'Fallo atomico: la factura rechazada dejo filas huerfanas en VEN_FACTURA o VEN_CUENTA_COBRAR.');
     ELSE
@@ -623,7 +626,7 @@ BEGIN
             p_id_lote       => NULL,
             p_cantidad      => 999999,
             p_es_entrada    => 'N',
-            p_tipo_mov      => 'VENTA',
+            p_tipo_movi     => 'VENTA',
             p_documento_ref => 'FAC-SIN-STOCK'
         );
     EXCEPTION
@@ -644,6 +647,11 @@ BEGIN
     -- ------------------------------------------------------------------------
     DBMS_OUTPUT.PUT_LINE('>>> [PRUEBA 12] Depurando transacciones temporales de prueba...');
     DELETE FROM VEN_ABONO_COBRAR WHERE NUM_RECIBO_ABCO LIKE 'REC-TEST-%';
+    -- Hijos de las facturas de prueba (acciones de promocion, pagos y abonos)
+    DELETE FROM PRM_ACCION_CLIENTE WHERE ID_FACTURA_VENTA IN (SELECT ID_FACTURA_VENTA FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE LIKE 'FAC-TEST-%');
+    DELETE FROM VEN_PAGO           WHERE ID_FACTURA_VENTA IN (SELECT ID_FACTURA_VENTA FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE LIKE 'FAC-TEST-%');
+    DELETE FROM VEN_ABONO_COBRAR   WHERE ID_FACTURA_VENTA IN (SELECT ID_FACTURA_VENTA FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE LIKE 'FAC-TEST-%');
+    DELETE FROM COM_ABONO_PAGAR    WHERE ID_FACTURA_COMPRA IN (SELECT ID_FACTURA_COMPRA FROM COM_FACTURA_COMPRA WHERE NUM_FACTURA_FACO LIKE 'FAC-TEST-%');
     DELETE FROM VEN_CUENTA_COBRAR WHERE ID_FACTURA_VENTA IN (SELECT ID_FACTURA_VENTA FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE LIKE 'FAC-TEST-%');
     DELETE FROM VEN_FACTURA_DET WHERE ID_FACTURA_VENTA IN (SELECT ID_FACTURA_VENTA FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE LIKE 'FAC-TEST-%');
     DELETE FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE LIKE 'FAC-TEST-%';
