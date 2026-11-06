@@ -4,97 +4,84 @@
 # ARCHIVO:  07_Standby_y_RMAN/04_RMAN_Backup_Full_Incremental.rman
 # CURSO:    Administracion de Bases de Datos
 # DESCRIPCION:
-#   Estrategia integral de respaldo con Oracle Recovery Manager (RMAN):
-#   - Configuracion de politicas de retencion y compresion BZIP2/ZLIB.
-#   - Respaldo Nivel 0 (Full Semanal) con Controlfile y Archivelogs.
-#   - Respaldo Nivel 1 (Incremental Diario) diferencial/acumulativo.
-#   - Validacion de integridad fisica y logica de los respaldos.
+#   Respaldo diario de la base de datos PRINCIPAL con Oracle Recovery Manager.
+#   - Nivel 0 (Full): base completa + archivelogs + controlfile (domingos).
+#   - Nivel 1 (Incremental): solo bloques cambiados desde el ultimo respaldo.
+#   - Validacion de integridad de los respaldos al finalizar.
+#
+#   El script es PARAMETRIZADO mediante variables de sustitucion de RMAN:
+#     &1 = Directorio donde se escriben los respaldos (sin barra final).
+#     &2 = Nivel incremental: 0 = full, 1 = incremental.
+#
+#   Lo ejecuta automaticamente el job CADENA_NEG.JOB_RMAN_BACKUP_DIARIO
+#   (DBMS_SCHEDULER, ver 07_Paquete_Jobs_Standby_RMAN.sql) a traves de
+#   02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo Backup, que luego copia
+#   los respaldos al servidor Standby.
+#
+# EJECUCION MANUAL (a peticion del academico):
+#   Windows: rman target / cmdfile=04_RMAN_Backup_Full_Incremental.rman using 'C:/app/oracle/backups' 0
+#   Linux:   rman target / cmdfile=04_RMAN_Backup_Full_Incremental.rman using '/opt/oracle/backups' 1
+#   (o desde SQL: EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_RESPALDAR_AHORA;)
 # ==============================================================================
 
-CONNECT TARGET /;
-
 # ------------------------------------------------------------------------------
-# 1. CONFIGURACION DE PARAMETROS PERSISTENTES DE RMAN
+# 1. CONFIGURACION PERSISTENTE DE RMAN
 # ------------------------------------------------------------------------------
 CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 14 DAYS;
 CONFIGURE BACKUP OPTIMIZATION ON;
 CONFIGURE DEFAULT DEVICE TYPE TO DISK;
 CONFIGURE CONTROLFILE AUTOBACKUP ON;
-CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '%F';
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '&1/ctrl_auto_%F';
 CONFIGURE DEVICE TYPE DISK BACKUP TYPE TO COMPRESSED BACKUPSET PARALLELISM 2;
-CONFIGURE ENCRYPTION FOR DATABASE OFF;
+# Los archivelogs solo se pueden borrar si ya se aplicaron en el Standby y
+# ademas tienen al menos un respaldo (protege la sincronizacion).
+CONFIGURE ARCHIVELOG DELETION POLICY TO APPLIED ON ALL STANDBY BACKED UP 1 TIMES TO DEVICE TYPE DISK;
 
 # ------------------------------------------------------------------------------
-# 2. BLOQUE A: RESPALDO FULL SEMANAL (INCREMENTAL NIVEL 0)
-# Se ejecuta semanalmente (los domingos a medianoche)
+# 2. RESPALDO DE LA BASE (NIVEL &2), ARCHIVELOGS Y CONTROLFILE
 # ------------------------------------------------------------------------------
 RUN {
     ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
     ALLOCATE CHANNEL ch2 DEVICE TYPE DISK;
 
-    # Forzar generacion de log previo
+    # Cerrar el redo actual para que el respaldo quede consistente
     SQL 'ALTER SYSTEM ARCHIVE LOG CURRENT';
 
-    # Respaldo completo Nivel 0 de la base de datos completa y PDBs
     BACKUP AS COMPRESSED BACKUPSET
-        INCREMENTAL LEVEL 0
+        INCREMENTAL LEVEL &2
         DATABASE
-        TAG 'CADENA_FULL_LVL0'
-        FORMAT 'bkp_lvl0_%d_%T_%s_%p.bkp';
+        TAG 'CADENA_DIARIO_LVL&2'
+        FORMAT '&1/bkp_lvl&2_%d_%T_%U.bkp';
 
-    # Respaldo de los Archived Redo Logs generados durante el proceso
     BACKUP AS COMPRESSED BACKUPSET
-        ARCHIVELOG ALL
-        TAG 'CADENA_ARCH_LVL0'
-        FORMAT 'bkp_arch_%d_%T_%s_%p.bkp';
+        ARCHIVELOG ALL NOT BACKED UP 1 TIMES
+        TAG 'CADENA_ARCH_LVL&2'
+        FORMAT '&1/bkp_arch_%d_%T_%U.bkp';
 
-    # Respaldo de controlfile actual y spfile
     BACKUP CURRENT CONTROLFILE
-        TAG 'CADENA_CTRL_LVL0'
-        FORMAT 'bkp_ctrl_%d_%T_%s_%p.bkp';
+        TAG 'CADENA_CTRL_LVL&2'
+        FORMAT '&1/bkp_ctrl_%d_%T_%U.bkp';
+
+    # Controlfile especial para crear/recrear la base Standby
+    BACKUP CURRENT CONTROLFILE FOR STANDBY
+        TAG 'CADENA_CTRL_STBY'
+        FORMAT '&1/bkp_ctrl_stby_%d_%T_%U.bkp';
 
     RELEASE CHANNEL ch1;
     RELEASE CHANNEL ch2;
 }
 
 # ------------------------------------------------------------------------------
-# 3. BLOQUE B: RESPALDO INCREMENTAL DIARIO (INCREMENTAL NIVEL 1)
-# Se ejecuta diariamente (lunes a sabado a las 22:00)
-# Solo respalda los bloques modificados desde el ultimo Nivel 0 o Nivel 1
-# ------------------------------------------------------------------------------
-RUN {
-    ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
-
-    SQL 'ALTER SYSTEM ARCHIVE LOG CURRENT';
-
-    BACKUP AS COMPRESSED BACKUPSET
-        INCREMENTAL LEVEL 1
-        DATABASE
-        TAG 'CADENA_INCR_LVL1'
-        FORMAT 'bkp_lvl1_%d_%T_%s_%p.bkp';
-
-    BACKUP AS COMPRESSED BACKUPSET
-        ARCHIVELOG ALL
-        TAG 'CADENA_ARCH_LVL1'
-        FORMAT 'bkp_arch_lvl1_%d_%T_%s_%p.bkp';
-
-    BACKUP CURRENT CONTROLFILE
-        TAG 'CADENA_CTRL_LVL1'
-        FORMAT 'bkp_ctrl_lvl1_%d_%T_%s_%p.bkp';
-
-    RELEASE CHANNEL ch1;
-}
-
-# ------------------------------------------------------------------------------
-# 4. MANTENIMIENTO, PURGA DE OBSOLETOS Y VALIDACION DE INTEGRIDAD
+# 3. MANTENIMIENTO DEL CATALOGO Y VALIDACION
 # ------------------------------------------------------------------------------
 CROSSCHECK BACKUP;
 CROSSCHECK ARCHIVELOG ALL;
 DELETE NOPROMPT EXPIRED BACKUP;
 DELETE NOPROMPT OBSOLETE;
 
-# Validacion estructural sin restaurar datos fisicos
+# Verifica que los respaldos se puedan leer y restaurar (no restaura nada)
 RESTORE VALIDATE DATABASE;
 RESTORE VALIDATE CONTROLFILE;
 
+LIST BACKUP SUMMARY;
 EXIT;

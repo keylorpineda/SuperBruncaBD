@@ -1,0 +1,35 @@
+# ==============================================================================
+# PROYECTO: Sistema Integral de Cadena de Supermercados
+# MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai
+# ARCHIVO:  07_Standby_y_RMAN/03_Purga_Archivelogs_Standby.rman
+# CURSO:    Administracion de Bases de Datos
+# DESCRIPCION:
+#   Purga en el servidor STANDBY de los Archived Redo Logs que ya fueron
+#   APLICADOS en la base Standby y que tienen mas de N dias.
+#
+#   Se ejecuta EN LA COMPUTADORA STANDBY (no en la principal), porque una base
+#   Standby fisica esta en modo MOUNT y DBMS_SCHEDULER no ejecuta jobs ahi.
+#   Se programa con el Programador de Tareas de Windows (schtasks) o cron,
+#   invocando: 02_Traslado_Archivelogs_10min_y_Ondemand.ps1 -Modo PurgaStandby
+#
+#   Variables de sustitucion:
+#     &1 = Dias de retencion (STANDBY_PURGE_DIAS, por defecto 3).
+#     &2 = Carpeta donde llegan los archivelogs copiados desde la principal.
+#
+# EJECUCION MANUAL (en el Standby):
+#   rman target / cmdfile=03_Purga_Archivelogs_Standby.rman using 3 'C:/app/oracle/standby_archive'
+# ==============================================================================
+
+# 1. En el Standby un log es borrable una vez aplicado (Redo Apply)
+CONFIGURE ARCHIVELOG DELETION POLICY TO APPLIED ON ALL STANDBY;
+
+# 2. Registrar en el repositorio los logs copiados por el script de traslado
+CATALOG START WITH '&2' NOPROMPT;
+
+# 3. Realinear y eliminar los ya aplicados con mas de &1 dias
+CROSSCHECK ARCHIVELOG ALL;
+DELETE NOPROMPT EXPIRED ARCHIVELOG ALL;
+DELETE NOPROMPT ARCHIVELOG ALL COMPLETED BEFORE 'SYSDATE-&1';
+
+LIST ARCHIVELOG ALL COMPLETED AFTER 'SYSDATE-1';
+EXIT;

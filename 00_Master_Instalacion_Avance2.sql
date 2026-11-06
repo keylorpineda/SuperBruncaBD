@@ -7,7 +7,7 @@
 -- DESCRIPCION:
 --   Script Maestro de Instalacion y Despliegue Automatizado.
 --   Ejecuta en el orden correcto y de forma limpia los 6 scripts principales
---   del Avance #2, finalizando con la suite de pruebas integral.
+--   del Avance #2 (con su suite de pruebas) y el paquete de jobs del Standby.
 --
 -- INSTRUCCION DE USO:
 --   sqlplus system/oracle@localhost:1521/FREEPDB1 @00_Master_Instalacion_Avance2.sql
@@ -93,6 +93,14 @@ PROMPT
 PROMPT >>> EJECUTANDO PASO 6: 06_Scheduler_Optimizacion_y_Pruebas.sql ...
 PROMPT ----------------------------------------------------------------------------
 @@06_Scheduler_Optimizacion_y_Pruebas.sql
+
+-- ----------------------------------------------------------------------------
+-- PASO 7: JOBS DBMS_SCHEDULER DEL STANDBY Y RMAN (TRASLADO, BACKUP, PURGA, MONITOREO)
+-- ----------------------------------------------------------------------------
+PROMPT 
+PROMPT >>> EJECUTANDO PASO 7: 07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql ...
+PROMPT ----------------------------------------------------------------------------
+@@07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql
 
 PROMPT 
 PROMPT ============================================================================

@@ -4,25 +4,34 @@
 # ARCHIVO:  07_Standby_y_RMAN/03_Purga_Archivelogs_3Dias.rman
 # CURSO:    Administracion de Bases de Datos
 # DESCRIPCION:
-#   Script RMAN para la depuracion y purga automatica de Archived Redo Logs
-#   que superen los 3 dias de antiguedad y que ya hayan sido respaldados
-#   o transferidos al servidor Standby.
+#   Purga en el servidor PRINCIPAL de los Archived Redo Logs que:
+#     a) tienen mas de N dias (parametro STANDBY_PURGE_DIAS, por defecto 3),
+#     b) YA fueron trasladados y aplicados en el Standby, y
+#     c) tienen al menos un respaldo RMAN.
+#   Las condiciones b) y c) las garantiza la ARCHIVELOG DELETION POLICY:
+#   RMAN no borra (y avisa con RMAN-08120) un log que no cumpla la politica.
+#
+#   Variable de sustitucion:
+#     &1 = Dias de retencion (valor de STANDBY_PURGE_DIAS en SEG_PARAMETRO).
+#
+#   Lo ejecuta automaticamente el job CADENA_NEG.JOB_STANDBY_PURGA_ARCHIVELOG.
+#   En el Standby se usa 03_Purga_Archivelogs_Standby.rman.
+#
+# EJECUCION MANUAL:
+#   rman target / cmdfile=03_Purga_Archivelogs_3Dias.rman using 3
+#   (o desde SQL: EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_PURGAR_AHORA;)
 # ==============================================================================
 
-# Conectar al catalogo/target
-CONNECT TARGET /;
+# 1. Politica: solo es borrable lo aplicado en el Standby y respaldado 1 vez
+CONFIGURE ARCHIVELOG DELETION POLICY TO APPLIED ON ALL STANDBY BACKED UP 1 TIMES TO DEVICE TYPE DISK;
 
-# 1. Realineacion de metadatos en memoria y disco
+# 2. Realinear el repositorio RMAN con lo que existe en disco
 CROSSCHECK ARCHIVELOG ALL;
-
-# 2. Eliminar referencias a archivos que ya no existan fisicamente en disco
 DELETE NOPROMPT EXPIRED ARCHIVELOG ALL;
 
-# 3. Eliminar logs archivados con mas de 3 dias de antiguedad
-# Se garantiza que hayan sido respaldados al menos una vez antes de su eliminacion
-DELETE NOPROMPT ARCHIVELOG UNTIL TIME 'SYSDATE-3' 
-    BACKED UP 1 TIMES TO DEVICE TYPE DISK;
+# 3. Eliminar los archivelogs con mas de &1 dias que cumplen la politica
+DELETE NOPROMPT ARCHIVELOG ALL COMPLETED BEFORE 'SYSDATE-&1';
 
-# 4. Reporte de espacio liberado en el Fast Recovery Area
-SHOW ALL;
+# 4. Reporte de lo que queda
+LIST ARCHIVELOG ALL COMPLETED AFTER 'SYSDATE-1';
 EXIT;
