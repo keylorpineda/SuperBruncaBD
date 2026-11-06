@@ -37,6 +37,34 @@ datos/padron/      scripts de descarga del padrón del TSE y archivo de muestra
 
 Oracle Database 21c Enterprise Edition (imagen Docker `container-registry.oracle.com/database/enterprise:21.3.0.0`). Base `CADENA` con el PDB `PDBCADENA`; la principal corre en el contenedor `ora_principal` y la standby (`CADENA_STBY`) en `ora_standby`.
 
+
+## Menú para operar el proyecto (recomendado)
+
+En vez de escribir comandos de Oracle, cada uno abre el menú en su PC (PowerShell, en la carpeta del proyecto):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\menu.ps1
+```
+
+El menú detecta solo si en esa PC está `ora_principal` u `ora_standby` y qué rol tiene la base:
+
+| Opción | Para qué | Dónde |
+| :---: | :--- | :--- |
+| 1 | Ver estado: rol, Data Guard, retraso, objetos inválidos, jobs, padrón | Cualquiera |
+| 2 | Arrancar / reanudar la standby después de reiniciar la PC | Standby |
+| 3 | Sincronizar ahora (reintenta el envío y muestra el retraso) | Cualquiera |
+| 4 | Respaldo RMAN ahora | Principal |
+| 5 | Mostrar datos en la standby (solo lectura, sin parar la sincronización) | Standby |
+| 6 | Switchover: pasar el rol de principal a la otra PC | Principal |
+| 7 | Abrir como nueva principal (después del 6 o del 8) | La otra PC |
+| 8 | Failover: la principal se cayó | Standby |
+| 9 | Consola SQL ya conectada al proyecto (`PDBCADENA`) | Cualquiera |
+| 10 | Consola SYSDBA | Cualquiera |
+
+Las opciones 6 y 8 piden escribir `SI` y se niegan si se eligen en la PC equivocada.
+**Switchover con el menú:** principal → 6; la otra PC → 7; la que era principal → 2.
+Probado en Oracle 21c EE: estado, sincronización, respaldo, solo lectura y switchover de ida y vuelta.
+
 ## Empiece aquí
 
 1. [Guía paso a paso](docs/GUIA_PASO_A_PASO.md): instalar todo desde cero en las dos computadoras.

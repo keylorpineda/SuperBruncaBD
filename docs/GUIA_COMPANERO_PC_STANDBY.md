@@ -343,6 +343,10 @@ Resultado esperado: `MRP0 APPLYING_LOG` (o `WAIT_FOR_LOG`) y `transport lag` / `
 
 ## Uso diario
 
+> **Atajo:** todo lo de esta sección y de la defensa también se hace con el menú:
+> `powershell -ExecutionPolicy Bypass -File .\menu.ps1` (opción 2 = arrancar la standby,
+> 1 = estado, 5 = mostrar datos, 7 = abrir como principal, 8 = failover). Ver el README.
+
 **Cada vez que encienda la PC o reinicie Docker**, la imagen de Oracle **no** levanta sola una
 standby. Haga esto:
 

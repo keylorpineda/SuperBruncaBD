@@ -18,6 +18,9 @@ Los comandos de esta guía asumen esa sesión. Use números de factura y recibo 
 
 ---
 
+
+> **Atajo para la demostración:** `powershell -ExecutionPolicy Bypass -File .\menu.ps1` en cada PC. Estado (1), sincronizar (3), respaldo (4), datos en la standby (5), switchover (6 → 7 → 2) y failover (8). Ver el README.
+
 ## 1. Mapa requisito → solución → demostración
 
 ### 1.1 Funcionalidades de negocio
