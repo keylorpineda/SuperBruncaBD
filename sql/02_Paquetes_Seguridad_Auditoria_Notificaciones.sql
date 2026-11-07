@@ -572,11 +572,177 @@ CREATE OR REPLACE PACKAGE PKG_ADM_NOTIFICACION IS
     -- Notifica al coordinador la lista de productos vencidos incluyendo el total general
     PROCEDURE PR_NOTIF_PRODUCTOS_VENCIDOS;
 
+    -- Devuelve el HTML (adaptable al celular) con que se enviaria un correo; sirve
+    -- para revisar el formato sin enviarlo: SELECT ... FN_VISTA_PREVIA_HTML(...) FROM dual
+    FUNCTION FN_VISTA_PREVIA_HTML (
+        p_asunto IN VARCHAR2,
+        p_cuerpo IN CLOB
+    ) RETURN CLOB;
+
 END PKG_ADM_NOTIFICACION;
 /
 SHOW ERRORS PACKAGE PKG_ADM_NOTIFICACION;
 
 CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
+
+    -- -------------------------------------------------------------------------
+    -- Correo en HTML adaptable al celular (privado)
+    -- Convierte el cuerpo en texto que arman las notificaciones (titulos, lineas
+    -- '====' / '----' y columnas alineadas con espacios) en HTML con tablas reales.
+    -- -------------------------------------------------------------------------
+    FUNCTION fn_escapar_html(p_texto IN VARCHAR2) RETURN VARCHAR2 IS
+    BEGIN
+        RETURN REPLACE(REPLACE(REPLACE(p_texto, '&', '&amp;'), '<', '&lt;'), '>', '&gt;');
+    END fn_escapar_html;
+
+    -- Celdas de una fila: grupos de palabras separados por 2 o mas espacios (o tabulador)
+    FUNCTION fn_fila_html(p_linea IN VARCHAR2, p_etiqueta IN VARCHAR2, p_columnas IN PLS_INTEGER) RETURN VARCHAR2 IS
+        v_linea  VARCHAR2(4000) := REPLACE(TRIM(p_linea), CHR(9), '  ');
+        v_n      PLS_INTEGER    := REGEXP_COUNT(v_linea, '[^ ]+( [^ ]+)*');
+        v_celda  VARCHAR2(4000);
+        v_html   VARCHAR2(32767);
+        v_estilo VARCHAR2(200);
+    BEGIN
+        IF p_columnas > 0 AND v_n <> p_columnas THEN
+            -- Fila que no calza con el encabezado (por ejemplo un total): ocupa todo el ancho
+            RETURN '<tr><td colspan="' || p_columnas || '" style="padding:6px 8px;border-bottom:1px solid #e6e9ef;font-weight:bold">'
+                   || fn_escapar_html(v_linea) || '</td></tr>';
+        END IF;
+        FOR i IN 1 .. v_n LOOP
+            v_celda  := REGEXP_SUBSTR(v_linea, '[^ ]+( [^ ]+)*', 1, i);
+            v_estilo := CASE WHEN p_etiqueta = 'th' THEN 'background:#eef3fa;color:#0b3d6e;text-align:left;font-size:12px;'
+                             WHEN REGEXP_LIKE(v_celda, '^(CRC |C )?[-+]?[0-9][0-9.,]*%?$') THEN 'text-align:right;white-space:nowrap;'
+                             ELSE '' END;
+            v_html := v_html || '<' || p_etiqueta || ' style="padding:6px 8px;border-bottom:1px solid #e6e9ef;' || v_estilo || '">'
+                      || fn_escapar_html(v_celda) || '</' || p_etiqueta || '>';
+        END LOOP;
+        RETURN '<tr>' || v_html || '</tr>';
+    END fn_fila_html;
+
+    FUNCTION fn_texto_a_html(p_asunto IN VARCHAR2, p_cuerpo IN CLOB) RETURN CLOB IS
+        TYPE t_lineas IS TABLE OF VARCHAR2(4000);
+        v_lineas   t_lineas := t_lineas();
+        -- NVL: con un cuerpo vacio DBMS_LOB.INSTR devuelve NULL y el ciclo no terminaria
+        v_texto    CLOB := NVL(REPLACE(p_cuerpo, CHR(13), ''), ' ');
+        v_ini      PLS_INTEGER := 1;
+        v_fin      PLS_INTEGER;
+        v_linea    VARCHAR2(4000);
+        v_sig      VARCHAR2(4000);
+        v_html     CLOB;
+        v_en_tabla BOOLEAN := FALSE;
+        v_columnas PLS_INTEGER := 0;
+        v_titulo   BOOLEAN := FALSE;
+        v_saltar   PLS_INTEGER := 0;
+
+        FUNCTION es_separador(p IN VARCHAR2) RETURN BOOLEAN IS
+        BEGIN
+            RETURN REGEXP_LIKE(TRIM(p), '^[=-]{8,}$');
+        END;
+        PROCEDURE agregar(p IN VARCHAR2) IS
+        BEGIN
+            DBMS_LOB.WRITEAPPEND(v_html, LENGTH(p), p);
+        END;
+    BEGIN
+        -- Separar en lineas
+        LOOP
+            v_fin := DBMS_LOB.INSTR(v_texto, CHR(10), v_ini);
+            -- Corte de seguridad: fin del texto o mas de 2000 lineas
+            IF NVL(v_fin, 0) = 0 OR v_lineas.COUNT >= 2000 THEN
+                v_lineas.EXTEND; v_lineas(v_lineas.COUNT) := DBMS_LOB.SUBSTR(v_texto, 4000, v_ini);
+                EXIT;
+            END IF;
+            v_lineas.EXTEND; v_lineas(v_lineas.COUNT) := DBMS_LOB.SUBSTR(v_texto, LEAST(v_fin - v_ini, 4000), v_ini);
+            v_ini := v_fin + 1;
+        END LOOP;
+
+        DBMS_LOB.CREATETEMPORARY(v_html, TRUE);
+        agregar('<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+             || '<body style="margin:0;padding:0;background:#f3f5f8;font-family:Arial,Helvetica,sans-serif">'
+             || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f5f8;padding:12px 0"><tr><td align="center">'
+             || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#ffffff;border-radius:8px">'
+             || '<tr><td style="background:#0b5394;color:#ffffff;padding:16px 20px;border-radius:8px 8px 0 0">'
+             || '<div style="font-size:12px;opacity:.85">Super Brunca &middot; Notificaci&oacute;n autom&aacute;tica</div>'
+             || '<div style="font-size:18px;font-weight:bold;margin-top:4px;line-height:1.3">' || fn_escapar_html(p_asunto) || '</div></td></tr>'
+             || '<tr><td style="padding:16px 20px;font-size:14px;color:#222222;line-height:1.45">');
+
+        FOR i IN 1 .. v_lineas.COUNT LOOP
+            CONTINUE WHEN i = v_saltar;   -- linea '-----' bajo el encabezado de una tabla
+            v_linea := RTRIM(v_lineas(i));
+            v_sig   := CASE WHEN i < v_lineas.COUNT THEN v_lineas(i + 1) END;
+
+            IF v_en_tabla THEN
+                IF v_linea IS NULL OR es_separador(v_linea) THEN
+                    agregar('</table></div>');
+                    v_en_tabla := FALSE;
+                ELSE
+                    agregar(fn_fila_html(v_linea, 'td', v_columnas));
+                END IF;
+            ELSIF v_linea IS NOT NULL AND NOT es_separador(v_linea) AND v_sig IS NOT NULL
+                  AND REGEXP_LIKE(TRIM(v_sig), '^-{8,}$') AND REGEXP_COUNT(TRIM(v_linea), '[^ ]+( [^ ]+)*') > 1 THEN
+                -- Encabezado de tabla: linea con varias columnas seguida de '-----'
+                v_columnas := REGEXP_COUNT(REPLACE(TRIM(v_linea), CHR(9), '  '), '[^ ]+( [^ ]+)*');
+                agregar('<div style="overflow-x:auto;margin:8px 0 12px"><table cellpadding="0" cellspacing="0" '
+                     || 'style="border-collapse:collapse;width:100%;font-size:13px">');
+                agregar(fn_fila_html(v_linea, 'th', 0));
+                v_en_tabla := TRUE;
+                v_saltar   := i + 1;
+            ELSIF es_separador(v_linea) THEN
+                agregar('<hr style="border:none;border-top:1px solid #e6e9ef;margin:10px 0">');
+            ELSIF v_linea IS NULL THEN
+                agregar('<div style="height:8px"></div>');
+            ELSIF NOT v_titulo THEN
+                agregar('<div style="font-size:15px;font-weight:bold;color:#0b3d6e;margin-bottom:6px">' || fn_escapar_html(TRIM(v_linea)) || '</div>');
+                v_titulo := TRUE;
+            ELSIF REGEXP_LIKE(v_linea, '^[^:]{2,40}:\s') THEN
+                -- "Etiqueta : valor"
+                agregar('<div><b>' || fn_escapar_html(TRIM(REGEXP_SUBSTR(v_linea, '^[^:]+'))) || ':</b> '
+                     || fn_escapar_html(TRIM(SUBSTR(v_linea, INSTR(v_linea, ':') + 1))) || '</div>');
+            ELSE
+                agregar('<div>' || fn_escapar_html(v_linea) || '</div>');
+            END IF;
+        END LOOP;
+        IF v_en_tabla THEN agregar('</table></div>'); END IF;
+
+        agregar('</td></tr><tr><td style="padding:12px 20px;font-size:11px;color:#888888;border-top:1px solid #eeeeee">'
+             || 'Enviado directamente desde Oracle Database (UTL_SMTP, sin VPN) &middot; '
+             || TO_CHAR(SYSDATE, 'DD/MM/YYYY HH24:MI') || '</td></tr></table></td></tr></table></body></html>');
+        RETURN v_html;
+    END fn_texto_a_html;
+
+    -- Escribe un CLOB en Base64 (lineas de 76 caracteres) dentro del DATA de UTL_SMTP
+    PROCEDURE pr_escribir_base64(p_conn IN OUT NOCOPY UTL_SMTP.CONNECTION, p_texto IN CLOB) IS
+        v_blob   BLOB;
+        v_dest   INTEGER := 1;
+        v_src    INTEGER := 1;
+        v_ctx    INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
+        v_aviso  INTEGER;
+        v_pos    INTEGER := 1;
+        v_largo  INTEGER;
+        v_buffer VARCHAR2(32000);
+    BEGIN
+        DBMS_LOB.CREATETEMPORARY(v_blob, TRUE);
+        DBMS_LOB.CONVERTTOBLOB(v_blob, p_texto, DBMS_LOB.LOBMAXSIZE, v_dest, v_src,
+                               NLS_CHARSET_ID('AL32UTF8'), v_ctx, v_aviso);
+        v_largo := DBMS_LOB.GETLENGTH(v_blob);
+        WHILE v_pos <= v_largo LOOP
+            v_buffer := v_buffer || UTL_RAW.CAST_TO_VARCHAR2(
+                            UTL_ENCODE.BASE64_ENCODE(DBMS_LOB.SUBSTR(v_blob, 57, v_pos))) || UTL_TCP.CRLF;
+            v_pos := v_pos + 57;
+            IF LENGTH(v_buffer) > 30000 THEN
+                UTL_SMTP.WRITE_DATA(p_conn, v_buffer);
+                v_buffer := NULL;
+            END IF;
+        END LOOP;
+        IF v_buffer IS NOT NULL THEN UTL_SMTP.WRITE_DATA(p_conn, v_buffer); END IF;
+        DBMS_LOB.FREETEMPORARY(v_blob);
+    END pr_escribir_base64;
+
+    -- Asunto codificado (RFC 2047) para que las tildes se vean bien
+    FUNCTION fn_asunto_mime(p_asunto IN VARCHAR2) RETURN VARCHAR2 IS
+    BEGIN
+        RETURN '=?UTF-8?B?' || REPLACE(REPLACE(UTL_RAW.CAST_TO_VARCHAR2(UTL_ENCODE.BASE64_ENCODE(
+                   UTL_I18N.STRING_TO_RAW(p_asunto, 'AL32UTF8'))), CHR(13), ''), CHR(10), '') || '?=';
+    END fn_asunto_mime;
 
     PROCEDURE PR_ENVIAR_CORREO (
         p_destinatarios IN VARCHAR2,
@@ -594,6 +760,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
         v_dest        VARCHAR2(200);
         v_pos         PLS_INTEGER;
         v_exito_smtp  BOOLEAN := FALSE;
+        v_para        VARCHAR2(2000);
+        v_limite      VARCHAR2(70);
     BEGIN
         v_host   := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_TEXTO('SMTP_HOST');
         v_port   := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_NUM('SMTP_PORT');
@@ -676,17 +844,32 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
                 v_lista := SUBSTR(v_lista, v_pos + 1);
                 IF v_dest IS NOT NULL THEN
                     UTL_SMTP.RCPT(v_conn, '<' || v_dest || '>');
+                    v_para := v_para || CASE WHEN v_para IS NOT NULL THEN ', ' END || '<' || v_dest || '>';
                 END IF;
                 EXIT WHEN v_lista IS NULL;
             END LOOP;
 
+            -- Mensaje MIME multipart/alternative: version en texto y version HTML adaptable
+            -- al celular (fn_texto_a_html). Todo en UTF-8 codificado en Base64.
+            v_limite := 'SuperBrunca_' || TO_CHAR(SYSTIMESTAMP, 'YYYYMMDDHH24MISSFF6');
             UTL_SMTP.OPEN_DATA(v_conn);
-            UTL_SMTP.WRITE_DATA(v_conn, 'Date: '    || TO_CHAR(SYSDATE, 'Dy, DD Mon YYYY HH24:MI:SS', 'NLS_DATE_LANGUAGE=AMERICAN') || UTL_TCP.CRLF);
-            UTL_SMTP.WRITE_DATA(v_conn, 'From: <'   || v_emisor || '>' || UTL_TCP.CRLF);
-            UTL_SMTP.WRITE_DATA(v_conn, 'To: <'     || p_destinatarios || '>' || UTL_TCP.CRLF);
-            UTL_SMTP.WRITE_DATA(v_conn, 'Subject: ' || p_asunto || UTL_TCP.CRLF);
-            UTL_SMTP.WRITE_DATA(v_conn, 'Content-Type: text/plain; charset=UTF-8' || UTL_TCP.CRLF || UTL_TCP.CRLF);
-            UTL_SMTP.WRITE_DATA(v_conn, DBMS_LOB.SUBSTR(p_cuerpo, 32000, 1) || UTL_TCP.CRLF);
+            UTL_SMTP.WRITE_DATA(v_conn,
+                   'Date: ' || TO_CHAR(SYSTIMESTAMP, 'Dy, DD Mon YYYY HH24:MI:SS TZHTZM', 'NLS_DATE_LANGUAGE=AMERICAN') || UTL_TCP.CRLF
+                || 'From: "Super Brunca - Oracle" <' || v_emisor || '>' || UTL_TCP.CRLF
+                || 'To: ' || v_para || UTL_TCP.CRLF
+                || 'Subject: ' || fn_asunto_mime(p_asunto) || UTL_TCP.CRLF
+                || 'MIME-Version: 1.0' || UTL_TCP.CRLF
+                || 'Content-Type: multipart/alternative; boundary="' || v_limite || '"' || UTL_TCP.CRLF || UTL_TCP.CRLF
+                || '--' || v_limite || UTL_TCP.CRLF
+                || 'Content-Type: text/plain; charset=UTF-8' || UTL_TCP.CRLF
+                || 'Content-Transfer-Encoding: base64' || UTL_TCP.CRLF || UTL_TCP.CRLF);
+            pr_escribir_base64(v_conn, NVL(p_cuerpo, ' '));
+            UTL_SMTP.WRITE_DATA(v_conn,
+                   UTL_TCP.CRLF || '--' || v_limite || UTL_TCP.CRLF
+                || 'Content-Type: text/html; charset=UTF-8' || UTL_TCP.CRLF
+                || 'Content-Transfer-Encoding: base64' || UTL_TCP.CRLF || UTL_TCP.CRLF);
+            pr_escribir_base64(v_conn, fn_texto_a_html(p_asunto, p_cuerpo));
+            UTL_SMTP.WRITE_DATA(v_conn, UTL_TCP.CRLF || '--' || v_limite || '--' || UTL_TCP.CRLF);
             UTL_SMTP.CLOSE_DATA(v_conn);
             UTL_SMTP.QUIT(v_conn);
             v_exito_smtp := TRUE;
@@ -997,6 +1180,14 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
             PKG_AUD_CONTROL.PR_REGISTRAR_ERROR('PKG_ADM_NOTIFICACION', 'PR_NOTIF_PRODUCTOS_VENCIDOS', SQLCODE, SQLERRM);
             RAISE;
     END PR_NOTIF_PRODUCTOS_VENCIDOS;
+
+    FUNCTION FN_VISTA_PREVIA_HTML (
+        p_asunto IN VARCHAR2,
+        p_cuerpo IN CLOB
+    ) RETURN CLOB IS
+    BEGIN
+        RETURN fn_texto_a_html(p_asunto, p_cuerpo);
+    END FN_VISTA_PREVIA_HTML;
 
 END PKG_ADM_NOTIFICACION;
 /

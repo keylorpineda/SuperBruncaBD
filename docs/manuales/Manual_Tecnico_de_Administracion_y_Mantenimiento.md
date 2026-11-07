@@ -192,6 +192,7 @@ Los jobs del standby se reconfiguran en caliente con `PKG_ADM_STANDBY.PR_CONFIGU
 
 ### 6.2 Envío Directo de Correo Electrónico (`UTL_SMTP`)
 * **Sin Dependencia de VPN:** Se conecta de forma directa a servidores SMTP estándar (`smtp.gmail.com` en puerto 465 con SSL; 587 con STARTTLS como alternativa) usando el wallet de Oracle.
+* **Formato del correo:** cada notificación sale como mensaje MIME `multipart/alternative` en UTF-8: una versión en texto y otra en **HTML adaptable al celular** (encabezado con el asunto, tablas reales en vez de columnas con espacios y totales en negrita). `PR_ENVIAR_CORREO` convierte automáticamente el texto de cada notificación con `fn_texto_a_html`; `PKG_ADM_NOTIFICACION.FN_VISTA_PREVIA_HTML` devuelve ese HTML para revisarlo sin enviar.
 * **Tolerancia a Fallos de Red:** Si la conexión a Internet o el servidor SMTP no responde, la excepción es capturada y registrada en bitácora local (`AUD_ERROR_SISTEMA`), evitando que la facturación de los cajeros se interrumpa.
 
 ---
