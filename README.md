@@ -25,6 +25,7 @@ README.md          esta portada
 docs/              guías para instalar, cargar el padrón y defender el proyecto
 docs/manuales/     los 3 manuales oficiales (.md y .pdf) y el script que genera los PDF
 docs/entregable1/  diccionario de datos, documentación técnica y modelo relacional del Entregable #1
+docs/modelo/       modelo relacional del Avance 2 en DBML (abrir en https://dbdiagram.io)
 docs/enunciado/    enunciado del Entregable #2
 sql/               scripts de instalación: script_bd_v2.sql (base) y 00 a 06
 sql/08_Wallet_SMTP_Gmail.sh  wallet de certificados para el correo con Gmail (SSL/TLS)

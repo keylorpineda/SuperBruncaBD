@@ -156,13 +156,33 @@ function Forzar-ArchiveLog {
     }
 }
 
-# Copia incremental: solo archivos nuevos o con tamano distinto
+# Traslado por la red de Oracle (Data Guard): DBMS_FILE_TRANSFER.PUT_FILE por el
+# database link de "oracle:<enlace>" (ver 10_Enlace_Respaldos_DataGuard.sql)
+function Transferir-Oracle {
+    param([string]$Origen, [string]$Enlace, [string[]]$Patrones, [string]$Descripcion)
+    $sqlplus = Obtener-Ejecutable "sqlplus"
+    $archivos = Get-ChildItem -Path (Join-Path $Origen "*") -File -Include $Patrones -ErrorAction SilentlyContinue
+    $copiados = 0
+    foreach ($a in $archivos) {
+        $sql = "WHENEVER SQLERROR EXIT 1`nEXEC DBMS_FILE_TRANSFER.PUT_FILE('DIR_RESPALDOS', '$($a.Name)', 'DIR_RESPALDOS_STBY', '$($a.Name)', '$Enlace');`nEXIT`n"
+        $salida = ($sql | & $sqlplus -S "/ as sysdba") -join "`n"
+        if ($LASTEXITCODE -eq 0) { $copiados++; Escribir-Log "  -> $($a.Name) (por $Enlace)" }
+        elseif ($salida -notmatch "ORA-27038") { $script:HuboError = $true; Escribir-Log "[ERROR] $($a.Name): $(($salida -split "`n" | Where-Object { $_ -match 'ORA-' } | Select-Object -First 1))" }
+    }
+    Escribir-Log "[OK] $Descripcion : $copiados nuevo(s) de $(($archivos | Measure-Object).Count) enviado(s) a la standby por $Enlace"
+}
+
+# Copia incremental: solo archivos nuevos o con tamano distinto.
+# Destino "dataguard": no copia (los archivelogs los envia Data Guard).
+# Destino "oracle:<enlace>": envio por la red de Oracle (Transferir-Oracle).
 function Copiar-Nuevos {
     param([string]$Origen, [string]$Destino, [string[]]$Patrones, [string]$Descripcion)
     if (-not (Test-Path $Origen)) {
         Escribir-Log "[AVISO] No existe la carpeta origen de $Descripcion : $Origen"
         return
     }
+    if ($Destino -eq "dataguard") { Escribir-Log "[OK] $Descripcion : los envia Data Guard automaticamente (LOG_ARCHIVE_DEST_2)"; return }
+    if ($Destino -like "oracle:*") { Transferir-Oracle -Origen $Origen -Enlace $Destino.Substring(7) -Patrones $Patrones -Descripcion $Descripcion; return }
     try {
         if (-not (Test-Path $Destino)) { New-Item -ItemType Directory -Path $Destino -Force | Out-Null }
     } catch {

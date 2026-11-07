@@ -201,7 +201,7 @@ docker exec -u oracle ora_standby tnsping STANDBY_TNS
 Los dos deben terminar en `OK (xx msec)`. Si `PRIMARIA_TNS` falla, revise el paso 6
 (firewall de Keylor) y que el contenedor de Keylor esté encendido.
 
-## 🔵 Paso 10. Keylor prepara la principal y le envía el respaldo
+## 🔵 Paso 10. Keylor prepara la principal y le envía el respaldo (solo esta vez)
 
 Esto lo hace **Keylor** en su PC (instrucciones completas en `docs/GUIA_PASO_A_PASO.md`, sección 7):
 
@@ -338,6 +338,29 @@ EOF
 Resultado esperado: `MRP0 APPLYING_LOG` (o `WAIT_FOR_LOG`) y `transport lag` / `apply lag` en `+00 00:00:00`.
 
 **¡Listo! Su PC ya es la standby.** Escriba `exit` para salir del contenedor.
+
+## 🟢🔵 Paso 14. Dejar todo automático (respaldo diario incluido)
+
+El enunciado pide que el respaldo diario llegue **solo** a la standby. Desde aquí ya no se usan
+USB ni carpetas: el respaldo viaja por la misma conexión de Oracle (puerto 1521).
+
+1. 🟢 Usted deja su standby **abierta en solo lectura** (así puede recibir los archivos):
+   `powershell -ExecutionPolicy Bypass -File .\menu.ps1` → opción **2**. Debe decir `READ ONLY WITH APPLY`.
+2. 🟢🔵 Los dos le ponen clave al usuario `oracle` de su contenedor (la misma clave en las dos PC):
+
+   ```powershell
+   docker exec -it -u root ora_standby passwd oracle      # usted
+   docker exec -it -u root ora_principal passwd oracle    # Keylor
+   ```
+
+3. 🔵 Keylor registra esa clave y crea el enlace (sección 7 de `GUIA_PASO_A_PASO.md`,
+   "Respaldo diario trasladado solo a la standby").
+
+Desde entonces, cada noche a la 01:00 la principal saca el respaldo y lo deja en su carpeta
+`/opt/oracle/standby_backups`, sin que nadie haga nada. Para verlo:
+`docker exec ora_standby ls -la /opt/oracle/standby_backups`.
+
+> El paso 10 (pasar el respaldo a mano) solo se hace **una vez**, para crear la standby.
 
 ---
 

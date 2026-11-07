@@ -161,6 +161,13 @@ function Op-ArrancarStandby {
     if ($r.Rol -eq "SIN BASE") {
         Write-Host "La instancia esta apagada: STARTUP MOUNT..."
         Invoke-Sql "STARTUP MOUNT;" | Out-Null
+        $r = Get-Rol
+    }
+    # Se deja abierta en solo lectura (Active Data Guard): asi el database link
+    # LNK_STANDBY puede recibir el respaldo diario y se pueden consultar los datos.
+    if ($r.Modo -eq "MOUNTED") {
+        Write-Host "Abriendo la standby en solo lectura..."
+        Invoke-Sql "ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;`nALTER DATABASE OPEN READ ONLY;`nALTER PLUGGABLE DATABASE ALL OPEN READ ONLY;" -Silencioso | Out-Null
     }
     Write-Host "Activando la aplicacion automatica de cambios (Data Guard)..."
     Invoke-Sql "ALTER DATABASE RECOVER MANAGED STANDBY DATABASE USING CURRENT LOGFILE DISCONNECT FROM SESSION;" -Silencioso | Out-Null

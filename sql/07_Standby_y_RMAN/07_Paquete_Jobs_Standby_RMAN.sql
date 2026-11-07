@@ -559,7 +559,7 @@ CREATE OR REPLACE PACKAGE BODY CADENA_NEG.PKG_ADM_STANDBY IS
         SELECT COUNT(*) INTO v_fallos
           FROM USER_SCHEDULER_JOB_RUN_DETAILS
          WHERE job_name IN (c_job_traslado, c_job_backup, c_job_purga)
-           AND status <> 'SUCCEEDED'
+           AND status = 'FAILED'   -- STOPPED (job reconfigurado mientras corria) no es un fallo
            AND log_date > SYSTIMESTAMP - INTERVAL '1' DAY;
         registrar('JOBS_STANDBY', v_fallos, 0, CASE WHEN v_fallos > 0 THEN 'S' ELSE 'N' END,
                   v_fallos || ' ejecucion(es) fallida(s) de traslado/backup/purga en 24 horas.');

@@ -72,13 +72,44 @@ EOF
     fi
 }
 
+# Traslado por la red de Oracle (Data Guard / 21c EE): DBMS_FILE_TRANSFER.PUT_FILE
+# por el database link indicado ("oracle:LNK_STANDBY"). No necesita carpetas
+# compartidas ni ssh: usa la misma conexion 1521 que Data Guard.
+# Requiere los directorios DIR_RESPALDOS / DIR_RESPALDOS_STBY y el enlace, creados
+# una vez con 10_Enlace_Respaldos_DataGuard.sql. La standby debe estar abierta
+# en solo lectura (READ ONLY WITH APPLY) para aceptar la conexion del enlace.
+transferir_oracle() {
+    local origen="$1" enlace="${2#oracle:}" descripcion="$3"; shift 3
+    local total=0 copiados=0 f nombre salida expr=()
+    for p in "$@"; do [ ${#expr[@]} -gt 0 ] && expr+=(-o); expr+=(-name "$p"); done
+    while IFS= read -r f; do
+        total=$((total + 1)); nombre=$(basename "$f")
+        salida=$(sqlplus -s / as sysdba <<EOF 2>&1
+WHENEVER SQLERROR EXIT 1
+EXEC DBMS_FILE_TRANSFER.PUT_FILE('DIR_RESPALDOS', '$nombre', 'DIR_RESPALDOS_STBY', '$nombre', '$enlace');
+EXIT
+EOF
+)
+        if [ $? -eq 0 ]; then copiados=$((copiados + 1)); log "  -> $nombre (por $enlace)"
+        elif echo "$salida" | grep -q "ORA-27038"; then :   # ya estaba en la standby
+        else HUBO_ERROR=1; log "[ERROR] $nombre: $(echo "$salida" | grep -m1 ORA-)"; fi
+    done < <(find "$origen/" -maxdepth 1 -type f \( "${expr[@]}" \))
+    log "[OK] $descripcion: $copiados nuevo(s) de $total enviado(s) a la standby por $enlace"
+}
+
 # Copia incremental: solo archivos nuevos o con tamano distinto.
-# Destino local (cp) o remoto "usuario@host:/ruta" (scp; se recuerda lo enviado).
+# Destino local (cp), remoto "usuario@host:/ruta" (scp; se recuerda lo enviado),
+# "oracle:<enlace>" (por la red de Oracle) o "dataguard" (no copia: Data Guard ya
+# envia los archivelogs por LOG_ARCHIVE_DEST_2).
 # Uso: copiar_nuevos <origen> <destino> <descripcion> <patron> [patron...]
 copiar_nuevos() {
     local origen="$1" destino="$2" descripcion="$3"; shift 3
     local enviados="$LOG_DIR/enviados_standby.lst" total=0 copiados=0 f nombre expr=()
     if [ ! -d "$origen" ]; then log "[AVISO] No existe $origen"; return; fi
+    case "$destino" in
+        dataguard) log "[OK] $descripcion: los envia Data Guard automaticamente (LOG_ARCHIVE_DEST_2)"; return ;;
+        oracle:*)  transferir_oracle "$origen" "$destino" "$descripcion" "$@"; return ;;
+    esac
     case "$destino" in *:*) ;; *) mkdir -p "$destino" ;; esac
     touch "$enviados"
     for p in "$@"; do [ ${#expr[@]} -gt 0 ] && expr+=(-o); expr+=(-name "$p"); done

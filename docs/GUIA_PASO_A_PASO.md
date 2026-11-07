@@ -246,7 +246,7 @@ Los jobs del standby y la descarga del padrón ejecutan scripts `.sh` / `.ps1`, 
 EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_REGISTRAR_CREDENCIAL_OS('<usuario del SO>', '<clave del SO>');
 ```
 
-- En Docker el usuario es `oracle`, pero en la imagen **no tiene clave**. Asígnele una: `docker exec -it -u root ora_principal passwd oracle`.
+- En Docker el usuario es `oracle`, pero en la imagen **no tiene clave**. Asígnele una: `docker exec -it -u root ora_principal passwd oracle`. Verificado: con esa clave registrada, los 4 jobs del standby corren solos (`SUCCEEDED`).
 - En Windows el usuario debe estar en el grupo `ORA_DBA` y el servicio `OracleJobScheduler<SID>` debe estar iniciado.
 
 Al registrarla, los jobs externos se habilitan solos. Mientras tanto, los mismos trabajos se pueden hacer a mano con el orquestador `02_Traslado_Archivelogs_10min_y_Ondemand.sh` (así se hicieron las pruebas de la sección 7).
@@ -415,6 +415,38 @@ Este es el resumen. El procedimiento completo, con lo que debe salir en cada pas
 
 > **Al reiniciar el contenedor de la standby** la imagen no levanta la instancia sola: entre con SQL*Plus y ejecute `STARTUP MOUNT` y el comando del paso 8.
 
+**Respaldo diario trasladado solo a la standby, sin intervención (Data Guard).** Una sola vez, en la principal:
+
+1. Credencial del SO (sección 6.2). En Docker, asígnele clave al usuario `oracle` **en los dos contenedores** y regístrela:
+
+   ```powershell
+   docker exec -it -u root ora_principal passwd oracle
+   docker exec -it -u root ora_standby passwd oracle
+   ```
+
+   ```sql
+   -- en PDBCADENA (menú, opción 9)
+   EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_REGISTRAR_CREDENCIAL_OS('oracle', '<la clave que puso>');
+   ```
+
+2. Enlace para enviar los respaldos por la red de Oracle (la standby debe estar en `READ ONLY WITH APPLY`: menú, opción 2; y en la standby debe existir `/opt/oracle/standby_backups`, paso 5):
+
+   ```bash
+   # dentro de ora_principal
+   cd /opt/oracle/proyecto/sql/07_Standby_y_RMAN
+   sqlplus / as sysdba @10_Enlace_Respaldos_DataGuard.sql '<clave de SYSTEM de la principal>'
+   ```
+
+   Crea los directorios `DIR_RESPALDOS` / `DIR_RESPALDOS_STBY`, el database link `LNK_STANDBY` y deja
+   `STANDBY_RUTA_ARCHIVE_DESTINO = dataguard` (los archivelogs los manda Data Guard) y
+   `STANDBY_RUTA_BACKUP_DESTINO = oracle:LNK_STANDBY` (cada respaldo nuevo se copia con
+   `DBMS_FILE_TRANSFER.PUT_FILE`, por el mismo puerto 1521, sin carpetas compartidas).
+
+Desde ese momento todo es automático: `JOB_STANDBY_TRASLADO_ARCHIVELOG` cada 10 min,
+`JOB_RMAN_BACKUP_DIARIO` a la 01:00 (nivel 0 domingo / 1 el resto) con envío a la standby,
+`JOB_STANDBY_PURGA_ARCHIVELOG` a las 03:00 y `JOB_STANDBY_MONITOREO` cada hora.
+Para probarlos a petición: `PR_SINCRONIZAR_AHORA`, `PR_RESPALDAR_AHORA`, `PR_PURGAR_AHORA`.
+
 **Purga a los 3 días y respaldo diario.** Los hacen `JOB_STANDBY_PURGA_ARCHIVELOG` y `JOB_RMAN_BACKUP_DIARIO` cuando la credencial del paso 6.2 está registrada. A mano: `bash 02_Traslado_Archivelogs_10min_y_Ondemand.sh purga x x x x 3 CADENA $ORACLE_HOME 10`. Con Data Guard la purga solo borra lo que ya se aplicó en la standby **y** está respaldado (sección 7 del manual).
 
 **Monitoreo** (en la principal, `PDBCADENA`):
@@ -470,12 +502,16 @@ Verificado en dos contenedores Docker con `container-registry.oracle.com/databas
 | Purga con Data Guard (0 días, de prueba) | Borra solo lo aplicado en la standby y respaldado; avisa `RMAN-08120` (no aplicado) y `RMAN-08138` (falta respaldo) y conserva esos archivos. |
 | Reinstalar el esquema con Data Guard activo | `DROP USER`, borrar y crear tablespaces se replicó a la standby con lag 0 (`STANDBY_FILE_MANAGEMENT=AUTO`). |
 | Monitoreo (`PR_ESTADO_STANDBY`, `PR_VERIFICAR_SINCRONIZACION`) | Detectan Data Guard: destino 2 `VALID`, sin huecos. |
+| Jobs `EXECUTABLE` con la credencial del SO (usuario `oracle` con clave) | `JOB_STANDBY_TRASLADO_ARCHIVELOG`, `JOB_RMAN_BACKUP_DIARIO` y `JOB_STANDBY_PURGA_ARCHIVELOG` corren solos y a petición: `SUCCEEDED`. El de traslado se ejecuta cada 10 minutos sin intervención. |
+| Respaldo diario trasladado a la standby por la red de Oracle (`10_Enlace_Respaldos_DataGuard.sql`) | El respaldo nivel 1 del job envió sus 9 piezas nuevas a `/opt/oracle/standby_backups` de la standby con `DBMS_FILE_TRANSFER` por `LNK_STANDBY`; las que ya estaban se omiten. |
+| Monitoreo después de los jobs | `PR_VERIFICAR_SINCRONIZACION`: "Standby sincronizado: sin inconsistencias"; último traslado hace 1 minuto, 0 fallos. |
 
 **No verificado todavía:**
 
 | Prueba | Motivo |
 | :--- | :--- |
-| Jobs `EXECUTABLE` con credencial del SO (traslado, respaldo diario, purga, descarga del padrón) | En Docker el usuario `oracle` no tiene clave; se probaron sus mismos trabajos ejecutando el orquestador a mano. |
 | Wallet en Windows nativo con `orapki` | Solo se probó en Linux / Docker. |
+| Descarga automática mensual del padrón (`JOB_PADRON_DESCARGA`) por el job | Quedó habilitada con la credencial; la descarga y la carga se probaron con el script y el procedimiento a mano. |
+| Red entre dos PC distintas | Todo se probó con dos contenedores en una misma PC. |
 
 > **Verificado en Oracle 21c EE con Data Guard activo:** padrón del 30/09/2026, 3.762.240 personas, 0 rechazos, 2.179 distritos electorales, ~52 minutos (más lento que sin Data Guard porque cada cambio viaja también a la standby). Al terminar, la standby seguía sincronizada: `transport lag` y `apply lag` en 0 y `GAP_STATUS = NO GAP`.

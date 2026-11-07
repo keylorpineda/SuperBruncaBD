@@ -27,6 +27,10 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 echo "[INFO] Wallet: $WALLET"
+if [ -f "$WALLET/cwallet.sso" ]; then
+    # Idempotente: al reinstalar el esquema se pierde el parametro, pero el wallet sigue en disco
+    echo "[INFO] El wallet ya existe; solo se vuelve a registrar SMTP_WALLET_PATH."
+else
 mkdir -p "$WALLET"
 # Clave solo para administrar el wallet (Oracle lo abre con auto-login)
 CLAVE="Wallet$(date +%s)#Smtp"
@@ -46,6 +50,7 @@ for nombre in "GTS Root R1" "GTS Root R2" "GTS Root R3" "GTS Root R4" "GlobalSig
     fi
 done
 [ "$agregados" -gt 0 ] || { echo "[ERROR] No se agrego ningun certificado"; exit 1; }
+fi
 
 # Registrar la ruta en el PDB del proyecto (el primero abierto en READ WRITE)
 sqlplus -s / as sysdba <<EOF

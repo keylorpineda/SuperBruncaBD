@@ -526,6 +526,22 @@ Resultado: `PRIMARY` / `READ WRITE` con la última venta (0 pérdida, gracias a 
 
 ---
 
+### 11.14 Respaldo diario trasladado automáticamente y jobs del sistema operativo
+
+1. Credencial del SO: el usuario `oracle` con clave en los dos servidores (`passwd oracle`) y
+   `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_REGISTRAR_CREDENCIAL_OS('oracle', '<clave>');` en la principal.
+   Con eso se habilitan los jobs `EXECUTABLE`.
+2. `sql/07_Standby_y_RMAN/10_Enlace_Respaldos_DataGuard.sql` (una vez, en la principal, con la clave de SYSTEM):
+   crea `DIR_RESPALDOS` (`/opt/oracle/backups`), `DIR_RESPALDOS_STBY` (`/opt/oracle/standby_backups`, llega a la
+   standby por el redo), el database link `LNK_STANDBY` y fija `STANDBY_RUTA_ARCHIVE_DESTINO = dataguard` y
+   `STANDBY_RUTA_BACKUP_DESTINO = oracle:LNK_STANDBY`.
+3. El orquestador copia cada pieza nueva con `DBMS_FILE_TRANSFER.PUT_FILE` por el database link. La standby
+   debe estar `READ ONLY WITH APPLY` (Active Data Guard) para aceptar la conexión; la opción 2 del menú la deja así.
+
+**Verificado (Oracle 21c EE):** `JOB_STANDBY_TRASLADO_ARCHIVELOG` corre solo cada 10 minutos; `JOB_RMAN_BACKUP_DIARIO`
+sacó un nivel 1 y envió sus 9 piezas nuevas a la standby; `JOB_STANDBY_PURGA_ARCHIVELOG` terminó `SUCCEEDED`; el
+monitoreo reporta "Standby sincronizado: sin inconsistencias".
+
 # 12. Guion para la demostración
 
 Con Data Guard (sección 11), con las dos bases sincronizadas y la standby en `READ ONLY WITH APPLY`:

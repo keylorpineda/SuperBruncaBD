@@ -1,0 +1,1262 @@
+// =============================================================================
+// Modelo relacional - Proyecto Super Brunca (esquema CADENA_NEG)
+// Avance 2 - Administracion de Bases de Datos, UNA Sede Regional Brunca, II-2026
+// Generado desde la base real (Oracle 21c EE, 2026-11-06) con el diccionario de datos.
+// Abrir en https://dbdiagram.io  (Import -> DBML, o pegar este texto en el editor).
+// Las tablas marcadas [AVANCE 2] son nuevas en este entregable.
+// Se omiten tablas externas (EXT_*), logs de vistas materializadas y tablas de prueba.
+// =============================================================================
+
+Project super_brunca {
+  database_type: 'Oracle'
+  Note: 'Base de datos de una cadena de supermercados: facturacion, inventario, promociones, padron TSE, seguridad, auditoria y standby.'
+}
+
+Table AUD_BITACORA {
+  ID_BITACORA "NUMBER(12)" [pk, note: 'Identificador unico del registro de bitacora.']
+  ID_USUARIO "NUMBER(10)" [note: 'Usuario de la aplicacion que realizo la operacion. FK a SEG_USUARIO.']
+  ID_SUCURSAL "NUMBER(10)" [note: 'Sucursal desde la que se realizo. FK a SEG_SUCURSAL.']
+  TABLA_BITA "VARCHAR2(30)" [not null, note: 'Nombre de la tabla afectada.']
+  LLAVE_REGISTRO_BITA "VARCHAR2(50)" [note: 'Valor de la llave primaria del registro afectado.']
+  OPERACION_BITA "VARCHAR2(10)" [not null, note: 'Operacion: INSERT, UPDATE, DELETE, LOGIN, LOGOUT, ANULAR o CONSULTA.']
+  MODULO_BITA "VARCHAR2(50)" [note: 'Modulo funcional desde el que se hizo la operacion.']
+  DESCRIPCION_BITA "VARCHAR2(500)" [note: 'Descripcion de lo ocurrido.']
+  DIRECCION_IP_BITA "VARCHAR2(45)" [note: 'Direccion IP del equipo cliente.']
+  FECHA_BITA "TIMESTAMP(6)" [not null, note: 'Fecha y hora de la operacion.']
+  USUARIO_CREA_BITA "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_BITA "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  Note: 'Bitacora general de operaciones realizadas por los usuarios del sistema.'
+}
+
+Table AUD_ERROR_SISTEMA {
+  ID_ERROR_SISTEMA "NUMBER(12)" [pk, note: 'Identificador unico del error.']
+  PAQUETE_ERSI "VARCHAR2(30)" [not null, note: 'Nombre del paquete o trigger donde se produjo la excepcion.']
+  SUBPROGRAMA_ERSI "VARCHAR2(50)" [not null, note: 'Procedimiento o funcion especifica.']
+  CODIGO_SQL_ERSI "NUMBER(10)" [not null, note: 'Codigo numerico del error Oracle (SQLCODE).']
+  MENSAJE_ERROR_ERSI "VARCHAR2(500)" [not null, note: 'Mensaje descriptivo del error (SQLERRM).']
+  PILA_ERROR_ERSI "VARCHAR2(2000)" [note: 'Rastro de la linea exacta del error (FORMAT_ERROR_BACKTRACE).']
+  TERMINAL_ERSI "VARCHAR2(64)" [note: 'Terminal desde donde se ejecuto el proceso.']
+  USUARIO_CREA_ERSI "VARCHAR2(30)" [not null, note: 'Usuario de la sesion activa.']
+  FECHA_CREA_ERSI "TIMESTAMP(6)" [not null, note: 'Fecha y hora exacta de la excepcion.']
+  Note: '[AVANCE 2] Bitacora inmutable de excepciones y errores capturados en los paquetes PL/SQL.'
+}
+
+Table AUD_MONITOREO_BD {
+  ID_MONITOREO_BD "NUMBER(12)" [pk, note: 'Identificador unico del chequeo de monitoreo.']
+  TIPO_VERIF_MOBD "VARCHAR2(20)" [not null, note: 'Tipo de verificacion: TABLESPACE, OBJETO_INVALIDO, INDICE, SESION, CRECIMIENTO o STANDBY.']
+  NOMBRE_OBJETO_MOBD "VARCHAR2(128)" [not null, note: 'Nombre del tablespace, indice, objeto o sesion inspeccionada.']
+  VALOR_ACTUAL_MOBD "NUMBER(14,2)" [note: 'Valor medido (porcentaje de uso, MB ocupados o cantidad de bloqueos).']
+  UMBRAL_MAX_MOBD "NUMBER(14,2)" [note: 'Limite maximo permitido segun SEG_PARAMETRO (ej. 85%).']
+  ES_INCONSISTENTE_MOBD "VARCHAR2(1)" [not null, note: 'Indica si requiere alerta al DBA: S=Si, N=No.']
+  DETALLE_MOBD "VARCHAR2(500)" [not null, note: 'Resultado detallado de la verificacion.']
+  USUARIO_CREA_MOBD "VARCHAR2(30)" [not null, note: 'Usuario que ejecuto el monitoreo.']
+  FECHA_CREA_MOBD "TIMESTAMP(6)" [not null, note: 'Fecha y hora de la revision.']
+  Note: '[AVANCE 2] Bitacora del paquete de monitoreo (uso de tablespaces, objetos invalidos, estado de indices, sesiones y crecimiento).'
+}
+
+Table AUD_REGISTRO_CAMBIO {
+  ID_REGISTRO_CAMBIO "NUMBER(12)" [pk, note: 'Identificador unico del detalle de cambio auditado.']
+  TABLA_RECA "VARCHAR2(30)" [not null, note: 'Nombre de la tabla principal afectada.']
+  MODULO_RECA "VARCHAR2(30)" [not null, note: 'Area funcional: FACTURACION, PRECIOS, INVENTARIO, CLIENTES, PROVEEDORES, PROMOCIONES o DESCUENTOS.']
+  OPERACION_RECA "VARCHAR2(10)" [not null, note: 'Tipo de sentencia DML ejecutada: INSERT, UPDATE o DELETE.']
+  LLAVE_PRIMARIA_RECA "VARCHAR2(50)" [not null, note: 'Identificador del registro afectado en la tabla auditada.']
+  CAMPO_MODIFICADO_RECA "VARCHAR2(50)" [not null, note: 'Nombre de la columna modificada o REGISTRO_COMPLETO.']
+  VALOR_ANTERIOR_RECA "VARCHAR2(500)" [note: 'Valor previo antes del cambio (:OLD).']
+  VALOR_NUEVO_RECA "VARCHAR2(500)" [note: 'Valor nuevo despues del cambio (:NEW).']
+  TERMINAL_RECA "VARCHAR2(64)" [note: 'Terminal del cliente que ejecuto la sentencia.']
+  DIRECCION_IP_RECA "VARCHAR2(45)" [note: 'Direccion IP de la sesion.']
+  USUARIO_CREA_RECA "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que ejecuto la operacion.']
+  FECHA_CREA_RECA "TIMESTAMP(6)" [not null, note: 'Marca de tiempo exacta del cambio.']
+  Note: '[AVANCE 2] Bitacora inmutable de cambios (valor anterior y nuevo) disparada por triggers sobre las 7 tablas principales del negocio.'
+}
+
+Table CAT_CANTON {
+  ID_CANTON "NUMBER(10)" [pk, note: 'Identificador unico del canton.']
+  ID_PROVINCIA "NUMBER(10)" [not null, note: 'Provincia a la que pertenece el canton. FK a CAT_PROVINCIA.']
+  CODIGO_CANT "VARCHAR2(10)" [not null, note: 'Codigo oficial del canton, unico dentro de la provincia.']
+  NOMBRE_CANT "VARCHAR2(50)" [not null, note: 'Nombre del canton.']
+  ESTADO_CANT "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_CANT "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_CANT "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_CANT "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_CANT "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_PROVINCIA, CODIGO_CANT) [unique]
+  }
+  Note: 'Division politica de segundo nivel, dependiente de una provincia.'
+}
+
+Table CAT_DISTRITO {
+  ID_DISTRITO "NUMBER(10)" [pk, note: 'Identificador unico del distrito.']
+  ID_CANTON "NUMBER(10)" [not null, note: 'Canton al que pertenece el distrito. FK a CAT_CANTON.']
+  CODIGO_DIST "VARCHAR2(10)" [not null, note: 'Codigo oficial del distrito, unico dentro del canton.']
+  NOMBRE_DIST "VARCHAR2(50)" [not null, note: 'Nombre del distrito.']
+  CODIGO_POSTAL_DIST "VARCHAR2(10)" [note: 'Codigo postal del distrito. Es el unico lugar donde se guarda el codigo postal.']
+  ESTADO_DIST "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_DIST "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_DIST "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_DIST "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_DIST "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_CANTON, CODIGO_DIST) [unique]
+  }
+  Note: 'Division politica de tercer nivel. Es el nivel al que se amarra toda direccion fisica del sistema.'
+}
+
+Table CAT_DISTRITO_ELECTORAL {
+  COD_ELECTORAL_DIEL "VARCHAR2(6)" [pk, note: 'Codigo electoral de 6 digitos: provincia (1), canton (2) y distrito electoral (3).']
+  PROVINCIA_DIEL "VARCHAR2(60)" [not null, note: 'Nombre de la provincia segun el TSE.']
+  CANTON_DIEL "VARCHAR2(60)" [not null, note: 'Nombre del canton segun el TSE.']
+  DISTRITO_DIEL "VARCHAR2(100)" [not null, note: 'Nombre del distrito electoral segun el TSE.']
+  FECHA_ACT_DIEL "TIMESTAMP(6)" [not null, note: 'Fecha de la ultima carga desde DISTELEC.TXT.']
+  Note: '[AVANCE 2] Distritos electorales oficiales del TSE (archivo DISTELEC.TXT del padron).'
+}
+
+Table CAT_PADRON {
+  ID_PADRON "NUMBER(10)" [pk, note: 'Identificador unico del registro en el padron.']
+  ID_DISTRITO "NUMBER(10)" [note: 'Distrito electoral asociado. FK a CAT_DISTRITO.']
+  CEDULA_PADR "VARCHAR2(15)" [not null, unique, note: 'Numero de cedula de identidad costarricense (9 digitos).']
+  COD_ELECTORAL_PADR "VARCHAR2(6)" [not null, note: 'Codigo electoral de 6 digitos del TSE (Provincia-Canton-Distrito).']
+  SEXO_PADR "VARCHAR2(1)" [not null, note: 'Sexo registrado: M=Masculino, F=Femenino, O=Otro, N=No indicado (el padron del TSE no publica el sexo: su campo 3 es RELLENO).']
+  FECHA_VENC_CED_PADR "DATE" [not null, note: 'Fecha de vencimiento de la cedula de identidad.']
+  JUNTA_RECEPTORA_PADR "VARCHAR2(5)" [not null, note: 'Numero de junta receptora de votos.']
+  NOMBRE_PADR "VARCHAR2(40)" [not null, note: 'Nombre de pila oficial segun el TSE.']
+  APELLIDO1_PADR "VARCHAR2(40)" [not null, note: 'Primer apellido oficial segun el TSE.']
+  APELLIDO2_PADR "VARCHAR2(40)" [note: 'Segundo apellido oficial segun el TSE.']
+  ESTADO_PADR "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_PADR "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PADR "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PADR "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PADR "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: '[AVANCE 2] Padron Nacional Electoral (TSE). Se enlaza con PER_CLIENTE para obtener automaticamente los datos basicos de las personas.'
+}
+
+Table CAT_PAIS {
+  ID_PAIS "NUMBER(10)" [pk, note: 'Identificador unico del pais.']
+  CODIGO_ISO_PAIS "VARCHAR2(3)" [not null, unique, note: 'Codigo ISO 3166-1 alfa-3 del pais. Ejemplo: CRI.']
+  NOMBRE_PAIS "VARCHAR2(50)" [not null, unique, note: 'Nombre oficial del pais.']
+  COD_TELEFONICO_PAIS "VARCHAR2(5)" [note: 'Prefijo telefonico internacional sin el signo mas. Ejemplo: 506.']
+  ESTADO_PAIS "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_PAIS "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PAIS "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PAIS "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PAIS "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Catalogo de paises. Se usa para nacionalidad, residencia y ubicacion geografica.'
+}
+
+Table CAT_PROVINCIA {
+  ID_PROVINCIA "NUMBER(10)" [pk, note: 'Identificador unico de la provincia.']
+  ID_PAIS "NUMBER(10)" [not null, note: 'Pais al que pertenece la provincia. FK a CAT_PAIS.']
+  CODIGO_PROVI "VARCHAR2(10)" [not null, note: 'Codigo oficial de la provincia, unico dentro del pais.']
+  NOMBRE_PROVI "VARCHAR2(50)" [not null, note: 'Nombre de la provincia.']
+  ESTADO_PROVI "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_PROVI "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PROVI "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PROVI "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PROVI "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_PAIS, CODIGO_PROVI) [unique]
+  }
+  Note: 'Division politica de primer nivel dentro de un pais.'
+}
+
+Table COM_ABONO_PAGAR {
+  ID_ABONO_PAGAR "NUMBER(12)" [pk, note: 'Identificador unico del abono.']
+  ID_FACTURA_COMPRA "NUMBER(12)" [not null, note: 'Factura de compra que se abona. FK a COM_FACTURA_COMPRA.']
+  ID_USUARIO "NUMBER(10)" [not null, note: 'Usuario que registro el abono. FK a SEG_USUARIO.']
+  NUM_COMPROBANTE_ABPA "VARCHAR2(30)" [not null, unique, note: 'Numero de comprobante del pago.']
+  FECHA_ABPA "DATE" [not null, note: 'Fecha del abono.']
+  MONTO_ABPA "NUMBER(14,2)" [not null, note: 'Monto abonado.']
+  OBSERVACION_ABPA "VARCHAR2(200)" [note: 'Observaciones.']
+  ESTADO_ABPA "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, N=Anulado.']
+  USUARIO_CREA_ABPA "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_ABPA "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_ABPA "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_ABPA "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Abonos (pagos parciales) a facturas de compra a credito. El saldo de la cuenta por pagar se calcula a partir de estos abonos.'
+}
+
+Table COM_CUENTA_PAGAR {
+  ID_CUENTA_PAGAR "NUMBER(12)" [pk, note: 'Identificador unico de la cuenta por pagar.']
+  ID_FACTURA_COMPRA "NUMBER(12)" [not null, unique, note: 'Factura de compra pendiente. FK a COM_FACTURA_COMPRA.']
+  ID_PROVEEDOR "NUMBER(10)" [not null, note: 'Proveedor acreedor. FK a PER_PROVEEDOR.']
+  FECHA_EMISION_CUPA "DATE" [not null, note: 'Fecha de emision de la obligacion.']
+  FECHA_VENCIM_CUPA "DATE" [not null, note: 'Fecha limite de pago otorgada por el proveedor.']
+  MONTO_ORIGINAL_CUPA "NUMBER(14,2)" [not null, note: 'Monto original de la factura a credito.']
+  MONTO_ABONADO_CUPA "NUMBER(14,2)" [not null, note: 'Suma acumulada de los abonos aplicados.']
+  SALDO_CUPA "NUMBER(14,2)" [not null, note: 'Saldo pendiente por cancelar al proveedor.']
+  FECHA_ULT_ABONO_CUPA "DATE" [note: 'Fecha en que se registro el ultimo abono.']
+  ESTADO_CUPA "VARCHAR2(1)" [not null, note: 'Estado: P=Pendiente, A=Abonada parcialmente, C=Cancelada totalmente, N=Anulada.']
+  USUARIO_CREA_CUPA "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_CUPA "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_CUPA "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_CUPA "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: '[AVANCE 2] Detalle fisico de cuentas por pagar originadas por facturas de compra en estado pendiente de pago.'
+}
+
+Table COM_DEVOLUCION {
+  ID_DEVOLUCION_COMPRA "NUMBER(12)" [pk, note: 'Identificador unico de la devolucion de compra.']
+  ID_FACTURA_COMPRA "NUMBER(12)" [not null, note: 'Factura de compra que se devuelve. FK a COM_FACTURA_COMPRA.']
+  ID_BODEGA "NUMBER(10)" [not null, note: 'Bodega de donde sale el producto devuelto. FK a INV_BODEGA.']
+  ID_USUARIO "NUMBER(10)" [not null, note: 'Usuario que registro la devolucion. FK a SEG_USUARIO.']
+  CONSECUTIVO_DEVC "VARCHAR2(20)" [not null, unique, note: 'Consecutivo interno de la devolucion.']
+  FECHA_DEVC "DATE" [not null, note: 'Fecha de la devolucion.']
+  MOTIVO_DEVC "VARCHAR2(250)" [not null, note: 'Motivo de la devolucion.']
+  ESTADO_DEVC "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, N=Anulado.']
+  USUARIO_CREA_DEVC "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_DEVC "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_DEVC "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_DEVC "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Encabezado de las devoluciones de producto a un proveedor, total o parcial, sobre una factura de compra.'
+}
+
+Table COM_DEVOLUCION_DET {
+  ID_DEVOLUCION_COMPRA_DET "NUMBER(12)" [pk, note: 'Identificador unico de la linea devuelta.']
+  ID_DEVOLUCION_COMPRA "NUMBER(12)" [not null, note: 'Devolucion a la que pertenece. FK a COM_DEVOLUCION.']
+  ID_FACTURA_COMPRA_DET "NUMBER(12)" [not null, note: 'Linea de la factura de compra que se devuelve. FK a COM_FACTURA_COMPRA_DET.']
+  CANTIDAD_DVCD "NUMBER(14,3)" [not null, note: 'Cantidad devuelta.']
+  MOTIVO_DVCD "VARCHAR2(200)" [note: 'Motivo especifico de la linea.']
+  USUARIO_CREA_DVCD "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_DVCD "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_DVCD "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_DVCD "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_DEVOLUCION_COMPRA, ID_FACTURA_COMPRA_DET) [unique]
+  }
+  Note: 'Lineas de factura de compra devueltas y su cantidad. Producto, lote y costo se obtienen de la linea original; no se repiten aqui.'
+}
+
+Table COM_FACTURA_COMPRA {
+  ID_FACTURA_COMPRA "NUMBER(12)" [pk, note: 'Identificador unico de la factura de compra.']
+  ID_PROVEEDOR "NUMBER(10)" [not null, note: 'Proveedor que emite la factura. FK a PER_PROVEEDOR.']
+  ID_BODEGA "NUMBER(10)" [not null, note: 'Bodega que recibe la mercaderia (normalmente la central). FK a INV_BODEGA.']
+  ID_USUARIO "NUMBER(10)" [not null, note: 'Usuario que registro la compra. FK a SEG_USUARIO.']
+  NUM_FACTURA_FACO "VARCHAR2(30)" [not null, note: 'Numero de factura del proveedor.']
+  FECHA_FACO "DATE" [not null, note: 'Fecha de la factura.']
+  ES_CREDITO_FACO "VARCHAR2(1)" [not null, note: 'Indica si la compra queda pendiente de pago: S=Credito, N=Contado.']
+  FECHA_VENCIM_FACO "DATE" [note: 'Fecha de vencimiento del credito. Obligatoria en compras a credito.']
+  SUBTOTAL_FACO "NUMBER(14,2)" [not null, note: 'Suma de las lineas antes de descuento e impuesto.']
+  DESCUENTO_FACO "NUMBER(14,2)" [not null, note: 'Total de descuentos.']
+  IMPUESTO_FACO "NUMBER(14,2)" [not null, note: 'Total de impuestos.']
+  TOTAL_FACO "NUMBER(14,2)" [note: 'Columna virtual: subtotal menos descuento mas impuesto.']
+  OBSERVACION_FACO "VARCHAR2(250)" [note: 'Observaciones.']
+  ESTADO_FACO "VARCHAR2(1)" [not null, note: 'Estado de la factura de compra: P=Pendiente de pago, C=Cancelada, A=Activa (contado), N=Anulada.']
+  USUARIO_CREA_FACO "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_FACO "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_FACO "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_FACO "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_PROVEEDOR, NUM_FACTURA_FACO) [unique]
+  }
+  Note: 'Facturas de compra a proveedores. Una factura a credito con saldo es una cuenta por pagar (ver V_CUENTA_PAGAR). Los totales se guardan porque el enunciado lo exige.'
+}
+
+Table COM_FACTURA_COMPRA_DET {
+  ID_FACTURA_COMPRA_DET "NUMBER(12)" [pk, note: 'Identificador unico de la linea.']
+  ID_FACTURA_COMPRA "NUMBER(12)" [not null, note: 'Factura a la que pertenece. FK a COM_FACTURA_COMPRA.']
+  ID_PRODUCTO "NUMBER(10)" [not null, note: 'Producto comprado. FK a PRO_PRODUCTO.']
+  ID_LOTE "NUMBER(12)" [note: 'Lote recibido. FK compuesta a PRO_LOTE junto con ID_PRODUCTO.']
+  LINEA_FCDE "NUMBER(4)" [not null, note: 'Numero de linea dentro de la factura.']
+  CANTIDAD_FCDE "NUMBER(14,3)" [not null, note: 'Cantidad comprada.']
+  COSTO_UNITARIO_FCDE "NUMBER(14,4)" [not null, note: 'Costo unitario pactado en la factura.']
+  PORC_DESCUENTO_FCDE "NUMBER(5,2)" [not null, note: 'Porcentaje de descuento de la linea.']
+  PORC_IMPUESTO_FCDE "NUMBER(5,2)" [not null, note: 'Porcentaje de impuesto aplicado a la linea. Cero si es exenta.']
+  SUBTOTAL_FCDE "NUMBER(14,2)" [note: 'Columna virtual: cantidad por costo unitario.']
+  MONTO_DESCUENTO_FCDE "NUMBER(14,2)" [note: 'Columna virtual: monto de descuento de la linea.']
+  MONTO_IMPUESTO_FCDE "NUMBER(14,2)" [note: 'Columna virtual: monto de impuesto de la linea, calculado sobre el neto de descuento.']
+  USUARIO_CREA_FCDE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_FCDE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_FCDE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_FCDE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_FACTURA_COMPRA, LINEA_FCDE) [unique]
+  }
+  Note: 'Detalle de productos comprados en una factura de compra. Los montos de linea son columnas virtuales.'
+}
+
+Table COM_NOTA_CREDITO {
+  ID_NOTA_CREDITO_COMPRA "NUMBER(12)" [pk, note: 'Identificador unico de la nota de credito de compra.']
+  ID_DEVOLUCION_COMPRA "NUMBER(12)" [not null, unique, note: 'Devolucion que origina la nota. FK a COM_DEVOLUCION. La factura y el proveedor se obtienen a traves de la devolucion.']
+  ID_USUARIO "NUMBER(10)" [not null, note: 'Usuario que registro la nota. FK a SEG_USUARIO.']
+  NUM_NOTA_NCCO "VARCHAR2(30)" [not null, note: 'Numero de la nota de credito del proveedor.']
+  FECHA_NCCO "DATE" [not null, note: 'Fecha de la nota de credito.']
+  ESTADO_NCCO "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Disponible, C=Aplicada, N=Anulada.']
+  USUARIO_CREA_NCCO "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_NCCO "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_NCCO "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_NCCO "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Notas de credito emitidas por el proveedor para pagar una devolucion de compra. Cada devolucion genera a lo sumo una nota.'
+}
+
+Table INV_BODEGA {
+  ID_BODEGA "NUMBER(10)" [pk, note: 'Identificador unico de la bodega.']
+  ID_SUCURSAL "NUMBER(10)" [note: 'Sucursal a la que pertenece. FK a SEG_SUCURSAL. Nulo unicamente en la bodega central.']
+  CODIGO_BODE "VARCHAR2(20)" [not null, unique, note: 'Codigo interno de la bodega.']
+  NOMBRE_BODE "VARCHAR2(100)" [not null, note: 'Nombre de la bodega.']
+  ES_CENTRAL_BODE "VARCHAR2(1)" [note: 'Columna virtual: S si es la bodega central (no pertenece a ninguna sucursal), N en caso contrario.']
+  SENNAS_EXACTAS_BODE "VARCHAR2(250)" [note: 'Senas exactas de la bodega.']
+  ESTADO_BODE "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_BODE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_BODE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_BODE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_BODE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Bodegas. El inventario esta centralizado en la bodega central (sin sucursal) y desde ella se traslada a las bodegas de cada sucursal.'
+}
+
+Table INV_EXISTENCIA {
+  ID_EXISTENCIA "NUMBER(12)" [pk, note: 'Identificador unico del registro de existencia.']
+  ID_BODEGA "NUMBER(10)" [not null, note: 'Bodega donde esta el producto. FK a INV_BODEGA.']
+  ID_PRODUCTO "NUMBER(10)" [not null, note: 'Producto en existencia. FK a PRO_PRODUCTO.']
+  ID_LOTE "NUMBER(12)" [note: 'Lote en existencia. FK compuesta a PRO_LOTE junto con ID_PRODUCTO, lo que garantiza que el lote sea de ese producto.']
+  CANTIDAD_EXIS "NUMBER(14,3)" [not null, note: 'Cantidad disponible.']
+  CANTIDAD_RESERV_EXIS "NUMBER(14,3)" [not null, note: 'Cantidad reservada para traslados pendientes.']
+  USUARIO_CREA_EXIS "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_EXIS "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_EXIS "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_EXIS "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_BODEGA, ID_PRODUCTO, ID_LOTE) [unique]
+  }
+  Note: 'Existencia de cada producto (y lote, si aplica) en cada bodega.'
+}
+
+Table INV_MOVIMIENTO {
+  ID_MOVIMIENTO "NUMBER(12)" [pk, note: 'Identificador unico del movimiento.']
+  ID_BODEGA "NUMBER(10)" [not null, note: 'Bodega afectada. FK a INV_BODEGA.']
+  ID_USUARIO "NUMBER(10)" [not null, note: 'Usuario que registro el movimiento. FK a SEG_USUARIO.']
+  TIPO_MOVI "VARCHAR2(10)" [not null, note: 'Tipo: COMPRA, TRASL_ENT, AJUSTE_ENT y DEVOL_CLI son entradas; VENTA, TRASL_SAL, AJUSTE_SAL y DEVOL_PROV son salidas.']
+  CONSECUTIVO_MOVI "VARCHAR2(20)" [not null, unique, note: 'Consecutivo interno del movimiento.']
+  FECHA_MOVI "DATE" [not null, note: 'Fecha del movimiento.']
+  DOCUMENTO_REF_MOVI "VARCHAR2(30)" [note: 'Numero del documento que origino el movimiento (factura, traslado, ajuste).']
+  OBSERVACION_MOVI "VARCHAR2(250)" [note: 'Observaciones.']
+  ESTADO_MOVI "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, N=Anulado.']
+  USUARIO_CREA_MOVI "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_MOVI "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_MOVI "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_MOVI "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Encabezado de los movimientos de inventario (kardex) de una bodega.'
+}
+
+Table INV_MOVIMIENTO_DET {
+  ID_MOVIMIENTO_DET "NUMBER(12)" [pk, note: 'Identificador unico de la linea.']
+  ID_MOVIMIENTO "NUMBER(12)" [not null, note: 'Movimiento al que pertenece. FK a INV_MOVIMIENTO.']
+  ID_PRODUCTO "NUMBER(10)" [not null, note: 'Producto movido. FK a PRO_PRODUCTO.']
+  ID_LOTE "NUMBER(12)" [note: 'Lote movido. FK compuesta a PRO_LOTE junto con ID_PRODUCTO.']
+  LINEA_MODE "NUMBER(4)" [not null, note: 'Numero de linea dentro del movimiento.']
+  CANTIDAD_MODE "NUMBER(14,3)" [not null, note: 'Cantidad movida, siempre positiva. El signo lo da el tipo de movimiento.']
+  COSTO_UNITARIO_MODE "NUMBER(14,4)" [not null, note: 'Costo unitario al momento del movimiento.']
+  USUARIO_CREA_MODE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_MODE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_MODE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_MODE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_MOVIMIENTO, LINEA_MODE) [unique]
+  }
+  Note: 'Detalle de productos de un movimiento de inventario. Los saldos no se almacenan: se calculan en V_KARDEX.'
+}
+
+Table INV_TRASLADO {
+  ID_TRASLADO "NUMBER(12)" [pk, note: 'Identificador unico del traslado.']
+  ID_BODEGA_ORIGEN "NUMBER(10)" [not null, note: 'Bodega que envia. FK a INV_BODEGA (rol: origen).']
+  ID_BODEGA_DESTINO "NUMBER(10)" [not null, note: 'Bodega que recibe. FK a INV_BODEGA (rol: destino).']
+  ID_USUARIO_ENVIA "NUMBER(10)" [not null, note: 'Usuario que despacha. FK a SEG_USUARIO (rol: envia).']
+  ID_USUARIO_RECIBE "NUMBER(10)" [note: 'Usuario que recibe. FK a SEG_USUARIO (rol: recibe). Nulo mientras no se reciba.']
+  CONSECUTIVO_TRAS "VARCHAR2(20)" [not null, unique, note: 'Consecutivo interno del traslado.']
+  FECHA_ENVIO_TRAS "DATE" [not null, note: 'Fecha de envio.']
+  FECHA_RECEPCION_TRAS "DATE" [note: 'Fecha de recepcion.']
+  OBSERVACION_TRAS "VARCHAR2(250)" [note: 'Observaciones.']
+  ESTADO_TRAS "VARCHAR2(1)" [not null, note: 'Estado del registro: P=Pendiente, T=En transito, R=Recibido, N=Anulado.']
+  USUARIO_CREA_TRAS "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_TRAS "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_TRAS "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_TRAS "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Encabezado de los traslados de productos entre bodegas (de la bodega central a las sucursales).'
+}
+
+Table INV_TRASLADO_DET {
+  ID_TRASLADO_DET "NUMBER(12)" [pk, note: 'Identificador unico de la linea.']
+  ID_TRASLADO "NUMBER(12)" [not null, note: 'Traslado al que pertenece. FK a INV_TRASLADO.']
+  ID_PRODUCTO "NUMBER(10)" [not null, note: 'Producto trasladado. FK a PRO_PRODUCTO.']
+  ID_LOTE "NUMBER(12)" [note: 'Lote trasladado. FK compuesta a PRO_LOTE junto con ID_PRODUCTO.']
+  LINEA_TRDE "NUMBER(4)" [not null, note: 'Numero de linea dentro del traslado.']
+  CANTIDAD_ENVIA_TRDE "NUMBER(14,3)" [not null, note: 'Cantidad enviada.']
+  CANTIDAD_RECIBE_TRDE "NUMBER(14,3)" [note: 'Cantidad recibida. Nulo mientras no se reciba.']
+  OBSERVACION_TRDE "VARCHAR2(200)" [note: 'Observaciones de la linea (faltantes, danos).']
+  USUARIO_CREA_TRDE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_TRDE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_TRDE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_TRDE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_TRASLADO, LINEA_TRDE) [unique]
+  }
+  Note: 'Detalle de productos de un traslado entre bodegas.'
+}
+
+Table PER_CLIENTE {
+  ID_CLIENTE "NUMBER(10)" [pk, note: 'Identificador unico del cliente.']
+  ID_PERSONA "NUMBER(10)" [not null, unique, note: 'Persona (fisica o juridica) que es cliente. FK a PER_PERSONA.']
+  CODIGO_CLI "VARCHAR2(20)" [not null, unique, note: 'Codigo interno del cliente.']
+  FECHA_INGRESO_CLI "DATE" [not null, note: 'Fecha de ingreso a la empresa como cliente.']
+  ES_PREFERENCIAL_CLI "VARCHAR2(1)" [not null, note: 'Indica si es cliente preferencial (puede comprar a credito): S=Si, N=No.']
+  MONTO_MAX_CREDITO_CLI "NUMBER(14,2)" [not null, note: 'Monto maximo de credito permitido. Solo puede ser mayor a cero en clientes preferenciales.']
+  DIAS_CREDITO_CLI "NUMBER(4)" [not null, note: 'Plazo de credito en dias.']
+  ES_DEFECTO_CLI "VARCHAR2(1)" [not null, note: 'Indica si es el cliente por defecto de la facturacion: S=Si, N=No. Solo puede existir uno.']
+  ESTADO_CLI "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_CLI "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_CLI "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_CLI "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_CLI "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  SALDO_ACTUAL_CLI "NUMBER(14,2)" [not null, note: 'Saldo acumulado pendiente de pago que debe el cliente en cuentas por cobrar.']
+  ID_PADRON "NUMBER(10)" [note: 'Enlace al registro del Padron Nacional (CAT_PADRON) para clientes nacionales.']
+  Note: 'Rol de cliente de una persona fisica o juridica. Incluye el cliente por defecto usado en ventas de contado sin cliente registrado.'
+}
+
+Table PER_CONTACTO {
+  ID_CONTACTO "NUMBER(10)" [pk, note: 'Identificador unico del contacto.']
+  ID_PERSONA "NUMBER(10)" [not null, note: 'Persona duena del contacto. FK a PER_PERSONA.']
+  TIPO_CONT "VARCHAR2(1)" [not null, note: 'Tipo de contacto: T=Telefono, C=Celular, F=Fax, E=Email.']
+  VALOR_CONT "VARCHAR2(100)" [not null, note: 'Numero o direccion de correo segun el tipo.']
+  ES_PRINCIPAL_CONT "VARCHAR2(1)" [not null, note: 'Indica si es el contacto principal de su tipo: S=Si, N=No.']
+  ESTADO_CONT "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_CONT "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_CONT "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_CONT "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_CONT "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_PERSONA, TIPO_CONT, VALOR_CONT) [unique]
+  }
+  Note: 'Medios de contacto de una persona: telefono, celular, fax y correo electronico.'
+}
+
+Table PER_DIRECCION {
+  ID_DIRECCION "NUMBER(10)" [pk, note: 'Identificador unico de la direccion.']
+  ID_PERSONA "NUMBER(10)" [not null, note: 'Persona duena de la direccion. FK a PER_PERSONA.']
+  TIPO_DIRE "VARCHAR2(1)" [not null, note: 'Tipo de direccion: C=Casa, T=Trabajo.']
+  ID_DISTRITO "NUMBER(10)" [not null, note: 'Distrito donde se ubica. FK a CAT_DISTRITO.']
+  SENNAS_EXACTAS_DIRE "VARCHAR2(250)" [not null, note: 'Senas exactas de la direccion.']
+  ES_PRINCIPAL_DIRE "VARCHAR2(1)" [not null, note: 'Indica si es la direccion principal de la persona: S=Si, N=No.']
+  ESTADO_DIRE "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_DIRE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_DIRE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_DIRE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_DIRE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_PERSONA, TIPO_DIRE) [unique]
+  }
+  Note: 'Direcciones de una persona. Cada persona puede tener una direccion de casa y una de trabajo.'
+}
+
+Table PER_PERSONA {
+  ID_PERSONA "NUMBER(10)" [pk, note: 'Identificador unico de la persona.']
+  TIPO_PERS "VARCHAR2(1)" [not null, note: 'Tipo de persona: N=Nacional, E=Extranjero, J=Empresa (juridica). Es el discriminador de los subtipos.']
+  NUM_IDENTIFICACION_PERS "VARCHAR2(30)" [not null, note: 'Cedula, DIMEX, pasaporte o cedula juridica. Longitud variable porque las cedulas de extranjeros varian de tipo y tamano.']
+  FECHA_REGISTRO_PERS "DATE" [not null, note: 'Fecha en que la persona se registro en el sistema.']
+  ESTADO_PERS "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_PERS "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PERS "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PERS "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PERS "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_PERSONA, TIPO_PERS) [unique]
+    (TIPO_PERS, NUM_IDENTIFICACION_PERS) [unique]
+  }
+  Note: 'Supertipo de toda persona fisica o juridica conocida por el sistema (clientes, proveedores, usuarios, la propia empresa).'
+}
+
+Table PER_PERSONA_FISICA {
+  ID_PERSONA_FISICA "NUMBER(10)" [pk, note: 'Identificador de la persona fisica. Es el mismo valor de PER_PERSONA.ID_PERSONA (subtipo).']
+  TIPO_PERS "VARCHAR2(1)" [not null, note: 'Discriminador heredado de PER_PERSONA. Solo admite N o E; impide que una empresa sea persona fisica.']
+  NOMBRE_PEFI "VARCHAR2(40)" [not null, note: 'Nombre de pila.']
+  APELLIDO1_PEFI "VARCHAR2(40)" [not null, note: 'Primer apellido.']
+  APELLIDO2_PEFI "VARCHAR2(40)" [note: 'Segundo apellido. Opcional porque los extranjeros pueden no tenerlo.']
+  SEXO_PEFI "VARCHAR2(1)" [not null, note: 'Sexo: M=Masculino, F=Femenino, O=Otro.']
+  FECHA_NACIMIENTO_PEFI "DATE" [not null, note: 'Fecha de nacimiento.']
+  ESTADO_CIVIL_PEFI "VARCHAR2(1)" [note: 'Estado civil: S=Soltero, C=Casado, D=Divorciado, V=Viudo, U=Union libre.']
+  ESCOLARIDAD_PEFI "VARCHAR2(1)" [note: 'Escolaridad: N=Ninguna, P=Primaria, S=Secundaria, T=Tecnico, U=Universitaria, G=Posgrado.']
+  ID_PAIS_NACIONALIDAD "NUMBER(10)" [not null, note: 'Pais de nacionalidad. FK a CAT_PAIS (rol: nacionalidad).']
+  ID_PAIS_RESIDENCIA "NUMBER(10)" [not null, note: 'Pais de residencia. FK a CAT_PAIS (rol: residencia).']
+  PUESTO_PEFI "VARCHAR2(100)" [note: 'Puesto que desempena la persona en su trabajo.']
+  EMPRESA_LABORA_PEFI "VARCHAR2(150)" [note: 'Nombre de la empresa donde labora.']
+  ES_ASEGURADO_PEFI "VARCHAR2(1)" [not null, note: 'Indica si la persona esta asegurada: S=Si, N=No.']
+  USUARIO_CREA_PEFI "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PEFI "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PEFI "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PEFI "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Subtipo de PER_PERSONA con los datos propios de un individuo (nacional o extranjero).'
+}
+
+Table PER_PERSONA_JURIDICA {
+  ID_PERSONA_JURIDICA "NUMBER(10)" [pk, note: 'Identificador de la persona juridica. Es el mismo valor de PER_PERSONA.ID_PERSONA (subtipo).']
+  TIPO_PERS "VARCHAR2(1)" [not null, note: 'Discriminador heredado de PER_PERSONA. Solo admite J; impide que un individuo sea persona juridica.']
+  RAZON_SOCIAL_PEJU "VARCHAR2(150)" [not null, note: 'Razon social inscrita.']
+  NOMBRE_COMERCIAL_PEJU "VARCHAR2(150)" [note: 'Nombre comercial o de fantasia.']
+  FECHA_CONSTITUCION_PEJU "DATE" [note: 'Fecha de constitucion de la sociedad.']
+  ID_PAIS_ORIGEN "NUMBER(10)" [not null, note: 'Pais donde esta constituida la empresa. FK a CAT_PAIS (rol: origen).']
+  SITIO_WEB_PEJU "VARCHAR2(150)" [note: 'Direccion del sitio web.']
+  USUARIO_CREA_PEJU "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PEJU "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PEJU "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PEJU "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Subtipo de PER_PERSONA con los datos propios de una empresa.'
+}
+
+Table PER_PROVEEDOR {
+  ID_PROVEEDOR "NUMBER(10)" [pk, note: 'Identificador unico del proveedor.']
+  ID_PERSONA_JURIDICA "NUMBER(10)" [not null, unique, note: 'Empresa que es proveedor. FK a PER_PERSONA_JURIDICA, lo que impide registrar individuos como proveedores.']
+  CODIGO_PROVE "VARCHAR2(20)" [not null, unique, note: 'Codigo interno del proveedor.']
+  FECHA_INGRESO_PROVE "DATE" [not null, note: 'Fecha de inicio de la relacion comercial.']
+  LIMITE_CREDITO_PROVE "NUMBER(14,2)" [not null, note: 'Limite de credito que el proveedor le otorga al negocio.']
+  DIAS_CREDITO_PROVE "NUMBER(4)" [not null, note: 'Plazo de credito en dias otorgado por el proveedor.']
+  NOMBRE_CONTACTO_PROVE "VARCHAR2(100)" [note: 'Nombre del agente o persona de contacto en el proveedor.']
+  ESTADO_PROVE "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_PROVE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PROVE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PROVE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PROVE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  SALDO_ACTUAL_PROVE "NUMBER(14,2)" [not null, note: 'Saldo acumulado pendiente de pago que el negocio le debe al proveedor en cuentas por pagar.']
+  Note: 'Rol de proveedor. Solo una persona juridica (empresa) puede ser proveedor.'
+}
+
+Table PRM_ACCION_CLIENTE {
+  ID_ACCION_CLIENTE "NUMBER(12)" [pk, note: 'Identificador unico del registro de acciones.']
+  ID_PROMOCION "NUMBER(10)" [not null, note: 'Promocion que otorga las acciones. FK a PRM_PROMOCION.']
+  ID_FACTURA_VENTA "NUMBER(12)" [not null, note: 'Factura de venta que genero las acciones. FK a VEN_FACTURA.']
+  ID_PREMIO "NUMBER(10)" [note: 'Premio canjeado. FK compuesta a PRM_PREMIO junto con ID_PROMOCION, lo que garantiza que el premio sea de la misma promocion.']
+  CANT_ACCIONES_ACLI "NUMBER(10)" [not null, note: 'Cantidad de acciones otorgadas.']
+  FECHA_CANJE_ACLI "DATE" [note: 'Fecha en que se canjeo el premio. Nulo mientras las acciones esten disponibles.']
+  ESTADO_ACLI "VARCHAR2(1)" [note: 'Columna virtual: C=Canjeada si ya tiene premio, D=Disponible en caso contrario.']
+  USUARIO_CREA_ACLI "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_ACLI "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_ACLI "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_ACLI "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_PROMOCION, ID_FACTURA_VENTA) [unique]
+  }
+  Note: 'Acciones que una factura de venta le otorga a su cliente dentro de una promocion, y el premio canjeado con ellas si lo hay. El cliente y la fecha se obtienen de la factura.'
+}
+
+Table PRM_DESCUENTO {
+  ID_DESCUENTO "NUMBER(10)" [pk, note: 'Identificador unico del descuento.']
+  ID_SUCURSAL "NUMBER(10)" [note: 'Sucursal donde aplica. FK a SEG_SUCURSAL. Nulo significa que aplica en toda la cadena.']
+  CODIGO_DSCT "VARCHAR2(20)" [not null, unique, note: 'Codigo interno del descuento.']
+  NOMBRE_DSCT "VARCHAR2(100)" [not null, note: 'Nombre del descuento.']
+  PORCENTAJE_DSCT "NUMBER(5,2)" [not null, note: 'Porcentaje de descuento. Excluyente con el monto fijo.']
+  MONTO_FIJO_DSCT "NUMBER(14,2)" [not null, note: 'Monto fijo de descuento. Excluyente con el porcentaje.']
+  FECHA_INICIO_DSCT "DATE" [not null, note: 'Fecha de inicio de vigencia.']
+  FECHA_FIN_DSCT "DATE" [not null, note: 'Fecha de fin de vigencia.']
+  PRIORIDAD_DSCT "NUMBER(3)" [not null, note: 'Prioridad de aplicacion; 1 es la mas alta.']
+  ES_ACUMULABLE_DSCT "VARCHAR2(1)" [not null, note: 'Indica si se puede acumular con otros descuentos: S=Si, N=No.']
+  ESTADO_DSCT "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_DSCT "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_DSCT "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_DSCT "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_DSCT "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Descuentos comerciales con su vigencia. A que productos aplica cada uno se define en PRM_DESCUENTO_REGLA.'
+}
+
+Table PRM_DESCUENTO_DET {
+  ID_DESCUENTO_DET "NUMBER(12)" [pk, note: 'Identificador unico del detalle de descuento.']
+  ID_DESCUENTO "NUMBER(10)" [not null, note: 'Descuento planeado al que se asocia el producto. FK a PRM_DESCUENTO.']
+  ID_PRODUCTO "NUMBER(10)" [not null, note: 'Producto incluido en el descuento. FK a PRO_PRODUCTO.']
+  ID_LOTE "NUMBER(12)" [note: 'Lote especifico incluido. FK compuesta a PRO_LOTE junto con ID_PRODUCTO.']
+  MOTIVO_INCLUSION_DSDE "VARCHAR2(200)" [not null, note: 'Razon por la que fue incluido (ej. Proximo a vencer o Antiguedad en bodega).']
+  FECHA_INCLUSION_DSDE "DATE" [not null, note: 'Fecha en que el proceso semanal incluyo el producto.']
+  ESTADO_DSDE "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_DSDE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_DSDE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_DSDE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_DSDE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_DESCUENTO, ID_PRODUCTO, ID_LOTE) [unique]
+  }
+  Note: '[AVANCE 2] Detalle de productos y lotes incluidos automaticamente por el job semanal de descuentos planeados (pronto vencimiento o antiguedad).'
+}
+
+Table PRM_DESCUENTO_REGLA {
+  ID_DESCUENTO_REGLA "NUMBER(10)" [pk, note: 'Identificador unico de la regla.']
+  ID_DESCUENTO "NUMBER(10)" [not null, note: 'Descuento al que pertenece la regla. FK a PRM_DESCUENTO.']
+  ID_FAMILIA_PRODUCTO "NUMBER(10)" [note: 'Familia a la que aplica. FK a PRO_FAMILIA_PRODUCTO.']
+  ID_PROVEEDOR "NUMBER(10)" [note: 'Proveedor a cuyos productos aplica. FK a PER_PROVEEDOR.']
+  DIAS_INGRESO_DSRE "NUMBER(5)" [note: 'Aplica a lotes con al menos esta cantidad de dias desde su fecha de ingreso.']
+  DIAS_VENCIM_DSRE "NUMBER(5)" [note: 'Aplica a lotes a los que les faltan como maximo estos dias para vencer.']
+  TIPO_REGLA_DSRE "VARCHAR2(17)" [note: 'Columna virtual: FAMILIA, PROVEEDOR, FECHA_INGRESO o FECHA_VENCIMIENTO, segun el criterio que tiene valor.']
+  ESTADO_DSRE "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_DSRE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_DSRE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_DSRE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_DSRE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Criterio de aplicacion de un descuento: por familia, por proveedor, por dias desde el ingreso o por dias para el vencimiento. Cada regla usa exactamente un criterio.'
+}
+
+Table PRM_ORDEN_PREMIACION {
+  ID_ORDEN_PREMIACION "NUMBER(12)" [pk, note: 'Identificador unico de la orden de premiacion.']
+  ID_CLIENTE "NUMBER(10)" [not null, note: 'Cliente premiado. FK a PER_CLIENTE.']
+  PERIODO_ORPR "VARCHAR2(20)" [not null, note: 'Codigo del semestre o periodo evaluado (ej. 2026-S1, 2026-S2).']
+  POSICION_RANK_ORPR "NUMBER(3)" [not null, note: 'Posicion obtenida en el ranking de compras del periodo.']
+  TOTAL_COMPRADO_ORPR "NUMBER(14,2)" [not null, note: 'Monto acumulado de compras del cliente en el periodo.']
+  MONTO_ORDEN_ORPR "NUMBER(14,2)" [not null, note: 'Monto de la orden de compra otorgada (parametrizado en 100,000 colones).']
+  FECHA_EMISION_ORPR "DATE" [not null, note: 'Fecha de generacion del beneficio.']
+  FECHA_VENCIM_ORPR "DATE" [not null, note: 'Fecha limite para canjear la orden de compra.']
+  ESTADO_ORPR "VARCHAR2(1)" [not null, note: 'Estado: D=Disponible, C=Canjeada, V=Vencida, N=Anulada.']
+  USUARIO_CREA_ORPR "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_ORPR "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_ORPR "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_ORPR "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_CLIENTE, PERIODO_ORPR) [unique]
+  }
+  Note: '[AVANCE 2] Ordenes de compra otorgadas cada 6 meses (parametrizado) a los 10 clientes que mas compren en la empresa.'
+}
+
+Table PRM_PATROCINADOR {
+  ID_PATROCINADOR "NUMBER(10)" [pk, note: 'Identificador unico del producto patrocinador.']
+  ID_PROMOCION "NUMBER(10)" [not null, note: 'Promocion patrocinada. FK a PRM_PROMOCION.']
+  ID_PRODUCTO "NUMBER(10)" [not null, note: 'Producto patrocinador. FK a PRO_PRODUCTO.']
+  CANT_REQUERIDA_PATR "NUMBER(14,3)" [not null, note: 'Cantidad del producto necesaria para ser acreedor de acciones.']
+  ACCIONES_OTORGA_PATR "NUMBER(10)" [not null, note: 'Cantidad de acciones que se entregan al cumplir la cantidad requerida.']
+  ESTADO_PATR "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_PATR "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PATR "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PATR "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PATR "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_PROMOCION, ID_PRODUCTO) [unique]
+  }
+  Note: 'Productos patrocinadores de una promocion: cuantas unidades hay que comprar y cuantas acciones se entregan al cumplirlo.'
+}
+
+Table PRM_PREMIO {
+  ID_PREMIO "NUMBER(10)" [pk, note: 'Identificador unico del premio.']
+  ID_PROMOCION "NUMBER(10)" [not null, note: 'Promocion a la que pertenece el premio. FK a PRM_PROMOCION.']
+  ID_PRODUCTO "NUMBER(10)" [note: 'Producto del inventario que se entrega como premio. FK a PRO_PRODUCTO. Nulo si el premio no es un producto del inventario.']
+  NOMBRE_PREM "VARCHAR2(150)" [not null, note: 'Nombre del premio.']
+  DESCRIPCION_PREM "VARCHAR2(250)" [note: 'Descripcion del premio.']
+  ACCIONES_COSTO_PREM "NUMBER(10)" [not null, note: 'Cantidad de acciones necesarias para canjear el premio.']
+  CANT_DISPONIBLE_PREM "NUMBER(10)" [not null, note: 'Unidades del premio disponibles para canje.']
+  ESTADO_PREM "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo, G=Agotado.']
+  USUARIO_CREA_PREM "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PREM "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PREM "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PREM "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_PREMIO, ID_PROMOCION) [unique]
+    (ID_PROMOCION, NOMBRE_PREM) [unique]
+  }
+  Note: 'Premios que se pueden obtener en una promocion a cambio de acciones.'
+}
+
+Table PRM_PROMOCION {
+  ID_PROMOCION "NUMBER(10)" [pk, note: 'Identificador unico de la promocion.']
+  ID_SUCURSAL "NUMBER(10)" [note: 'Sucursal donde aplica. FK a SEG_SUCURSAL. Nulo significa que aplica en toda la cadena.']
+  CODIGO_PROM "VARCHAR2(20)" [not null, unique, note: 'Codigo interno de la promocion.']
+  NOMBRE_PROM "VARCHAR2(100)" [not null, note: 'Nombre de la promocion.']
+  DESCRIPCION_PROM "VARCHAR2(250)" [note: 'Descripcion y condiciones.']
+  FECHA_INICIO_PROM "DATE" [not null, note: 'Fecha de inicio de vigencia.']
+  FECHA_FIN_PROM "DATE" [not null, note: 'Fecha de fin de vigencia.']
+  ESTADO_PROM "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activa, I=Inactiva, F=Finalizada.']
+  USUARIO_CREA_PROM "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PROM "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PROM "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PROM "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Promociones de mercadeo. Sus productos patrocinadores estan en PRM_PATROCINADOR y sus premios en PRM_PREMIO.'
+}
+
+Table PRO_CODIGO_BARRA {
+  ID_CODIGO_BARRA "NUMBER(10)" [pk, note: 'Identificador unico del codigo de barras.']
+  ID_PRODUCTO "NUMBER(10)" [not null, note: 'Producto al que pertenece. FK a PRO_PRODUCTO.']
+  CODIGO_COBA "VARCHAR2(50)" [not null, unique, note: 'Codigo de barras. Unico en todo el sistema.']
+  TIPO_COBA "VARCHAR2(20)" [not null, note: 'Simbologia: EAN13, EAN8, UPCA, ITF14, GS1128 o INTERNO.']
+  ES_PRINCIPAL_COBA "VARCHAR2(1)" [not null, note: 'Indica si es el codigo principal del producto: S=Si, N=No. Solo uno por producto.']
+  ESTADO_COBA "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_COBA "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_COBA "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_COBA "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_COBA "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Codigos de barras de un producto. Un mismo producto puede tener varios.'
+}
+
+Table PRO_FAMILIA_PRODUCTO {
+  ID_FAMILIA_PRODUCTO "NUMBER(10)" [pk, note: 'Identificador unico de la familia.']
+  ID_FAMILIA_PRODUCTO_PADRE "NUMBER(10)" [note: 'Familia de nivel superior. FK a PRO_FAMILIA_PRODUCTO (rol: padre). Nulo en familias raiz.']
+  CODIGO_FAMI "VARCHAR2(20)" [not null, unique, note: 'Codigo interno de la familia.']
+  NOMBRE_FAMI "VARCHAR2(50)" [not null, note: 'Nombre de la familia.']
+  DESCRIPCION_FAMI "VARCHAR2(200)" [note: 'Descripcion de la familia.']
+  ESTADO_FAMI "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_FAMI "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_FAMI "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_FAMI "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_FAMI "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Familias de productos (bebidas, carnes, verduras, etc.). Admite subfamilias.'
+}
+
+Table PRO_IMPUESTO {
+  ID_IMPUESTO "NUMBER(10)" [pk, note: 'Identificador unico del impuesto.']
+  CODIGO_IMPU "VARCHAR2(20)" [not null, unique, note: 'Codigo interno del impuesto.']
+  NOMBRE_IMPU "VARCHAR2(50)" [not null, note: 'Nombre del impuesto.']
+  PORCENTAJE_IMPU "NUMBER(5,2)" [not null, note: 'Porcentaje del impuesto. Siempre mayor a cero: la exencion se representa sin impuesto asociado.']
+  ESTADO_IMPU "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_IMPU "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_IMPU "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_IMPU "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_IMPU "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Impuestos aplicables a productos y servicios gravados. Un producto o servicio sin impuesto asociado es exento.'
+}
+
+Table PRO_LOTE {
+  ID_LOTE "NUMBER(12)" [pk, note: 'Identificador unico del lote.']
+  ID_PRODUCTO "NUMBER(10)" [not null, note: 'Producto al que pertenece el lote. FK a PRO_PRODUCTO.']
+  NUMERO_LOTE "VARCHAR2(30)" [not null, note: 'Numero de lote asignado por el fabricante o el negocio.']
+  FECHA_INGRESO_LOTE "DATE" [not null, note: 'Fecha de ingreso del lote al inventario.']
+  FECHA_VENCIM_LOTE "DATE" [note: 'Fecha de vencimiento. Nulo en productos no perecederos.']
+  FECHA_FABRIC_LOTE "DATE" [note: 'Fecha de fabricacion.']
+  ESTADO_LOTE "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_LOTE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_LOTE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_LOTE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_LOTE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_LOTE, ID_PRODUCTO) [unique]
+    (ID_PRODUCTO, NUMERO_LOTE) [unique]
+  }
+  Note: 'Lotes de un producto. Guarda la fecha de ingreso y la fecha de vencimiento.'
+}
+
+Table PRO_PRECIO_HIST {
+  ID_PRECIO_HIST "NUMBER(12)" [pk, note: 'Identificador unico del cambio.']
+  ID_PRODUCTO "NUMBER(10)" [not null, note: 'Producto cuyo costo cambio. FK a PRO_PRODUCTO.']
+  COSTO_ANTERIOR_PRHI "NUMBER(14,4)" [not null, note: 'Precio de costo que regia hasta la fecha del cambio.']
+  FECHA_CAMBIO_PRHI "TIMESTAMP(6)" [not null, note: 'Fecha y hora en que el costo anterior dejo de regir.']
+  MOTIVO_PRHI "VARCHAR2(200)" [note: 'Motivo del cambio de precio.']
+  USUARIO_CREA_PRHI "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PRHI "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  indexes {
+    (ID_PRODUCTO, FECHA_CAMBIO_PRHI) [unique]
+  }
+  Note: 'Bitacora de cambios de precio de costo. Cada fila guarda el costo que dejo de regir; el costo vigente esta en PRO_PRODUCTO, por lo que no hay datos duplicados.'
+}
+
+Table PRO_PRODUCTO {
+  ID_PRODUCTO "NUMBER(10)" [pk, note: 'Identificador unico del producto.']
+  ID_FAMILIA_PRODUCTO "NUMBER(10)" [not null, note: 'Familia a la que pertenece. FK a PRO_FAMILIA_PRODUCTO.']
+  ID_PROVEEDOR "NUMBER(10)" [not null, note: 'Proveedor del producto. FK a PER_PROVEEDOR.']
+  ID_IMPUESTO "NUMBER(10)" [note: 'Impuesto que grava el producto. FK a PRO_IMPUESTO. Nulo significa producto exento.']
+  CODIGO_PROD "VARCHAR2(20)" [not null, unique, note: 'Codigo interno del producto.']
+  NOMBRE_PROD "VARCHAR2(150)" [not null, note: 'Nombre del producto.']
+  DESCRIPCION_PROD "VARCHAR2(250)" [note: 'Descripcion ampliada.']
+  UNIDAD_MEDIDA_PROD "VARCHAR2(3)" [not null, note: 'Unidad de medida: UND=Unidad, KG=Kilogramo, LT=Litro, CJ=Caja, PQ=Paquete.']
+  PRECIO_COSTO_PROD "NUMBER(14,4)" [not null, note: 'Precio de costo vigente. Los costos anteriores quedan en PRO_PRECIO_HIST.']
+  ES_EXENTO_PROD "VARCHAR2(1)" [note: 'Columna virtual: S si el producto es exento de impuestos (sin impuesto asociado), N si es gravado.']
+  MANEJA_LOTE_PROD "VARCHAR2(1)" [not null, note: 'Indica si el producto se controla por lote y fecha de vencimiento: S=Si, N=No.']
+  STOCK_MINIMO_PROD "NUMBER(14,3)" [not null, note: 'Existencia minima antes de reordenar.']
+  ESTADO_PROD "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_PROD "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PROD "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PROD "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PROD "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Productos del inventario. El precio de venta no se almacena: se calcula en V_PRECIO_VENTA a partir de costo, utilidad, descuento e impuesto.'
+}
+
+Table PRO_PRODUCTO_SUCURSAL {
+  ID_PRODUCTO_SUCURSAL "NUMBER(10)" [pk, note: 'Identificador unico de la configuracion.']
+  ID_PRODUCTO "NUMBER(10)" [not null, note: 'Producto configurado. FK a PRO_PRODUCTO.']
+  ID_SUCURSAL "NUMBER(10)" [not null, note: 'Sucursal donde aplica. FK a SEG_SUCURSAL.']
+  PORC_UTILIDAD_PRSU "NUMBER(5,2)" [not null, note: 'Porcentaje de utilidad sobre el costo en esta sucursal.']
+  PORC_DESC_MAX_PRSU "NUMBER(5,2)" [not null, note: 'Porcentaje maximo de descuento permitido en esta sucursal.']
+  SE_VENDE_PRSU "VARCHAR2(1)" [not null, note: 'Indica si el producto se vende en la sucursal: S=Si, N=No.']
+  ESTADO_PRSU "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_PRSU "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PRSU "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PRSU "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PRSU "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_PRODUCTO, ID_SUCURSAL) [unique]
+  }
+  Note: 'Configuracion comercial de un producto en cada negocio (sucursal): porcentaje de utilidad y descuento maximo.'
+}
+
+Table PRO_SERVICIO {
+  ID_SERVICIO "NUMBER(10)" [pk, note: 'Identificador unico del servicio.']
+  ID_IMPUESTO "NUMBER(10)" [note: 'Impuesto que grava el servicio. FK a PRO_IMPUESTO. Nulo significa servicio exento.']
+  CODIGO_SERV "VARCHAR2(20)" [not null, unique, note: 'Codigo interno del servicio.']
+  NOMBRE_SERV "VARCHAR2(150)" [not null, note: 'Nombre del servicio.']
+  DESCRIPCION_SERV "VARCHAR2(250)" [note: 'Descripcion ampliada.']
+  PRECIO_SERV "NUMBER(14,4)" [not null, note: 'Precio del servicio sin impuesto.']
+  ES_EXENTO_SERV "VARCHAR2(1)" [note: 'Columna virtual: S si el servicio es exento de impuestos, N si es gravado.']
+  ESTADO_SERV "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_SERV "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_SERV "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_SERV "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_SERV "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Servicios que el punto de venta puede facturar ademas de los productos.'
+}
+
+Table SEG_EMPRESA {
+  ID_EMPRESA "NUMBER(10)" [pk, note: 'Identificador unico de la configuracion de empresa.']
+  ID_PERSONA_JURIDICA "NUMBER(10)" [not null, note: 'Persona juridica duena del negocio. FK a PER_PERSONA_JURIDICA.']
+  TIPO_NEGOCIO_EMP "VARCHAR2(15)" [not null, note: 'Tipo de negocio configurado: SUPERMERCADO, FERRETERIA o SUMINISTROS.']
+  NOMBRE_SISTEMA_EMP "VARCHAR2(100)" [not null, note: 'Nombre con que se identifica el punto de venta.']
+  MONEDA_BASE_EMP "VARCHAR2(3)" [not null, note: 'Codigo ISO 4217 de la moneda base.']
+  FECHA_INICIO_OP_EMP "DATE" [not null, note: 'Fecha desde la que rige la configuracion.']
+  ESTADO_EMP "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activa (vigente), I=Inactiva (historica).']
+  USUARIO_CREA_EMP "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_EMP "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_EMP "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_EMP "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Configuracion del negocio que opera la instancia. Los negocios son mutuamente excluyentes: solo una configuracion puede estar activa.'
+}
+
+Table SEG_PARAMETRO {
+  ID_PARAMETRO "NUMBER(10)" [pk, note: 'Identificador unico del parametro.']
+  CODIGO_PARA "VARCHAR2(40)" [not null, unique, note: 'Codigo unico del parametro consultado por los paquetes PL/SQL.']
+  MODULO_PARA "VARCHAR2(20)" [not null, note: 'Categoria del parametro: CORREO, SEGURIDAD, NEGOCIO, MONITOREO o STANDBY.']
+  NOMBRE_PARA "VARCHAR2(100)" [not null, note: 'Nombre descriptivo corto del parametro.']
+  DESCRIPCION_PARA "VARCHAR2(250)" [not null, note: 'Explicacion detallada del uso del parametro.']
+  ES_CIFRADO_PARA "VARCHAR2(1)" [not null, note: 'Indica si el valor sensible se almacena cifrado en VALOR_RAW_PARA: S=Si, N=No.']
+  VALOR_TEXTO_PARA "VARCHAR2(500)" [note: 'Valor en texto plano cuando ES_CIFRADO_PARA = N.']
+  VALOR_NUM_PARA "NUMBER(14,4)" [note: 'Valor numerico parametrizado (porcentajes, dias, meses, montos, MB, minutos).']
+  VALOR_RAW_PARA "RAW(0)" [note: 'Valor binario cifrado con DBMS_CRYPTO (AES-256) para claves de correo y de roles.']
+  ESTADO_PARA "VARCHAR2(1)" [not null, note: 'Estado del parametro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_PARA "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PARA "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PARA "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PARA "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: '[AVANCE 2] Tabla central de parametros del sistema. Almacena umbrales, correos y claves cifradas mediante DBMS_CRYPTO.'
+}
+
+Table SEG_SUCURSAL {
+  ID_SUCURSAL "NUMBER(10)" [pk, note: 'Identificador unico de la sucursal.']
+  ID_EMPRESA "NUMBER(10)" [not null, note: 'Configuracion de empresa a la que pertenece. FK a SEG_EMPRESA.']
+  ID_DISTRITO "NUMBER(10)" [not null, note: 'Distrito donde se ubica. FK a CAT_DISTRITO.']
+  CODIGO_SUC "VARCHAR2(20)" [not null, unique, note: 'Codigo interno de la sucursal.']
+  NOMBRE_SUC "VARCHAR2(100)" [not null, note: 'Nombre de la sucursal.']
+  SENNAS_EXACTAS_SUC "VARCHAR2(250)" [note: 'Senas exactas del local.']
+  TELEFONO_SUC "VARCHAR2(25)" [note: 'Telefono del local.']
+  ES_CASA_MATRIZ_SUC "VARCHAR2(1)" [not null, note: 'Indica si es la casa matriz: S=Si, N=No. Solo puede existir una.']
+  FECHA_APERTURA_SUC "DATE" [not null, note: 'Fecha de apertura.']
+  ESTADO_SUC "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_SUC "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_SUC "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_SUC "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_SUC "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Sucursales (negocios) de la cadena. Permite que el sistema sea multisucursal.'
+}
+
+Table SEG_USUARIO {
+  ID_USUARIO "NUMBER(10)" [pk, note: 'Identificador unico del usuario.']
+  ID_PERSONA_FISICA "NUMBER(10)" [not null, unique, note: 'Persona fisica que es usuario. FK a PER_PERSONA_FISICA.']
+  NOMBRE_USUARIO_USU "VARCHAR2(30)" [not null, unique, note: 'Nombre de inicio de sesion.']
+  CLAVE_HASH_USU "VARCHAR2(256)" [not null, note: 'Hash de la contrasena. Nunca se guarda la contrasena en texto plano.']
+  ROL_USU "VARCHAR2(10)" [not null, note: 'Rol del usuario: ADMIN, SUPERVISOR, CAJERO, BODEGUERO o CONTADOR.']
+  FECHA_ALTA_USU "DATE" [not null, note: 'Fecha de creacion del usuario.']
+  FECHA_ULT_ACCESO_USU "TIMESTAMP(6)" [note: 'Fecha y hora del ultimo inicio de sesion.']
+  INTENTOS_FALLIDOS_USU "NUMBER(2)" [not null, note: 'Intentos de acceso fallidos consecutivos.']
+  DEBE_CAMBIAR_CLAVE_USU "VARCHAR2(1)" [not null, note: 'Indica si debe cambiar la contrasena en el proximo ingreso: S=Si, N=No.']
+  ESTADO_USU "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo, B=Bloqueado.']
+  USUARIO_CREA_USU "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_USU "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_USU "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_USU "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Usuarios del sistema. Permite que el sistema sea multiusuario. Todo usuario es una persona fisica.'
+}
+
+Table SEG_USUARIO_SUCURSAL {
+  ID_USUARIO_SUCURSAL "NUMBER(10)" [pk, note: 'Identificador unico de la asignacion.']
+  ID_USUARIO "NUMBER(10)" [not null, note: 'Usuario asignado. FK a SEG_USUARIO.']
+  ID_SUCURSAL "NUMBER(10)" [not null, note: 'Sucursal asignada. FK a SEG_SUCURSAL.']
+  ES_DEFECTO_USSU "VARCHAR2(1)" [not null, note: 'Indica si es la sucursal por defecto del usuario: S=Si, N=No. Solo una por usuario.']
+  FECHA_ASIGNA_USSU "DATE" [not null, note: 'Fecha de la asignacion.']
+  ESTADO_USSU "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, I=Inactivo.']
+  USUARIO_CREA_USSU "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_USSU "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_USSU "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_USSU "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_USUARIO, ID_SUCURSAL) [unique]
+  }
+  Note: 'Sucursales en las que un usuario esta autorizado a trabajar.'
+}
+
+Table VEN_ABONO_COBRAR {
+  ID_ABONO_COBRAR "NUMBER(12)" [pk, note: 'Identificador unico del abono.']
+  ID_FACTURA_VENTA "NUMBER(12)" [not null, note: 'Factura de venta que se abona. FK a VEN_FACTURA.']
+  ID_USUARIO "NUMBER(10)" [not null, note: 'Usuario que recibio el abono. FK a SEG_USUARIO.']
+  TIPO_PAGO_ABCO "VARCHAR2(15)" [not null, note: 'Tipo de pago del abono: EFECTIVO, TARJETA, SINPE, TRANSFERENCIA o NOTA_CREDITO.']
+  NUM_RECIBO_ABCO "VARCHAR2(30)" [not null, unique, note: 'Numero de recibo entregado al cliente.']
+  FECHA_ABCO "DATE" [not null, note: 'Fecha del abono.']
+  MONTO_ABCO "NUMBER(14,2)" [not null, note: 'Monto abonado.']
+  REFERENCIA_ABCO "VARCHAR2(50)" [note: 'Numero de autorizacion o referencia. Obligatorio en todo abono que no sea efectivo.']
+  ESTADO_ABCO "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, N=Anulado.']
+  USUARIO_CREA_ABCO "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_ABCO "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_ABCO "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_ABCO "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Abonos de clientes a facturas de venta a credito. El saldo de la cuenta por cobrar se calcula a partir de estos abonos.'
+}
+
+Table VEN_CIERRE_DIARIO {
+  ID_CIERRE_DIARIO "NUMBER(12)" [pk, note: 'Identificador unico del cierre diario.']
+  ID_SUCURSAL "NUMBER(10)" [not null, note: 'Sucursal a la que corresponde el cierre. FK a SEG_SUCURSAL.']
+  FECHA_CIDI "DATE" [not null, note: 'Fecha operativa cerrada.']
+  CANT_FACTURAS_CIDI "NUMBER(10)" [not null, note: 'Cantidad de facturas emitidas en el dia.']
+  CANT_VENDIDA_CIDI "NUMBER(14,3)" [not null, note: 'Cantidad total de unidades vendidas en el dia.']
+  MONTO_VENTAS_CIDI "NUMBER(14,2)" [not null, note: 'Monto bruto total facturado en el dia.']
+  CANT_DEVOL_CIDI "NUMBER(14,3)" [not null, note: 'Cantidad total de unidades devueltas por clientes en el dia.']
+  MONTO_DEVOL_CIDI "NUMBER(14,2)" [not null, note: 'Monto total correspondiente a devoluciones del dia.']
+  TOTAL_NETO_CIDI "NUMBER(14,2)" [note: 'Columna virtual: monto vendido menos monto de devoluciones.']
+  OBSERVACION_CIDI "VARCHAR2(250)" [note: 'Observaciones generadas por el proceso automatico.']
+  ESTADO_CIDI "VARCHAR2(1)" [not null, note: 'Estado del cierre: A=Activo, N=Anulado.']
+  USUARIO_CREA_CIDI "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_CIDI "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_CIDI "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_CIDI "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_SUCURSAL, FECHA_CIDI) [unique]
+  }
+  Note: '[AVANCE 2] Encabezado de cierres diarios automaticos por sucursal con fecha, cantidad vendida, devoluciones y total.'
+}
+
+Table VEN_CIERRE_DIARIO_DET {
+  ID_CIERRE_DIARIO_DET "NUMBER(12)" [pk, note: 'Identificador unico de la linea de detalle del cierre.']
+  ID_CIERRE_DIARIO "NUMBER(12)" [not null, note: 'Encabezado de cierre al que pertenece. FK a VEN_CIERRE_DIARIO.']
+  ID_USUARIO "NUMBER(10)" [not null, note: 'Cajero (usuario) evaluado en el cierre. FK a SEG_USUARIO.']
+  CANT_FACTURAS_CIDE "NUMBER(10)" [not null, note: 'Cantidad de facturas emitidas por el cajero.']
+  CANT_VENDIDA_CIDE "NUMBER(14,3)" [not null, note: 'Cantidad de unidades vendidas por el cajero.']
+  MONTO_VENTAS_CIDE "NUMBER(14,2)" [not null, note: 'Monto total vendido por el cajero.']
+  CANT_DEVOL_CIDE "NUMBER(14,3)" [not null, note: 'Cantidad de unidades devueltas asociadas al cajero.']
+  MONTO_DEVOL_CIDE "NUMBER(14,2)" [not null, note: 'Monto de devoluciones asociadas al cajero.']
+  TOTAL_NETO_CIDE "NUMBER(14,2)" [note: 'Columna virtual: monto vendido por el cajero menos sus devoluciones.']
+  USUARIO_CREA_CIDE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_CIDE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_CIDE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_CIDE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_CIERRE_DIARIO, ID_USUARIO) [unique]
+  }
+  Note: '[AVANCE 2] Detalle del cierre diario por cajero, incluyendo cantidad vendida, devoluciones y total neto.'
+}
+
+Table VEN_CUENTA_COBRAR {
+  ID_CUENTA_COBRAR "NUMBER(12)" [pk, note: 'Identificador unico de la cuenta por cobrar.']
+  ID_FACTURA_VENTA "NUMBER(12)" [not null, unique, note: 'Factura de venta pendiente. FK a VEN_FACTURA.']
+  ID_CLIENTE "NUMBER(10)" [not null, note: 'Cliente deudor. FK a PER_CLIENTE.']
+  FECHA_EMISION_CUCO "DATE" [not null, note: 'Fecha de emision de la factura a credito.']
+  FECHA_VENCIM_CUCO "DATE" [not null, note: 'Fecha de vencimiento del credito.']
+  MONTO_ORIGINAL_CUCO "NUMBER(14,2)" [not null, note: 'Monto original facturado a credito.']
+  MONTO_ABONADO_CUCO "NUMBER(14,2)" [not null, note: 'Suma acumulada de los abonos recibidos.']
+  SALDO_CUCO "NUMBER(14,2)" [not null, note: 'Saldo pendiente por cobrar al cliente.']
+  FECHA_ULT_ABONO_CUCO "DATE" [note: 'Fecha del ultimo abono realizado por el cliente.']
+  ESTADO_CUCO "VARCHAR2(1)" [not null, note: 'Estado: P=Pendiente, A=Abonada parcialmente, C=Cancelada totalmente, N=Anulada.']
+  USUARIO_CREA_CUCO "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_CUCO "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_CUCO "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_CUCO "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: '[AVANCE 2] Detalle fisico de cuentas por cobrar originadas por facturas de venta en estado pendiente de cancelar.'
+}
+
+Table VEN_DEVOLUCION {
+  ID_DEVOLUCION_VENTA "NUMBER(12)" [pk, note: 'Identificador unico de la devolucion de venta.']
+  ID_FACTURA_VENTA "NUMBER(12)" [not null, note: 'Factura de venta que se devuelve. FK a VEN_FACTURA.']
+  ID_BODEGA "NUMBER(10)" [not null, note: 'Bodega que recibe el producto devuelto. FK a INV_BODEGA.']
+  ID_USUARIO "NUMBER(10)" [not null, note: 'Usuario que registro la devolucion. FK a SEG_USUARIO.']
+  CONSECUTIVO_DEVV "VARCHAR2(20)" [not null, unique, note: 'Consecutivo interno de la devolucion.']
+  FECHA_DEVV "DATE" [not null, note: 'Fecha de la devolucion.']
+  MOTIVO_DEVV "VARCHAR2(250)" [not null, note: 'Motivo de la devolucion.']
+  ESTADO_DEVV "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, N=Anulado.']
+  USUARIO_CREA_DEVV "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_DEVV "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_DEVV "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_DEVV "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Encabezado de las devoluciones de un cliente, total o parcial, sobre una factura de venta.'
+}
+
+Table VEN_DEVOLUCION_DET {
+  ID_DEVOLUCION_VENTA_DET "NUMBER(12)" [pk, note: 'Identificador unico de la linea devuelta.']
+  ID_DEVOLUCION_VENTA "NUMBER(12)" [not null, note: 'Devolucion a la que pertenece. FK a VEN_DEVOLUCION.']
+  ID_FACTURA_VENTA_DET "NUMBER(12)" [not null, note: 'Linea de la factura de venta que se devuelve. FK a VEN_FACTURA_DET.']
+  CANTIDAD_DVVD "NUMBER(14,3)" [not null, note: 'Cantidad devuelta.']
+  MOTIVO_DVVD "VARCHAR2(200)" [note: 'Motivo especifico de la linea.']
+  USUARIO_CREA_DVVD "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_DVVD "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_DVVD "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_DVVD "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_DEVOLUCION_VENTA, ID_FACTURA_VENTA_DET) [unique]
+  }
+  Note: 'Lineas de factura de venta devueltas y su cantidad. Producto o servicio, lote y precio se obtienen de la linea original; no se repiten aqui.'
+}
+
+Table VEN_FACTURA {
+  ID_FACTURA_VENTA "NUMBER(12)" [pk, note: 'Identificador unico de la factura de venta.']
+  ID_CLIENTE "NUMBER(10)" [not null, note: 'Cliente facturado. FK a PER_CLIENTE.']
+  ID_SUCURSAL "NUMBER(10)" [not null, note: 'Sucursal que factura. FK a SEG_SUCURSAL.']
+  ID_USUARIO "NUMBER(10)" [not null, note: 'Usuario (cajero) que emitio la factura. FK a SEG_USUARIO.']
+  NUM_FACTURA_FAVE "VARCHAR2(30)" [not null, note: 'Numero de factura, unico dentro de la sucursal.']
+  FECHA_FAVE "DATE" [not null, note: 'Fecha y hora de la factura.']
+  ES_CREDITO_FAVE "VARCHAR2(1)" [not null, note: 'Indica si la venta queda en cuentas por cobrar: S=Credito, N=Contado.']
+  FECHA_VENCIM_FAVE "DATE" [note: 'Fecha de vencimiento del credito. Obligatoria en ventas a credito.']
+  SUBTOTAL_FAVE "NUMBER(14,2)" [not null, note: 'Suma de las lineas antes de descuento e impuesto.']
+  DESCUENTO_FAVE "NUMBER(14,2)" [not null, note: 'Total de descuentos.']
+  IMPUESTO_FAVE "NUMBER(14,2)" [not null, note: 'Total de impuestos.']
+  TOTAL_FAVE "NUMBER(14,2)" [note: 'Columna virtual: subtotal menos descuento mas impuesto.']
+  OBSERVACION_FAVE "VARCHAR2(250)" [note: 'Observaciones.']
+  ESTADO_FAVE "VARCHAR2(1)" [not null, note: 'Estado de la factura: P=Pendiente de cancelar, C=Cancelada, A=Activa (contado), N=Anulada.']
+  USUARIO_CREA_FAVE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_FAVE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_FAVE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_FAVE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_SUCURSAL, NUM_FACTURA_FAVE) [unique]
+  }
+  Note: 'Facturas de venta. Siempre tienen cliente (el cliente por defecto si no hay uno registrado). Una factura a credito con saldo es una cuenta por cobrar (ver V_CUENTA_COBRAR).'
+}
+
+Table VEN_FACTURA_DET {
+  ID_FACTURA_VENTA_DET "NUMBER(12)" [pk, note: 'Identificador unico de la linea.']
+  ID_FACTURA_VENTA "NUMBER(12)" [not null, note: 'Factura a la que pertenece. FK a VEN_FACTURA.']
+  ID_PRODUCTO "NUMBER(10)" [note: 'Producto vendido. FK a PRO_PRODUCTO. Excluyente con ID_SERVICIO.']
+  ID_SERVICIO "NUMBER(10)" [note: 'Servicio vendido. FK a PRO_SERVICIO. Excluyente con ID_PRODUCTO.']
+  ID_LOTE "NUMBER(12)" [note: 'Lote vendido. FK compuesta a PRO_LOTE junto con ID_PRODUCTO.']
+  LINEA_FVDE "NUMBER(4)" [not null, note: 'Numero de linea dentro de la factura.']
+  CANTIDAD_FVDE "NUMBER(14,3)" [not null, note: 'Cantidad vendida.']
+  PRECIO_UNITARIO_FVDE "NUMBER(14,4)" [not null, note: 'Precio unitario sin impuesto al momento de la venta.']
+  PORC_DESCUENTO_FVDE "NUMBER(5,2)" [not null, note: 'Porcentaje de descuento aplicado a la linea.']
+  PORC_IMPUESTO_FVDE "NUMBER(5,2)" [not null, note: 'Porcentaje de impuesto aplicado a la linea. Cero si es exenta.']
+  SUBTOTAL_FVDE "NUMBER(14,2)" [note: 'Columna virtual: cantidad por precio unitario.']
+  MONTO_DESCUENTO_FVDE "NUMBER(14,2)" [note: 'Columna virtual: monto de descuento de la linea.']
+  MONTO_IMPUESTO_FVDE "NUMBER(14,2)" [note: 'Columna virtual: monto de impuesto de la linea, calculado sobre el neto de descuento.']
+  USUARIO_CREA_FVDE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_FVDE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_FVDE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_FVDE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_FACTURA_VENTA, LINEA_FVDE) [unique]
+  }
+  Note: 'Detalle de la factura de venta: cada linea cobra un producto o un servicio, con su precio, descuento e impuesto. Los montos de linea son columnas virtuales.'
+}
+
+Table VEN_NOTA_CREDITO {
+  ID_NOTA_CREDITO_VENTA "NUMBER(12)" [pk, note: 'Identificador unico de la nota de credito de venta.']
+  ID_DEVOLUCION_VENTA "NUMBER(12)" [not null, unique, note: 'Devolucion que origina la nota. FK a VEN_DEVOLUCION. La factura y el cliente se obtienen a traves de la devolucion.']
+  ID_USUARIO "NUMBER(10)" [not null, note: 'Usuario que emitio la nota. FK a SEG_USUARIO.']
+  NUM_NOTA_NCVE "VARCHAR2(30)" [not null, unique, note: 'Numero de la nota de credito.']
+  FECHA_NCVE "DATE" [not null, note: 'Fecha de la nota de credito.']
+  ESTADO_NCVE "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Disponible, C=Aplicada, N=Anulada.']
+  USUARIO_CREA_NCVE "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_NCVE "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_NCVE "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_NCVE "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  Note: 'Notas de credito emitidas a clientes para pagar una devolucion de venta. Cada devolucion genera a lo sumo una nota.'
+}
+
+Table VEN_PAGO {
+  ID_PAGO "NUMBER(12)" [pk, note: 'Identificador unico del pago.']
+  ID_FACTURA_VENTA "NUMBER(12)" [not null, note: 'Factura que se paga. FK a VEN_FACTURA.']
+  TIPO_PAGO "VARCHAR2(15)" [not null, note: 'Tipo de pago: EFECTIVO, TARJETA, SINPE, TRANSFERENCIA o NOTA_CREDITO.']
+  LINEA_PAGO "NUMBER(4)" [not null, note: 'Numero de linea de pago dentro de la factura.']
+  MONTO_PAGO "NUMBER(14,2)" [not null, note: 'Monto recibido.']
+  MONTO_VUELTO_PAGO "NUMBER(14,2)" [not null, note: 'Vuelto entregado. Solo aplica a pagos en efectivo.']
+  REFERENCIA_PAGO "VARCHAR2(50)" [note: 'Numero de autorizacion o referencia. Obligatorio en todo pago que no sea efectivo.']
+  FECHA_PAGO "TIMESTAMP(6)" [not null, note: 'Fecha y hora del pago.']
+  ESTADO_PAGO "VARCHAR2(1)" [not null, note: 'Estado del registro: A=Activo, N=Anulado.']
+  USUARIO_CREA_PAGO "VARCHAR2(30)" [not null, note: 'Usuario de base de datos que inserto el registro.']
+  FECHA_CREA_PAGO "TIMESTAMP(6)" [not null, note: 'Fecha y hora de creacion del registro.']
+  USUARIO_MOD_PAGO "VARCHAR2(30)" [note: 'Usuario de base de datos que realizo la ultima modificacion.']
+  FECHA_MOD_PAGO "TIMESTAMP(6)" [note: 'Fecha y hora de la ultima modificacion.']
+  indexes {
+    (ID_FACTURA_VENTA, LINEA_PAGO) [unique]
+  }
+  Note: 'Pagos recibidos al cancelar una factura de venta. Una factura puede pagarse con varios tipos de pago.'
+}
+
+Ref FK_BITA_SUC: AUD_BITACORA.ID_SUCURSAL > SEG_SUCURSAL.ID_SUCURSAL
+Ref FK_BITA_USU: AUD_BITACORA.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_CANT_PROVI: CAT_CANTON.ID_PROVINCIA > CAT_PROVINCIA.ID_PROVINCIA
+Ref FK_DIST_CANT: CAT_DISTRITO.ID_CANTON > CAT_CANTON.ID_CANTON
+Ref FK_PADR_DIST: CAT_PADRON.ID_DISTRITO > CAT_DISTRITO.ID_DISTRITO
+Ref FK_PROVI_PAIS: CAT_PROVINCIA.ID_PAIS > CAT_PAIS.ID_PAIS
+Ref FK_ABPA_FACO: COM_ABONO_PAGAR.ID_FACTURA_COMPRA > COM_FACTURA_COMPRA.ID_FACTURA_COMPRA
+Ref FK_ABPA_USU: COM_ABONO_PAGAR.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_CUPA_FACO: COM_CUENTA_PAGAR.ID_FACTURA_COMPRA > COM_FACTURA_COMPRA.ID_FACTURA_COMPRA
+Ref FK_CUPA_PROVE: COM_CUENTA_PAGAR.ID_PROVEEDOR > PER_PROVEEDOR.ID_PROVEEDOR
+Ref FK_DEVC_BODE: COM_DEVOLUCION.ID_BODEGA > INV_BODEGA.ID_BODEGA
+Ref FK_DEVC_FACO: COM_DEVOLUCION.ID_FACTURA_COMPRA > COM_FACTURA_COMPRA.ID_FACTURA_COMPRA
+Ref FK_DEVC_USU: COM_DEVOLUCION.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_DVCD_DEVC: COM_DEVOLUCION_DET.ID_DEVOLUCION_COMPRA > COM_DEVOLUCION.ID_DEVOLUCION_COMPRA
+Ref FK_DVCD_FCDE: COM_DEVOLUCION_DET.ID_FACTURA_COMPRA_DET > COM_FACTURA_COMPRA_DET.ID_FACTURA_COMPRA_DET
+Ref FK_FACO_BODE: COM_FACTURA_COMPRA.ID_BODEGA > INV_BODEGA.ID_BODEGA
+Ref FK_FACO_PROVE: COM_FACTURA_COMPRA.ID_PROVEEDOR > PER_PROVEEDOR.ID_PROVEEDOR
+Ref FK_FACO_USU: COM_FACTURA_COMPRA.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_FCDE_FACO: COM_FACTURA_COMPRA_DET.ID_FACTURA_COMPRA > COM_FACTURA_COMPRA.ID_FACTURA_COMPRA
+Ref FK_FCDE_LOTE: COM_FACTURA_COMPRA_DET.(ID_PRODUCTO, ID_LOTE) > PRO_LOTE.(ID_PRODUCTO, ID_LOTE)
+Ref FK_FCDE_PROD: COM_FACTURA_COMPRA_DET.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_NCCO_DEVC: COM_NOTA_CREDITO.ID_DEVOLUCION_COMPRA > COM_DEVOLUCION.ID_DEVOLUCION_COMPRA
+Ref FK_NCCO_USU: COM_NOTA_CREDITO.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_BODE_SUC: INV_BODEGA.ID_SUCURSAL > SEG_SUCURSAL.ID_SUCURSAL
+Ref FK_EXIS_BODE: INV_EXISTENCIA.ID_BODEGA > INV_BODEGA.ID_BODEGA
+Ref FK_EXIS_LOTE: INV_EXISTENCIA.(ID_PRODUCTO, ID_LOTE) > PRO_LOTE.(ID_PRODUCTO, ID_LOTE)
+Ref FK_EXIS_PROD: INV_EXISTENCIA.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_MOVI_BODE: INV_MOVIMIENTO.ID_BODEGA > INV_BODEGA.ID_BODEGA
+Ref FK_MOVI_USU: INV_MOVIMIENTO.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_MODE_LOTE: INV_MOVIMIENTO_DET.(ID_LOTE, ID_PRODUCTO) > PRO_LOTE.(ID_LOTE, ID_PRODUCTO)
+Ref FK_MODE_MOVI: INV_MOVIMIENTO_DET.ID_MOVIMIENTO > INV_MOVIMIENTO.ID_MOVIMIENTO
+Ref FK_MODE_PROD: INV_MOVIMIENTO_DET.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_TRAS_BODE_DES: INV_TRASLADO.ID_BODEGA_DESTINO > INV_BODEGA.ID_BODEGA
+Ref FK_TRAS_BODE_ORI: INV_TRASLADO.ID_BODEGA_ORIGEN > INV_BODEGA.ID_BODEGA
+Ref FK_TRAS_USU_ENV: INV_TRASLADO.ID_USUARIO_ENVIA > SEG_USUARIO.ID_USUARIO
+Ref FK_TRAS_USU_REC: INV_TRASLADO.ID_USUARIO_RECIBE > SEG_USUARIO.ID_USUARIO
+Ref FK_TRDE_LOTE: INV_TRASLADO_DET.(ID_PRODUCTO, ID_LOTE) > PRO_LOTE.(ID_PRODUCTO, ID_LOTE)
+Ref FK_TRDE_PROD: INV_TRASLADO_DET.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_TRDE_TRAS: INV_TRASLADO_DET.ID_TRASLADO > INV_TRASLADO.ID_TRASLADO
+Ref FK_CLI_PADR: PER_CLIENTE.ID_PADRON > CAT_PADRON.ID_PADRON
+Ref FK_CLI_PERS: PER_CLIENTE.ID_PERSONA > PER_PERSONA.ID_PERSONA
+Ref FK_CONT_PERS: PER_CONTACTO.ID_PERSONA > PER_PERSONA.ID_PERSONA
+Ref FK_DIRE_DIST: PER_DIRECCION.ID_DISTRITO > CAT_DISTRITO.ID_DISTRITO
+Ref FK_DIRE_PERS: PER_DIRECCION.ID_PERSONA > PER_PERSONA.ID_PERSONA
+Ref FK_PEFI_PAIS_NAC: PER_PERSONA_FISICA.ID_PAIS_NACIONALIDAD > CAT_PAIS.ID_PAIS
+Ref FK_PEFI_PAIS_RES: PER_PERSONA_FISICA.ID_PAIS_RESIDENCIA > CAT_PAIS.ID_PAIS
+Ref FK_PEFI_PERS: PER_PERSONA_FISICA.(TIPO_PERS, ID_PERSONA_FISICA) > PER_PERSONA.(TIPO_PERS, ID_PERSONA)
+Ref FK_PEJU_PAIS_ORI: PER_PERSONA_JURIDICA.ID_PAIS_ORIGEN > CAT_PAIS.ID_PAIS
+Ref FK_PEJU_PERS: PER_PERSONA_JURIDICA.(TIPO_PERS, ID_PERSONA_JURIDICA) > PER_PERSONA.(TIPO_PERS, ID_PERSONA)
+Ref FK_PROVE_PEJU: PER_PROVEEDOR.ID_PERSONA_JURIDICA > PER_PERSONA_JURIDICA.ID_PERSONA_JURIDICA
+Ref FK_ACLI_FAVE: PRM_ACCION_CLIENTE.ID_FACTURA_VENTA > VEN_FACTURA.ID_FACTURA_VENTA
+Ref FK_ACLI_PREM: PRM_ACCION_CLIENTE.(ID_PROMOCION, ID_PREMIO) > PRM_PREMIO.(ID_PROMOCION, ID_PREMIO)
+Ref FK_ACLI_PROM: PRM_ACCION_CLIENTE.ID_PROMOCION > PRM_PROMOCION.ID_PROMOCION
+Ref FK_DSCT_SUC: PRM_DESCUENTO.ID_SUCURSAL > SEG_SUCURSAL.ID_SUCURSAL
+Ref FK_DSDE_DSCT: PRM_DESCUENTO_DET.ID_DESCUENTO > PRM_DESCUENTO.ID_DESCUENTO
+Ref FK_DSDE_LOTE: PRM_DESCUENTO_DET.(ID_LOTE, ID_PRODUCTO) > PRO_LOTE.(ID_LOTE, ID_PRODUCTO)
+Ref FK_DSDE_PROD: PRM_DESCUENTO_DET.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_DSRE_DSCT: PRM_DESCUENTO_REGLA.ID_DESCUENTO > PRM_DESCUENTO.ID_DESCUENTO
+Ref FK_DSRE_FAMI: PRM_DESCUENTO_REGLA.ID_FAMILIA_PRODUCTO > PRO_FAMILIA_PRODUCTO.ID_FAMILIA_PRODUCTO
+Ref FK_DSRE_PROVE: PRM_DESCUENTO_REGLA.ID_PROVEEDOR > PER_PROVEEDOR.ID_PROVEEDOR
+Ref FK_ORPR_CLI: PRM_ORDEN_PREMIACION.ID_CLIENTE > PER_CLIENTE.ID_CLIENTE
+Ref FK_PATR_PROD: PRM_PATROCINADOR.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_PATR_PROM: PRM_PATROCINADOR.ID_PROMOCION > PRM_PROMOCION.ID_PROMOCION
+Ref FK_PREM_PROD: PRM_PREMIO.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_PREM_PROM: PRM_PREMIO.ID_PROMOCION > PRM_PROMOCION.ID_PROMOCION
+Ref FK_PROM_SUC: PRM_PROMOCION.ID_SUCURSAL > SEG_SUCURSAL.ID_SUCURSAL
+Ref FK_COBA_PROD: PRO_CODIGO_BARRA.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_FAMI_FAMI_PADRE: PRO_FAMILIA_PRODUCTO.ID_FAMILIA_PRODUCTO_PADRE > PRO_FAMILIA_PRODUCTO.ID_FAMILIA_PRODUCTO
+Ref FK_LOTE_PROD: PRO_LOTE.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_PRHI_PROD: PRO_PRECIO_HIST.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_PROD_FAMI: PRO_PRODUCTO.ID_FAMILIA_PRODUCTO > PRO_FAMILIA_PRODUCTO.ID_FAMILIA_PRODUCTO
+Ref FK_PROD_IMPU: PRO_PRODUCTO.ID_IMPUESTO > PRO_IMPUESTO.ID_IMPUESTO
+Ref FK_PROD_PROVE: PRO_PRODUCTO.ID_PROVEEDOR > PER_PROVEEDOR.ID_PROVEEDOR
+Ref FK_PRSU_PROD: PRO_PRODUCTO_SUCURSAL.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_PRSU_SUC: PRO_PRODUCTO_SUCURSAL.ID_SUCURSAL > SEG_SUCURSAL.ID_SUCURSAL
+Ref FK_SERV_IMPU: PRO_SERVICIO.ID_IMPUESTO > PRO_IMPUESTO.ID_IMPUESTO
+Ref FK_EMP_PEJU: SEG_EMPRESA.ID_PERSONA_JURIDICA > PER_PERSONA_JURIDICA.ID_PERSONA_JURIDICA
+Ref FK_SUC_DIST: SEG_SUCURSAL.ID_DISTRITO > CAT_DISTRITO.ID_DISTRITO
+Ref FK_SUC_EMP: SEG_SUCURSAL.ID_EMPRESA > SEG_EMPRESA.ID_EMPRESA
+Ref FK_USU_PEFI: SEG_USUARIO.ID_PERSONA_FISICA > PER_PERSONA_FISICA.ID_PERSONA_FISICA
+Ref FK_USSU_SUC: SEG_USUARIO_SUCURSAL.ID_SUCURSAL > SEG_SUCURSAL.ID_SUCURSAL
+Ref FK_USSU_USU: SEG_USUARIO_SUCURSAL.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_ABCO_FAVE: VEN_ABONO_COBRAR.ID_FACTURA_VENTA > VEN_FACTURA.ID_FACTURA_VENTA
+Ref FK_ABCO_USU: VEN_ABONO_COBRAR.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_CIDI_SUC: VEN_CIERRE_DIARIO.ID_SUCURSAL > SEG_SUCURSAL.ID_SUCURSAL
+Ref FK_CIDE_CIDI: VEN_CIERRE_DIARIO_DET.ID_CIERRE_DIARIO > VEN_CIERRE_DIARIO.ID_CIERRE_DIARIO
+Ref FK_CIDE_USU: VEN_CIERRE_DIARIO_DET.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_CUCO_CLI: VEN_CUENTA_COBRAR.ID_CLIENTE > PER_CLIENTE.ID_CLIENTE
+Ref FK_CUCO_FAVE: VEN_CUENTA_COBRAR.ID_FACTURA_VENTA > VEN_FACTURA.ID_FACTURA_VENTA
+Ref FK_DEVV_BODE: VEN_DEVOLUCION.ID_BODEGA > INV_BODEGA.ID_BODEGA
+Ref FK_DEVV_FAVE: VEN_DEVOLUCION.ID_FACTURA_VENTA > VEN_FACTURA.ID_FACTURA_VENTA
+Ref FK_DEVV_USU: VEN_DEVOLUCION.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_DVVD_DEVV: VEN_DEVOLUCION_DET.ID_DEVOLUCION_VENTA > VEN_DEVOLUCION.ID_DEVOLUCION_VENTA
+Ref FK_DVVD_FVDE: VEN_DEVOLUCION_DET.ID_FACTURA_VENTA_DET > VEN_FACTURA_DET.ID_FACTURA_VENTA_DET
+Ref FK_FAVE_CLI: VEN_FACTURA.ID_CLIENTE > PER_CLIENTE.ID_CLIENTE
+Ref FK_FAVE_SUC: VEN_FACTURA.ID_SUCURSAL > SEG_SUCURSAL.ID_SUCURSAL
+Ref FK_FAVE_USU: VEN_FACTURA.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_FVDE_FAVE: VEN_FACTURA_DET.ID_FACTURA_VENTA > VEN_FACTURA.ID_FACTURA_VENTA
+Ref FK_FVDE_LOTE: VEN_FACTURA_DET.(ID_PRODUCTO, ID_LOTE) > PRO_LOTE.(ID_PRODUCTO, ID_LOTE)
+Ref FK_FVDE_PROD: VEN_FACTURA_DET.ID_PRODUCTO > PRO_PRODUCTO.ID_PRODUCTO
+Ref FK_FVDE_SERV: VEN_FACTURA_DET.ID_SERVICIO > PRO_SERVICIO.ID_SERVICIO
+Ref FK_NCVE_DEVV: VEN_NOTA_CREDITO.ID_DEVOLUCION_VENTA > VEN_DEVOLUCION.ID_DEVOLUCION_VENTA
+Ref FK_NCVE_USU: VEN_NOTA_CREDITO.ID_USUARIO > SEG_USUARIO.ID_USUARIO
+Ref FK_PAGO_FAVE: VEN_PAGO.ID_FACTURA_VENTA > VEN_FACTURA.ID_FACTURA_VENTA
+
+TableGroup AUD_auditoria {
+  AUD_BITACORA
+  AUD_ERROR_SISTEMA
+  AUD_MONITOREO_BD
+  AUD_REGISTRO_CAMBIO
+}
+
+TableGroup CAT_catalogos {
+  CAT_CANTON
+  CAT_DISTRITO
+  CAT_DISTRITO_ELECTORAL
+  CAT_PADRON
+  CAT_PAIS
+  CAT_PROVINCIA
+}
+
+TableGroup COM_compras {
+  COM_ABONO_PAGAR
+  COM_CUENTA_PAGAR
+  COM_DEVOLUCION
+  COM_DEVOLUCION_DET
+  COM_FACTURA_COMPRA
+  COM_FACTURA_COMPRA_DET
+  COM_NOTA_CREDITO
+}
+
+TableGroup INV_inventario {
+  INV_BODEGA
+  INV_EXISTENCIA
+  INV_MOVIMIENTO
+  INV_MOVIMIENTO_DET
+  INV_TRASLADO
+  INV_TRASLADO_DET
+}
+
+TableGroup PER_personas {
+  PER_CLIENTE
+  PER_CONTACTO
+  PER_DIRECCION
+  PER_PERSONA
+  PER_PERSONA_FISICA
+  PER_PERSONA_JURIDICA
+  PER_PROVEEDOR
+}
+
+TableGroup PRM_promociones {
+  PRM_ACCION_CLIENTE
+  PRM_DESCUENTO
+  PRM_DESCUENTO_DET
+  PRM_DESCUENTO_REGLA
+  PRM_ORDEN_PREMIACION
+  PRM_PATROCINADOR
+  PRM_PREMIO
+  PRM_PROMOCION
+}
+
+TableGroup PRO_productos {
+  PRO_CODIGO_BARRA
+  PRO_FAMILIA_PRODUCTO
+  PRO_IMPUESTO
+  PRO_LOTE
+  PRO_PRECIO_HIST
+  PRO_PRODUCTO
+  PRO_PRODUCTO_SUCURSAL
+  PRO_SERVICIO
+}
+
+TableGroup SEG_seguridad {
+  SEG_EMPRESA
+  SEG_PARAMETRO
+  SEG_SUCURSAL
+  SEG_USUARIO
+  SEG_USUARIO_SUCURSAL
+}
+
+TableGroup VEN_ventas {
+  VEN_ABONO_COBRAR
+  VEN_CIERRE_DIARIO
+  VEN_CIERRE_DIARIO_DET
+  VEN_CUENTA_COBRAR
+  VEN_DEVOLUCION
+  VEN_DEVOLUCION_DET
+  VEN_FACTURA
+  VEN_FACTURA_DET
+  VEN_NOTA_CREDITO
+  VEN_PAGO
+}
