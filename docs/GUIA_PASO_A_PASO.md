@@ -169,6 +169,7 @@ docker exec -it -u oracle ora_principal bash
 4. Revise `instalacion.log`. Debe ver:
    - El mensaje `LAS 12 PRUEBAS (POSITIVAS Y NEGATIVAS) FINALIZARON CON 100% DE EXITO Y CERO ADVERTENCIAS.`
    - En el resumen final, **0 objetos inválidos**: 65 tablas, 225 índices, 10 paquetes, 21 triggers, 11 jobs, 7 vistas y 2 vistas materializadas.
+   - Al final, la sección `VALIDACION FINAL DE LA INSTALACION` con todo en `[OK]` y el mensaje `DESPLIEGUE DEL AVANCE #2 FINALIZADO CON EXITO (validacion completa)`. Si dice `ATENCION` y marca algún `[FALLA]`, busque en el log el primer `ORA-` y corríjalo; el instalador se puede volver a ejecutar.
 
    También puede comprobarlo así (en `PDBCADENA`):
 
@@ -355,6 +356,14 @@ Este es el resumen. El procedimiento completo, con lo que debe salir en cada pas
    EXIT
    ```
 
+   > **Nota (probado con la imagen `enterprise:21.3.0.0` en Docker Desktop de Windows):** ahí `SHUTDOWN ABORT` dentro del contenedor **detiene el contenedor completo** y el resto del bloque no llega a ejecutarse. Si le pasa, haga esto en lugar del bloque de arriba: (1) `docker stop ora_standby`; (2) vacíe solo el volumen de la standby con un contenedor temporal:
+   >
+   > ```powershell
+   > docker run --rm -u root -v ora_standby_data:/opt/oracle/oradata --entrypoint bash container-registry.oracle.com/database/enterprise:21.3.0.0 -c "rm -rf /opt/oracle/oradata/CADENA/*; mkdir -p /opt/oracle/oradata/CADENA/archive_logs; chown -R oracle:oinstall /opt/oracle/oradata/CADENA"
+   > ```
+   >
+   > (3) `docker start ora_standby`: la imagen deja la instancia en `NOMOUNT`. (4) Espere hasta que termine el intento de la imagen de abrir la base (`docker logs ora_standby` muestra `ORA-01507`, alrededor de 1 minuto) y compruebe `SELECT status FROM v$instance;` (debe decir `STARTED`) y `SHOW PARAMETER db_unique_name` (`CADENA_STBY`). Si lanza el paso 7 mientras la imagen todavía intenta abrir la base, RMAN falla con `ORA-01155`. (5) Si `SHOW PARAMETER log_archive_config` o `standby_file_management` salen vacíos, defínalos: `ALTER SYSTEM SET log_archive_config='DG_CONFIG=(CADENA,CADENA_STBY)' SCOPE=BOTH;` y `ALTER SYSTEM SET standby_file_management=AUTO SCOPE=BOTH;`. Sin ellos la principal da `ORA-16047` y no envía redo.
+
 7. **Standby: crear la base standby** con el respaldo (usa `08_Creacion_Standby_Segunda_PC.rman`; tarda unos 3,5 minutos):
 
    ```bash
@@ -363,6 +372,8 @@ Este es el resumen. El procedimiento completo, con lo que debe salir en cada pas
    ```
 
    Al final `SELECT database_role, open_mode FROM v$database;` debe dar `PHYSICAL STANDBY` / `MOUNTED`.
+
+   El orquestador revisa la bitácora de RMAN y dice `[ERROR]` si el restore falló (antes podía decir `[OK]` aunque hubieran faltado datafiles). Si dice `[ERROR]`, abra la bitácora que indica y corrija la causa antes del paso 8. Compruebe también que `/opt/oracle/oradata/CADENA` tenga `system01.dbf`, `sysaux01.dbf`, `undotbs01.dbf` y `users01.dbf`, y la carpeta de `PDBCADENA`.
 
 8. **Standby: iniciar la aplicación automática del redo** (proceso `MRP0`) y comprobar:
 
@@ -410,6 +421,8 @@ Este es el resumen. El procedimiento completo, con lo que debe salir en cada pas
     ```
 
     Queda `PRIMARY` / `READ WRITE` con todos los datos confirmados.
+
+    > **Después de un switchover, un failover o de reconstruir la standby**, revise en la principal actual `SELECT status, error, gap_status FROM v$archive_dest_status WHERE dest_id = 2;`. Si el destino quedó en `ERROR` (por ejemplo `ORA-16047` u `ORA-01094`, de cuando la otra base estaba cerrada), ejecute en la principal `ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2=DEFER;`, luego `ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2=ENABLE;` y `ALTER SYSTEM ARCHIVE LOG CURRENT;`. Debe quedar `VALID` y `NO GAP` (la opción 3 del menú lo hace sola). Si sigue en `ORA-16047`, revise `db_unique_name` y `log_archive_config` de la standby.
 
 12. **Recuperar la standby después de un failover.** Respaldo nivel 0 en la nueva principal (paso 4), copiarlo a la antigua (paso 5), y en la antigua: `SHUTDOWN ABORT`, `rm -rf /opt/oracle/oradata/CADENA/*`, `STARTUP NOMOUNT` (su spfile ya es el de `CADENA`) y el modo `crearstandby` (paso 7). Vuelve como `PHYSICAL STANDBY`. Después, un switchover devuelve los roles originales.
 

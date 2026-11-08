@@ -4,65 +4,69 @@
 # ARCHIVO:  sql/07_Standby_y_RMAN/05_RMAN_Restore_Recovery_PointInTime.rman
 # CURSO:    Administracion de Bases de Datos
 # DESCRIPCION:
-#   Procedimientos de Restauracion y Recuperacion con RMAN:
-#   1. Recuperacion completa hasta el ultimo segundo (Complete Recovery).
-#   2. Recuperacion puntual en el tiempo (Point-In-Time Recovery - DBRITP).
-#   3. Restauracion granular de Datafile o PDB especifica.
+#   PLANTILLA de Restauracion y Recuperacion con RMAN. NO se ejecuta completa:
+#   cada escenario esta COMENTADO a proposito porque restaura sobre la base real.
+#   Elija UN escenario, quite los '#' de su bloque, cambie los valores marcados
+#   con <...> y ejecutelo conectado a la base en el estado indicado:
+#       rman target /
+#       RMAN> (pegue el bloque del escenario elegido)
+#
+#   1. Recuperacion completa ante perdida de datafiles (hasta el ultimo redo disponible:
+#      si faltan archivelogs en el servidor, no llega hasta el ultimo commit).
+#   2. Recuperacion puntual en el tiempo (Point-In-Time Recovery).
+#   3. Restauracion de un solo PDB, sin bajar el CDB completo.
+#
+#   Requisito: respaldos RMAN (nivel 0 y 1) y archivelogs disponibles en el
+#   servidor. El PDB del proyecto se llama PDBCADENA (en Oracle Free: FREEPDB1;
+#   verifiquelo con: SELECT name FROM v$pdbs;).
+#   El Escenario 3 se probo en Oracle 21c EE: restaura el PDB con el nivel 0 y
+#   el nivel 1 y el recovery recupera los datos confirmados despues del respaldo.
 # ==============================================================================
 
-CONNECT TARGET /;
+# ------------------------------------------------------------------------------
+# ESCENARIO 1: RECUPERACION COMPLETA ANTE PERDIDA DE DATAFILES (hasta el ultimo redo disponible)
+# Estado requerido: base en MOUNT (SHUTDOWN IMMEDIATE; STARTUP MOUNT;)
+# ------------------------------------------------------------------------------
+# RUN {
+#     ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
+#     ALLOCATE CHANNEL ch2 DEVICE TYPE DISK;
+#     RESTORE DATABASE;
+#     # RECOVER aplica los incrementales y los archivelogs disponibles
+#     RECOVER DATABASE;
+#     RELEASE CHANNEL ch1;
+#     RELEASE CHANNEL ch2;
+# }
+# SQL "ALTER DATABASE OPEN";
 
 # ------------------------------------------------------------------------------
-# ESCENARIO 1: RECUPERACION COMPLETA ANTE PERDIDA DE DATAFILES
-# (Base de datos montada, recuperacion hasta el ultimo commit)
+# ESCENARIO 2: POINT-IN-TIME RECOVERY (errores humanos: DROP / TRUNCATE masivo)
+# Estado requerido: base en MOUNT. Cambie <FECHA HORA> por un instante ANTERIOR
+# al error, por ejemplo '2026-11-08 14:30:00'.
+# Es una recuperacion INCOMPLETA: se pierde todo lo posterior a esa hora y la
+# base se abre con RESETLOGS (nueva encarnacion). Si hay standby, hay que
+# reconstruirlo despues (ver Manual de Administracion del Standby, seccion 11).
 # ------------------------------------------------------------------------------
-# STARTUP MOUNT;
-RUN {
-    ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
-    ALLOCATE CHANNEL ch2 DEVICE TYPE DISK;
-
-    # Restaurar datafiles a partir de las piezas de respaldo
-    RESTORE DATABASE;
-
-    # Aplicar respaldos incrementales y archived redo logs disponibles
-    RECOVER DATABASE;
-
-    RELEASE CHANNEL ch1;
-    RELEASE CHANNEL ch2;
-}
-# ALTER DATABASE OPEN;
+# RUN {
+#     SET UNTIL TIME "TO_DATE('<FECHA HORA>', 'YYYY-MM-DD HH24:MI:SS')";
+#     ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
+#     RESTORE DATABASE;
+#     RECOVER DATABASE;
+#     RELEASE CHANNEL ch1;
+# }
+# SQL "ALTER DATABASE OPEN RESETLOGS";
 
 # ------------------------------------------------------------------------------
-# ESCENARIO 2: POINT-IN-TIME RECOVERY (RECUPERACION PUNTUAL EN EL TIEMPO)
-# Utilizado ante errores humanos catastroficos (ej. DROP TABLE o TRUNCATE masivo)
-# Se recupera el estado exacto de la base de datos hasta un minuto antes del error.
+# ESCENARIO 3: RESTAURAR UN SOLO PDB (la base contenedora sigue abierta)
+# Cambie <PDB> por el nombre real (PDBCADENA). Recuperacion completa: no usa
+# RESETLOGS y no afecta al standby.
 # ------------------------------------------------------------------------------
-# STARTUP MOUNT;
-RUN {
-    # Definir la estampa de tiempo limite de recuperacion
-    SET UNTIL TIME "TO_DATE('2026-10-29 14:30:00', 'YYYY-MM-DD HH24:MI:SS')";
-
-    ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
-
-    RESTORE DATABASE;
-    RECOVER DATABASE;
-
-    RELEASE CHANNEL ch1;
-}
-# Apertura obligatoria con RESETLOGS al hacer recuperacion incompleta
-# ALTER DATABASE OPEN RESETLOGS;
-
-# ------------------------------------------------------------------------------
-# ESCENARIO 3: RESTAURACION ESPECIFICA DE UN PLUGGABLE DATABASE (PDB)
-# Sin necesidad de bajar la base de datos contenedora (CDB) completa
-# ------------------------------------------------------------------------------
-# ALTER PLUGGABLE DATABASE FREEPDB1 CLOSE;
-RUN {
-    ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
-    RESTORE PLUGGABLE DATABASE FREEPDB1;
-    RECOVER PLUGGABLE DATABASE FREEPDB1;
-    RELEASE CHANNEL ch1;
-}
-# ALTER PLUGGABLE DATABASE FREEPDB1 OPEN;
+# SQL "ALTER PLUGGABLE DATABASE <PDB> CLOSE IMMEDIATE";
+# RUN {
+#     ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
+#     RESTORE PLUGGABLE DATABASE <PDB>;
+#     RECOVER PLUGGABLE DATABASE <PDB>;
+#     RELEASE CHANNEL ch1;
+# }
+# SQL "ALTER PLUGGABLE DATABASE <PDB> OPEN";
 
 EXIT;

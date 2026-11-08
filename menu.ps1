@@ -182,6 +182,12 @@ function Op-Sincronizar {
         # Reintenta el envio ya (si la standby estuvo apagada, Oracle esperaria 5 minutos)
         # y cierra el redo actual para mandarlo a la standby
         Write-Host "Reintentando el envio y cerrando el redo actual..."
+        # Si el destino quedo en ERROR (pasa tras un switchover, failover o reconstruccion),
+        # un simple ENABLE no basta: hay que pasarlo por DEFER para que Oracle reconecte.
+        $estadoDestino = Get-Valor "SELECT status FROM v`$archive_dest_status WHERE dest_id = 2;"
+        if ($estadoDestino -eq "ERROR") {
+            Invoke-Sql "ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2 = DEFER SCOPE = BOTH;" -Silencioso | Out-Null
+        }
         Invoke-Sql "ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2 = ENABLE SCOPE = BOTH;`nALTER SYSTEM ARCHIVE LOG CURRENT;" -Silencioso | Out-Null
         Start-Sleep -Seconds 10
         Invoke-Sql "SET HEADING OFF`nSELECT 'Destino 2: ' || status || NVL2(error, ' - ' || error, '') || '   huecos: ' || NVL(gap_status, '-') AS envio FROM v`$archive_dest_status WHERE dest_id = 2;" | Out-Null

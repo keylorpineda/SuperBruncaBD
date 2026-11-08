@@ -117,6 +117,13 @@ PROMPT =========================================================================
       borrar /opt/oracle/oradata/CADENA/*, STARTUP NOMOUNT y modo crearstandby del
       orquestador (08_Creacion_Standby_Segunda_PC.rman). Luego un switchover devuelve
       los roles. Tras el failover la numeracion de archivelogs reinicia (nueva encarnacion).
+      Docker (imagen enterprise:21.3.0.0 en Windows): SHUTDOWN ABORT detiene el contenedor;
+      use docker stop + vaciar el volumen con un contenedor temporal + docker start
+      (ver Manual de Administracion del Standby, nota de 11.6).
+      Despues de crear el standby, en la PRINCIPAL actual: si
+      SELECT status, error, gap_status FROM v$archive_dest_status WHERE dest_id = 2;
+      muestra ERROR, ejecute ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2=DEFER; luego
+      =ENABLE; y ALTER SYSTEM ARCHIVE LOG CURRENT; (debe quedar VALID / NO GAP).
 
    ALTERNATIVA ANTIGUA (sintaxis anterior a 12c):
       ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;

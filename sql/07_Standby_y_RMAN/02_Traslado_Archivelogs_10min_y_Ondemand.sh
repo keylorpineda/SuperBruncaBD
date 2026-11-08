@@ -46,13 +46,27 @@ HUBO_ERROR=0
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$MODO] $1" | tee -a "$LOG_FILE"; }
 
+# RMAN-06054 (pide un archivelog que aun no llega) solo es un exito si la unica falla
+# de RMAN es la del RECOVER y no hay ningun error ORA-. Se busca al INICIO de linea porque la bitacora de RMAN
+# tambien repite los comentarios del .rman (que mencionan RMAN-06054) y asi un
+# RESTORE fallido seguido de un RECOVER no se puede confundir con exito.
+sincronizado_ok() {
+    local b="$1"
+    grep -q "^RMAN-06054:" "$b" || return 1
+    grep -q "^RMAN-03002:" "$b" || return 1
+    grep "^RMAN-03002:" "$b" | grep -v "failure of recover command" | grep -q . && return 1
+    # Cualquier ORA- al inicio de linea (ORA-01153, ORA-01155, ORA-19505...) es una falla real
+    grep -q -E "^(RMAN-06026|RMAN-06023|RMAN-03009|ORA-)|failure of restore command" "$b" && return 1
+    return 0
+}
+
 ejecutar_rman() {
     local archivo="$1"; shift
     local bitacora="$LOG_DIR/rman_${archivo%.rman}_$(date '+%Y%m%d_%H%M%S').log"
     log "RMAN: $archivo USING $*"
     if rman target / cmdfile="$SCRIPT_DIR/$archivo" log="$bitacora" using "$@" >/dev/null; then
         log "[OK] RMAN finalizo correctamente. Bitacora: $bitacora"
-    elif [ "$APLICA_REDO" = "1" ] && grep -q "RMAN-06054" "$bitacora" && ! grep -q "ORA-01153" "$bitacora"; then
+    elif [ "$APLICA_REDO" = "1" ] && sincronizado_ok "$bitacora"; then
         # RMAN-06054 = pide un archivelog que aun no llega: todo lo recibido ya se aplico
         log "[OK] Standby sincronizado (RMAN-06054 esperado). Bitacora: $bitacora"
     else

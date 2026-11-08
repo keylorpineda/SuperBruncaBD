@@ -1,7 +1,9 @@
 # Modelo relacional (Avance 2)
 
 `modelo_relacional_avance2.dbml` es el modelo completo del esquema `CADENA_NEG`, generado
-desde la base real (Oracle 21c EE) con el diccionario de datos: 61 tablas, 104 relaciones
+desde la base real (Oracle 21c EE) con el diccionario de datos: 61 tablas del modelo (el
+diccionario de `CADENA_NEG` muestra 65 porque suma 2 tablas externas del padrón TSE y los 2
+contenedores de las vistas materializadas, que no son entidades del modelo), 104 relaciones
 (9 de ellas compuestas), comentarios de cada tabla y columna, y las 12 tablas nuevas del
 Avance 2 marcadas con `[AVANCE 2]` en su nota.
 

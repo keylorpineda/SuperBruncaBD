@@ -437,6 +437,8 @@ docker exec -u root ora_standby chown -R oracle:oinstall /opt/oracle/standby_bac
    STARTUP NOMOUNT;
    ```
 
+   > **Nota (probado con la imagen `enterprise:21.3.0.0` en Docker Desktop de Windows):** ahí `SHUTDOWN ABORT` detiene el contenedor completo y el resto de los pasos 2 y 3 no se ejecuta. En ese caso: (a) `docker stop ora_standby`; (b) vacíe solo su volumen con un contenedor temporal: `docker run --rm -u root -v ora_standby_data:/opt/oracle/oradata --entrypoint bash container-registry.oracle.com/database/enterprise:21.3.0.0 -c "rm -rf /opt/oracle/oradata/CADENA/*; mkdir -p /opt/oracle/oradata/CADENA/archive_logs; chown -R oracle:oinstall /opt/oracle/oradata/CADENA"`; (c) `docker start ora_standby` deja la instancia en `NOMOUNT`; (d) espere a que termine el intento de la imagen de abrir la base (`docker logs ora_standby` muestra `ORA-01507`, cerca de 1 minuto) y compruebe `SELECT status FROM v$instance;` (`STARTED`) y `SHOW PARAMETER db_unique_name` (`CADENA_STBY`); (e) si `log_archive_config` o `standby_file_management` salen vacíos, `ALTER SYSTEM SET log_archive_config='DG_CONFIG=(CADENA,CADENA_STBY)' SCOPE=BOTH;` y `ALTER SYSTEM SET standby_file_management=AUTO SCOPE=BOTH;`. Si no, la principal da `ORA-16047`.
+
 ### 11.7 Crear la standby
 
 ```bash
@@ -512,9 +514,10 @@ Resultado: `PRIMARY` / `READ WRITE` con la última venta (0 pérdida, gracias a 
 ### 11.12 Recuperación después del failover (verificado)
 
 1. Respaldo nivel 0 en la nueva principal con el orquestador (11.4) y copiarlo a la antigua (11.5).
-2. En la antigua: `SHUTDOWN ABORT`, `rm -rf /opt/oracle/oradata/CADENA/*` y `STARTUP NOMOUNT` (su spfile ya es el de `CADENA`).
-3. Modo `crearstandby` (11.7): vuelve como `PHYSICAL STANDBY` y se sincroniza (11.8).
-4. Un switchover (11.10) devuelve los roles originales.
+2. En la antigua: `SHUTDOWN ABORT`, `rm -rf /opt/oracle/oradata/CADENA/*` y `STARTUP NOMOUNT` (su spfile ya es el de `CADENA`). En Docker con la imagen probada, use el procedimiento con contenedor temporal de la nota de 11.6.
+3. Modo `crearstandby` (11.7): vuelve como `PHYSICAL STANDBY` y se sincroniza (11.8). El respaldo nivel 0 es autosuficiente porque `04_RMAN_Backup_Full_Incremental.rman` usa `BACKUP OPTIMIZATION OFF`. Si el respaldo se hizo con la configuración anterior (`ON`), copie también los respaldos viejos, o el restore falla con `RMAN-06023` en los datafiles de `PDB$SEED`.
+4. Si el orquestador dice `[ERROR]`, abra la bitácora que indica y corrija la causa antes de seguir. Compruebe que el destino 2 de la principal esté `VALID`; si quedó en `ERROR`, use `DEFER` y luego `ENABLE` en `LOG_ARCHIVE_DEST_STATE_2`, más `ALTER SYSTEM ARCHIVE LOG CURRENT;`.
+5. Un switchover (11.10) devuelve los roles originales.
 
 > Después de un failover la numeración de los archivelogs reinicia (nueva encarnación de la base). Por eso el monitoreo usa `V$ARCHIVE_DEST_STATUS` y no compara números de secuencia.
 

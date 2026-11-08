@@ -65,9 +65,9 @@ El diseño físico distribuye las cargas de lectura y escritura entre tablespace
 
 | TABLESPACE | ARCHIVO FÍSICO | PROPÓSITO TÉCNICO |
 | :--- | :--- | :--- |
-| `TBS_DATOS` | `tbs_datos01.dbf` | Contiene las 62 tablas de negocio del sistema (catálogos, transacciones operativas, parámetros y cierres). Segmentos con `EXTENT MANAGEMENT LOCAL AUTOALLOCATE`. |
-| `TBS_INDICES` | `tbs_indices01.dbf` | Aloja los 224 índices del esquema (claves primarias, foráneas, únicos y compuestos de afinamiento). Evita contención con las escrituras en tablas de datos. |
-| `TBS_AUDITORIA` | `tbs_auditoria01.dbf` | Aloja exclusivamente las tablas inmutables de auditoría (`AUD_REGISTRO_CAMBIO`, `AUD_ERROR_SISTEMA`, `AUD_MONITOREO_BD` y `PRO_PRECIO_HIST`). Diseñado para alta frecuencia de escritura secuencial. |
+| `TBS_DATOS` | `tbs_datos01.dbf` | Contiene 56 tablas de negocio (catálogos, transacciones operativas, parámetros y cierres) más los 2 contenedores de las vistas materializadas (`MV_VENTAS_MENSUALES`, `MV_INVENTARIO_CONSOLIDADO`). Con las 5 tablas de `TBS_AUDITORIA` y las 2 tablas externas del padrón TSE, el diccionario muestra 65 tablas en `CADENA_NEG`. Segmentos con `EXTENT MANAGEMENT LOCAL AUTOALLOCATE`. |
+| `TBS_INDICES` | `tbs_indices01.dbf` | Aloja los 225 índices del esquema (claves primarias, foráneas, únicos y compuestos de afinamiento). Evita contención con las escrituras en tablas de datos. |
+| `TBS_AUDITORIA` | `tbs_auditoria01.dbf` | Aloja exclusivamente las tablas inmutables de auditoría (`AUD_REGISTRO_CAMBIO`, `AUD_ERROR_SISTEMA`, `AUD_MONITOREO_BD`, `AUD_BITACORA` y `PRO_PRECIO_HIST`). Diseñado para alta frecuencia de escritura secuencial. |
 
 ### 2.1 Principio de Aislamiento del Esquema `CADENA_NEG`
 * El usuario `CADENA_NEG` posee cuota ilimitada sobre los tres tablespaces del proyecto (`TBS_DATOS`, `TBS_INDICES`, `TBS_AUDITORIA`).
@@ -96,6 +96,7 @@ El sistema implementa dos perfiles basados en el estándar CIS Oracle Database B
 El paquete `PKG_SEG_SEGURIDAD` implementa el algoritmo **AES-256** en modo encadenado de bloques (CBC) con relleno PKCS#5:
 * **Constante del Algoritmo:** `DBMS_CRYPTO.ENCRYPT_AES256 + DBMS_CRYPTO.CHAIN_CBC + DBMS_CRYPTO.PAD_PKCS5`.
 * **Llave Criptográfica Maestra:** Cadena binaria de 256 bits (32 bytes) administrada internamente por el paquete.
+* **Limitación conocida (versión académica):** la llave es una constante escrita en el código fuente (`PKG_SEG_SEGURIDAD.c_llave_aes` y el bloque de datos semilla de `01_Estructuras_Avance2.sql`), por lo que todas las instalaciones comparten la misma llave y quien lea el código puede descifrar `SEG_PARAMETRO`. Se mantiene así para que cualquier compañero instale y pruebe el proyecto sin pasos extra y para no invalidar los valores ya cifrados. En producción debe sustituirse por una llave propia de cada instalación guardada fuera del código (Oracle Wallet o un administrador de secretos): se genera la llave nueva, se descifran los valores de `SEG_PARAMETRO` con la llave actual, se vuelven a cifrar con la nueva (`PR_GUARDAR_PARAMETRO`) y se recompila el paquete.
 * **Almacenamiento Seguro:** Los datos confidenciales (contraseñas de aplicación SMTP y claves de roles de base de datos) se almacenan en la columna `VALOR_RAW_PARA RAW(2000)` de la tabla `SEG_PARAMETRO`, marcados con `ES_CIFRADO_PARA = 'S'`.
 
 ### 3.3 Roles Protegidos con Contraseña Cifrada

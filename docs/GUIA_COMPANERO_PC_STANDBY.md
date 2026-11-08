@@ -290,6 +290,8 @@ Esto lo hace **Keylor** en su PC (instrucciones completas en `docs/GUIA_PASO_A_P
 
    Debe mostrar `db_unique_name ... CADENA_STBY`. (El mensaje `ORA-01507: database not mounted` es normal.)
 
+   > **Si el contenedor se detiene al hacer `SHUTDOWN ABORT`** (pasa con la imagen `enterprise:21.3.0.0` en Docker Desktop de Windows) y el bloque no termina: haga `docker stop ora_standby`, vacíe su volumen con `docker run --rm -u root -v ora_standby_data:/opt/oracle/oradata --entrypoint bash container-registry.oracle.com/database/enterprise:21.3.0.0 -c "rm -rf /opt/oracle/oradata/CADENA/*; mkdir -p /opt/oracle/oradata/CADENA/archive_logs; chown -R oracle:oinstall /opt/oracle/oradata/CADENA"` y luego `docker start ora_standby`. La instancia queda en `NOMOUNT`: espere cerca de 1 minuto (hasta ver `ORA-01507` en `docker logs ora_standby`) antes del paso 12 y compruebe `SELECT status FROM v$instance;` (`STARTED`). Si `SHOW PARAMETER log_archive_config` sale vacío: `ALTER SYSTEM SET log_archive_config='DG_CONFIG=(CADENA,CADENA_STBY)' SCOPE=BOTH;` y `ALTER SYSTEM SET standby_file_management=AUTO SCOPE=BOTH;`.
+
    > Desde ahora la clave de `SYS` en su base es **la de Keylor** (se copió su archivo de claves).
 
 ## 🟢 Paso 12. Crear la standby (≈ 4 minutos)
@@ -477,7 +479,7 @@ Guion completo: `docs/manuales/Manual_Administracion_Standby.md`, sección 12, y
 | `tnsping PRIMARIA_TNS` → `TNS-12535` / `TNS-12541` | Firewall, IP equivocada o contenedor de Keylor apagado | Repita el paso 6 en **las dos** PC; `Test-NetConnection <IP> -Port 1521`; confirme las IP con `ipconfig`. |
 | `TNS-12514` al conectar a `STANDBY_TNS` | Falta el registro estático del listener | Repita el paso 8. |
 | `ORA-01017` / `ORA-16191` (clave) | El archivo de claves no es el de la principal | Repita la copia de `orapwCADENA` del paso 11.5. |
-| En la principal `v$archive_dest_status` dice `ERROR` | La principal no alcanza la standby | Paso 9 desde el contenedor de Keylor: `tnsping STANDBY_TNS`. Luego Keylor: `ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2=ENABLE;` |
+| En la principal `v$archive_dest_status` dice `ERROR` | La principal no alcanza la standby | Paso 9 desde el contenedor de Keylor: `tnsping STANDBY_TNS`. Luego Keylor: `ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2=DEFER;`, después `ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2=ENABLE;` y `ALTER SYSTEM ARCHIVE LOG CURRENT;` (solo `ENABLE` no siempre basta). Debe quedar `VALID` y `NO GAP`. Si sigue `ORA-16047`, revise `db_unique_name` y `log_archive_config` de su standby. |
 | `ORA-01034: ORACLE not available` después de reiniciar | La imagen no levanta la standby sola | Comandos de [Uso diario](#uso-diario). |
 | `apply lag` crece y no baja | La sincronización está detenida | Ejecute el `RECOVER MANAGED ... DISCONNECT` de nuevo. |
 | Cambió la IP de alguna PC | Wi-Fi/DHCP | Vuelva a editar las entradas del paso 7 (en `/opt/oracle/oradata/dbconfig/CADENA/tnsnames.ora`) en las dos PC. |

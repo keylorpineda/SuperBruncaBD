@@ -132,7 +132,14 @@ function Ejecutar-Rman {
     $codigo = $LASTEXITCODE
     if ($codigo -ne 0 -and $AplicaRedo -and (Test-Path $log)) {
         $texto = Get-Content $log -Raw
-        if ($texto -match 'RMAN-06054' -and $texto -notmatch 'ORA-01153') {
+        # Se busca al INICIO de linea: la bitacora repite los comentarios del .rman
+        # (que mencionan RMAN-06054). Solo es exito si la unica falla de RMAN es la del
+        # RECOVER y no hay ningun error ORA-.
+        $fallas = [regex]::Matches($texto, '(?m)^RMAN-03002:.*$') | ForEach-Object { $_.Value }
+        $soloRecover = ($fallas.Count -gt 0) -and -not ($fallas | Where-Object { $_ -notmatch 'failure of recover command' })
+        # Cualquier ORA- al inicio de linea (ORA-01153, ORA-01155, ORA-19505...) es una falla real
+        $hayErrorRestore = $texto -match '(?m)^(RMAN-06026|RMAN-06023|RMAN-03009|ORA-)' -or $texto -match 'failure of restore command'
+        if ($texto -match '(?m)^RMAN-06054:' -and $soloRecover -and -not $hayErrorRestore) {
             Escribir-Log "[OK] Standby sincronizado: se aplico todo el redo recibido (RMAN-06054 esperado). Bitacora: $log"
             return
         }

@@ -28,7 +28,11 @@
 # 1. CONFIGURACION PERSISTENTE DE RMAN
 # ------------------------------------------------------------------------------
 CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 14 DAYS;
-CONFIGURE BACKUP OPTIMIZATION ON;
+# OPTIMIZATION OFF: con ON, RMAN omite los datafiles que ya respaldo antes (por ejemplo
+# los de PDB$SEED, de solo lectura) y el respaldo nuevo ya no alcanza para reconstruir
+# el standby por si solo (RMAN-06023). Con OFF cada respaldo nivel 0 es autosuficiente
+# y la carpeta que se traslada al standby basta. Costo: un poco mas de espacio y E/S.
+CONFIGURE BACKUP OPTIMIZATION OFF;
 CONFIGURE DEFAULT DEVICE TYPE TO DISK;
 CONFIGURE CONTROLFILE AUTOBACKUP ON;
 CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '&1/ctrl_auto_%F';
