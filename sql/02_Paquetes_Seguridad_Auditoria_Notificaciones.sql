@@ -620,11 +620,13 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
         v_sin t_par := t_par('credito', 'limite', 'premiacion', 'seleccion', 'automatica', 'automatico',
                              'sincronizacion', 'antiguedad', 'mas', 'indice', 'indices', 'invalido', 'invalidos',
                              'danado', 'danados', 'ultimas', 'ultimo', 'notificacion', 'definicion', 'seccion',
-                             'proximos', 'dias', 'unica', 'codigo', 'linea', 'deteccion', 'informacion');
+                             'proximos', 'dias', 'unica', 'codigo', 'linea', 'deteccion', 'informacion',
+                             'maximo', 'ejecucion', 'ejecuciones');
         v_con t_par := t_par('cr&eacute;dito', 'l&iacute;mite', 'premiaci&oacute;n', 'selecci&oacute;n', 'autom&aacute;tica', 'autom&aacute;tico',
                              'sincronizaci&oacute;n', 'antig&uuml;edad', 'm&aacute;s', '&iacute;ndice', '&iacute;ndices', 'inv&aacute;lido', 'inv&aacute;lidos',
                              'da&ntilde;ado', 'da&ntilde;ados', '&uacute;ltimas', '&uacute;ltimo', 'notificaci&oacute;n', 'definici&oacute;n', 'secci&oacute;n',
-                             'pr&oacute;ximos', 'd&iacute;as', '&uacute;nica', 'c&oacute;digo', 'l&iacute;nea', 'detecci&oacute;n', 'informaci&oacute;n');
+                             'pr&oacute;ximos', 'd&iacute;as', '&uacute;nica', 'c&oacute;digo', 'l&iacute;nea', 'detecci&oacute;n', 'informaci&oacute;n',
+                             'm&aacute;ximo', 'ejecuci&oacute;n', 'ejecuciones');
         v VARCHAR2(32767);
     BEGIN
         v := REPLACE(REPLACE(REPLACE(p_texto, '&', '&amp;'), '<', '&lt;'), '>', '&gt;');
@@ -760,23 +762,29 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
 
         -- Renglon de tiquete: concepto ........ monto
         PROCEDURE fila_lista(p_lbl IN VARCHAR2, p_val IN VARCHAR2) IS
-            v_valor VARCHAR2(4000);
+            v_valor  VARCHAR2(4000);
+            v_codigo BOOLEAN := REGEXP_LIKE(p_val, '^(EXEC|SELECT|ALTER|BEGIN) ', 'i');
         BEGIN
-            IF REGEXP_LIKE(p_val, '^(EXEC|SELECT|ALTER|BEGIN) ', 'i') THEN
-                v_valor := '<code style="font-family:Menlo,Consolas,monospace;font-size:12px;font-weight:400;word-break:break-all">' || fn_escapar_html(p_val) || '</code>';
+            IF v_codigo THEN
+                v_valor := '<code style="font-family:Menlo,Consolas,monospace;font-size:13px;font-weight:400;word-break:break-word">' || fn_escapar_html(p_val) || '</code>';
             ELSE
                 v_valor := fn_valor(p_val);
             END IF;
             IF p_lbl IS NULL THEN
                 agregar('<tr><td colspan="3" class="sb-tx" style="padding:7px 0;font-size:15px;color:' || c_tinta || '">' || v_valor || '</td></tr>');
+            ELSIF v_codigo OR LENGTH(p_val) > 30 OR LENGTH(p_lbl) > 34 THEN
+                -- Valor largo (un error de Oracle, un comando): concepto arriba y valor debajo, a todo el ancho
+                agregar('<tr><td colspan="3" class="sb-mu" style="padding:9px 0 2px;font-size:15px;color:' || c_gris || '">'
+                     || fn_escapar_html(p_lbl) || '</td></tr>'
+                     || '<tr><td colspan="3" class="sb-tx sb-ln" style="padding:0 0 9px;font-size:15px;font-weight:700;line-height:1.45;color:' || c_tinta
+                     || ';border-bottom:2px dotted ' || c_linea || ';word-break:break-word">' || v_valor || '</td></tr>');
             ELSE
-                agregar('<tr><td class="sb-mu" style="padding:7px 0;font-size:15px;color:' || c_gris || ';vertical-align:bottom;'
-                     || CASE WHEN LENGTH(p_lbl) <= 22 THEN 'white-space:nowrap' ELSE 'min-width:120px' END || '">'
+                -- Renglon de tiquete: concepto ........ monto
+                agregar('<tr><td class="sb-mu" style="padding:7px 0;font-size:15px;color:' || c_gris || ';vertical-align:bottom;white-space:nowrap">'
                      || fn_escapar_html(p_lbl) || '</td>'
                      || '<td class="sb-ln" style="width:100%;border-bottom:2px dotted ' || c_linea || ';font-size:0;line-height:0">&nbsp;</td>'
                      || '<td class="sb-tx" style="padding:7px 0 7px 6px;font-size:15px;font-weight:700;color:' || c_tinta
-                     || ';text-align:right;vertical-align:bottom;font-variant-numeric:tabular-nums;'
-                     || CASE WHEN LENGTH(p_val) <= 24 THEN 'white-space:nowrap' END || '">' || v_valor || '</td></tr>');
+                     || ';text-align:right;vertical-align:bottom;font-variant-numeric:tabular-nums;white-space:nowrap">' || v_valor || '</td></tr>');
             END IF;
         END;
 
