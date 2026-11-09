@@ -2,4 +2,4 @@
 sql/07_Standby_y_RMAN/docker/oracle_ee.env
 
 # Zip de la entrega (se genera, no se versiona)
-Entregable2_*.zip
+Proyecto_Entregable2_*.zip
