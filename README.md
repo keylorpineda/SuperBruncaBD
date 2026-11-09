@@ -63,6 +63,7 @@ El menú detecta solo si en esa PC está `ora_principal` u `ora_standby` y qué 
 | 10 | Consola SYSDBA | Cualquiera |
 | 11 | Correos de destino de las notificaciones (el correo externo de la defensa), con correo de prueba | Principal |
 | 12 | Clave de aplicación de Gmail (se guarda cifrada) y wallet SSL | Principal |
+| 13 | Enviar una notificación ahora: clientes 85 %, proveedores 70 %, morosos, vencidos, cierre, mercadeo, salud de la base, standby o premiación | Principal |
 
 Las opciones 6 y 8 piden escribir `SI` y se niegan si se eligen en la PC equivocada.
 **Switchover con el menú:** principal → 6; la otra PC → 7; la que era principal → 2.

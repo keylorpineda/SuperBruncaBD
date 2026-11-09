@@ -203,7 +203,7 @@ SELECT COUNT(*) FROM VEN_FACTURA WHERE NUM_FACTURA_FAVE = 'FAC-DEMO-EXCESO';    
 
 ### Minuto 6–8: procesos automáticos y correos (bloque F)
 
-**Bloque F.** Ejecutar a mano lo que hacen los jobs y mostrar los correos que llegan:
+**Bloque F.** Ejecutar a mano lo que hacen los jobs y mostrar los correos que llegan. **Forma fácil:** `menu.ps1`, **opción 13**, y elegir el aviso (muestra el asunto de cada correo y si se entregó). Forma manual:
 
 ```sql
 EXEC PKG_ADM_NOTIFICACION.PR_NOTIF_CLIENTES_85_CREDITO;

@@ -392,6 +392,64 @@ function Op-ClaveGmail {
     Write-Host "Pruebe el envio con la opcion 11 (correo de prueba)."
 }
 
+function Op-EnviarNotificacion {
+    Titulo "ENVIAR UNA NOTIFICACION AHORA"
+    $r = Get-Rol
+    if ($r.Rol -ne "PRIMARY" -or $r.Modo -ne "READ WRITE") { Write-Host "Esta opcion se usa en la PRINCIPAL (abierta). Esta base es $($r.Rol) / $($r.Modo)." -ForegroundColor Yellow; return }
+    # Mismos procedimientos que ejecutan los jobs; el correo sale solo si hay algo que avisar
+    $opciones = [ordered]@{
+        "1"  = @("Clientes al 85% o mas de su credito (a cada cliente y al coordinador)", "CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_CLIENTES_85_CREDITO;")
+        "2"  = @("Proveedores al 70% o mas del credito (un correo al gerente)",           "CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_PROVEEDORES_70_CREDITO;")
+        "3"  = @("Clientes morosos (al gerente y al coordinador)",                       "CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_CLIENTES_MOROSOS;")
+        "4"  = @("Productos vencidos (al coordinador)",                                   "CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_PRODUCTOS_VENCIDOS;")
+        "5"  = @("Las 4 anteriores (lo que hace el job de las 07:00)",                   "CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_CLIENTES_85_CREDITO; CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_PROVEEDORES_70_CREDITO; CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_CLIENTES_MOROSOS; CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_PRODUCTOS_VENCIDOS;")
+        "6"  = @("Cierre diario de hoy (al coordinador y al gerente)",                    "CADENA_NEG.PKG_VEN_OPERACION.PR_EJECUTAR_CIERRE_DIARIO(TRUNC(SYSDATE));")
+        "7"  = @("Reporte semanal de mercadeo: por vencer y mas de 6 meses (coordinador)","CADENA_NEG.PKG_INV_GESTION.PR_REPORTE_SEMANAL_MERCADEO;")
+        "8"  = @("Revision de salud de la base (al DBA, solo si hay problemas)",          "CADENA_NEG.PKG_ADM_MONITOREO.PR_EJECUTAR_MONITOREO_DIARIO;")
+        "9"  = @("Revision del standby (al DBA, solo si hay problemas)",                  "CADENA_NEG.PKG_ADM_STANDBY.PR_VERIFICAR_SINCRONIZACION;")
+        "10" = @("Premiacion semestral: Top de clientes (coordinador; genera las ordenes)","CADENA_NEG.PKG_PRM_MERCADEO.PR_PREMIAR_MEJORES_CLIENTES;")
+    }
+    foreach ($k in $opciones.Keys) { Write-Host ("  {0,2}. {1}" -f $k, $opciones[$k][0]) }
+    Write-Host "   0. Volver"
+    Write-Host ""
+    Write-Host "Destino actual:" -ForegroundColor DarkGray
+    Invoke-Sql @"
+SET HEADING OFF
+ALTER SESSION SET CONTAINER = $Pdb;
+SELECT '  ' || RPAD(codigo_para, 20) || valor_texto_para FROM CADENA_NEG.SEG_PARAMETRO
+ WHERE codigo_para IN ('CORREO_COORDINADOR', 'CORREO_GERENTE', 'CORREO_DBA') ORDER BY codigo_para;
+"@ | Out-Null
+    $o = Read-Host "`nCual notificacion"
+    if (-not $opciones.Contains($o)) { return }
+    if ($o -eq "1" -or $o -eq "5") {
+        Write-Host "Nota: el aviso individual va al correo de cada cliente (PER_CONTACTO). Para recibirlos usted, use la opcion 11 y responda 's' a 'avisos a CLIENTES'." -ForegroundColor DarkGray
+    }
+    if ($o -eq "10" -and -not (Confirmar "La premiacion guarda las ordenes de compra del periodo actual en PRM_ORDEN_PREMIACION.")) { return }
+    Write-Host "Ejecutando: $($opciones[$o][0])..."
+    $salida = Invoke-Sql @"
+ALTER SESSION SET CONTAINER = $Pdb;
+SET SERVEROUTPUT ON SIZE UNLIMITED
+SET TAB OFF
+BEGIN
+    $($opciones[$o][1])
+END;
+/
+"@ -Silencioso
+    $lineas = "$salida" -split "`n" | Where-Object { $_ -match "Para\s+:|Asunto\s+:|Estado SMTP|^No |^Ningun|\[OK\]|\[AVISO\]|ORA-" }
+    if (-not $lineas) { Write-Host "Termino sin nada que avisar (no se envio correo)." -ForegroundColor Yellow; return }
+    foreach ($l in $lineas) {
+        $l = $l.Trim()
+        $l = $l -replace "\s+:", " :"
+        if ($l -match "Asunto") { Write-Host ""; Write-Host "  $l" -ForegroundColor Cyan }
+        elseif ($l -match "entregada|\[OK\]") { Write-Host "  $l" -ForegroundColor Green }
+        elseif ($l -match "Fallo|ORA-") { Write-Host "  $l" -ForegroundColor Red }
+        else { Write-Host "  $l" }
+    }
+    $n = @($lineas | Where-Object { $_ -match "entregada" }).Count
+    Write-Host ""
+    Write-Host "Correos enviados: $n" -ForegroundColor Green
+}
+
 function Mostrar-Menu {
     $r = if (Contenedor-Encendido) { Get-Rol } else { @{ Rol = "APAGADO"; Modo = "-"; Nombre = "-" } }
     Titulo "PROYECTO SUPER BRUNCA  |  $($script:Contenedor)  |  $($r.Rol) / $($r.Modo)"
@@ -407,6 +465,7 @@ function Mostrar-Menu {
     Write-Host " 10. Consola SYSDBA (CDB)"
     Write-Host " 11. Correos de destino de las notificaciones    (en la principal)"
     Write-Host " 12. Clave de Gmail que envia los correos        (en la principal)"
+    Write-Host " 13. Enviar una notificacion ahora (correo)      (en la principal)"
     Write-Host "  0. Salir"
 }
 
@@ -424,6 +483,7 @@ function Ejecutar([string]$o) {
         "10" { Op-ConsolaCdb }
         "11" { Op-ConfigurarCorreos }
         "12" { Op-ClaveGmail }
+        "13" { Op-EnviarNotificacion }
         default { Write-Host "Opcion no valida." -ForegroundColor Yellow }
     }
 }

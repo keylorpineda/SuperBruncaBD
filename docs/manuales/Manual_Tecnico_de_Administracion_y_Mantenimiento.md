@@ -263,7 +263,7 @@ SELECT fecha_ersi, paquete_ersi, subprograma_ersi, codigo_sql_ersi, mensaje_erro
 | JOB | FRECUENCIA | ACCIÓN QUE EJECUTA |
 | :--- | :--- | :--- |
 | `CADENA_NEG.JOB_CIERRE_DIARIO_AUTO` | Diario a las 23:00 | Ejecuta `PKG_VEN_OPERACION.PR_EJECUTAR_CIERRE_DIARIO`, consolidando ventas brutas, devoluciones y montos netos por sucursal y desglosado por cada cajero. Envía reporte al coordinador. |
-| `CADENA_NEG.JOB_MONITOREO_SALUD_DIARIO` | Diario a las 06:00 | Ejecuta `PKG_ADM_MONITOREO.PR_EJECUTAR_MONITOREO_DIARIO`, inspeccionando tablespaces con uso >85%, objetos inválidos, índices corruptos y sesiones concurrentes. |
+| `CADENA_NEG.JOB_MONITOREO_SALUD_DIARIO` | Diario a las 06:00 | Ejecuta `PKG_ADM_MONITOREO.PR_EJECUTAR_MONITOREO_DIARIO`, inspeccionando tablespaces con uso >85%, objetos inválidos, índices corruptos, errores de las últimas 24 h y sesiones concurrentes. Solo envía correo al DBA si encuentra un problema (los productos vencidos los avisa el job de las 07:00, para no repetir el correo). |
 | `CADENA_NEG.JOB_NOTIF_CREDITOS_DIARIO` | Diario a las 07:00 | Ejecuta `PKG_ADM_NOTIFICACION`: detecta clientes con saldo >= 85% de límite, proveedores con saldo >= 70% de crédito, clientes morosos (>1 mes sin abono) y productos vencidos. |
 | `CADENA_NEG.JOB_MERCADEO_SEMANAL` | Lunes a las 05:00 | Ejecuta `PKG_INV_GESTION.PR_REPORTE_SEMANAL_MERCADEO` y activa descuentos en `PRM_DESCUENTO` sobre lotes con caducidad próxima (<7 días) o sin rotación (>6 meses). |
 | `CADENA_NEG.JOB_PREMIACION_SEMESTRAL` | 30 jun y 31 dic (23:30) | Ejecuta `PKG_PRM_MERCADEO.PR_PREMIAR_MEJORES_CLIENTES`, premiando al Top 10 de clientes con órdenes de compra de ₡100,000 c/u emitidas en `PRM_ORDEN_PREMIACION`. |
@@ -273,6 +273,8 @@ SELECT fecha_ersi, paquete_ersi, subprograma_ersi, codigo_sql_ersi, mensaje_erro
 | `CADENA_NEG.JOB_RMAN_BACKUP_DIARIO` | Diario, `STANDBY_HORA_BACKUP` (01:00) | Job EXECUTABLE: RMAN nivel 0 (domingo) o nivel 1 y copia del respaldo a la PC standby. |
 | `CADENA_NEG.JOB_STANDBY_PURGA_ARCHIVELOG` | Diario, `STANDBY_HORA_PURGA` (03:00) | Job EXECUTABLE: purga archivelogs con más de `STANDBY_PURGE_DIAS` (3) días ya aplicados. |
 | `CADENA_NEG.JOB_STANDBY_MONITOREO` | Cada hora | `PKG_ADM_STANDBY.PR_VERIFICAR_SINCRONIZACION`: atraso y fallos del standby en `AUD_MONITOREO_BD`, aviso al DBA. |
+
+**Envío a petición:** cualquier aviso de esta tabla se puede mandar en el momento con `menu.ps1`, **opción 13** (por ejemplo durante la revisión), sin esperar el horario del job.
 
 Los jobs del standby se reconfiguran en caliente con `PKG_ADM_STANDBY.PR_CONFIGURAR_JOBS` después de cambiar un parámetro, y se ejecutan a petición con `PR_SINCRONIZAR_AHORA`, `PR_RESPALDAR_AHORA` y `PR_PURGAR_AHORA` (ver Manual de Administración del Standby).
 

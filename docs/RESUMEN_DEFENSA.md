@@ -358,7 +358,7 @@ externas del padrón + 2 contenedores de vistas materializadas), 225 índices, 1
 | Job | Cuándo | Qué hace |
 | :--- | :--- | :--- |
 | `JOB_CIERRE_DIARIO_AUTO` | Diario 23:00 | Cierre de ventas por cajero + correo |
-| `JOB_MONITOREO_SALUD_DIARIO` | Diario 06:00 | Tablespaces, objetos inválidos, índices, sesiones |
+| `JOB_MONITOREO_SALUD_DIARIO` | Diario 06:00 | Tablespaces, objetos inválidos, índices, errores, sesiones (correo solo si hay problema) |
 | `JOB_NOTIF_CREDITOS_DIARIO` | Diario 07:00 | 85 %, 70 %, morosos, vencidos |
 | `JOB_MERCADEO_SEMANAL` | Lunes 05:00 | Reporte por vencer / antigüedad + descuentos |
 | `JOB_PREMIACION_SEMESTRAL` | Cada 6 meses (parámetro) | Top 10 clientes |
