@@ -586,62 +586,298 @@ SHOW ERRORS PACKAGE PKG_ADM_NOTIFICACION;
 CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
 
     -- -------------------------------------------------------------------------
-    -- Correo en HTML adaptable al celular (privado)
-    -- Convierte el cuerpo en texto que arman las notificaciones (titulos, lineas
-    -- '====' / '----' y columnas alineadas con espacios) en HTML con tablas reales.
+    -- Correo en HTML (privado)
+    -- Diseno inspirado en los correos de Apple: tarjeta blanca con esquinas
+    -- redondeadas sobre fondo gris claro, tipografia del sistema (San Francisco
+    -- en iPhone/Mac, Segoe UI en Windows, Roboto en Android), color e icono
+    -- segun el tipo de aviso y modo oscuro en Apple Mail / iOS.
+    -- Convierte el cuerpo en texto que arman las notificaciones (titulo en
+    -- mayusculas, lineas '====' / '----', columnas alineadas con espacios y
+    -- lineas "Etiqueta: valor | Etiqueta: valor") en:
+    --   * tablas reales en la computadora y tarjetas apiladas en el celular
+    --     (media query de 600 px; sin ella se ve la tabla con desplazamiento);
+    --   * listas agrupadas tipo "Ajustes" para los pares etiqueta / valor;
+    --   * porcentajes como pastillas de color (verde, ambar, naranja, rojo).
     -- -------------------------------------------------------------------------
+    TYPE t_celdas IS TABLE OF VARCHAR2(4000);
+
+    c_fuente CONSTANT VARCHAR2(200) :=
+        '-apple-system,BlinkMacSystemFont,''SF Pro Text'',''Segoe UI'',Roboto,''Helvetica Neue'',Arial,sans-serif';
+
+    -- Colores del tema del correo que se esta armando (los fija pr_tema)
+    g_acento VARCHAR2(7) := '#007AFF';   -- color vivo (barra superior, graficos)
+    g_texto  VARCHAR2(7) := '#0066CC';   -- version oscura legible sobre blanco
+    g_suave  VARCHAR2(7) := '#E8F1FD';   -- fondo tenue del icono y del medidor
+
     FUNCTION fn_escapar_html(p_texto IN VARCHAR2) RETURN VARCHAR2 IS
     BEGIN
         RETURN REPLACE(REPLACE(REPLACE(p_texto, '&', '&amp;'), '<', '&lt;'), '>', '&gt;');
     END fn_escapar_html;
 
     -- Celdas de una fila: grupos de palabras separados por 2 o mas espacios (o tabulador)
-    FUNCTION fn_fila_html(p_linea IN VARCHAR2, p_etiqueta IN VARCHAR2, p_columnas IN PLS_INTEGER) RETURN VARCHAR2 IS
-        v_linea  VARCHAR2(4000) := REPLACE(TRIM(p_linea), CHR(9), '  ');
-        v_n      PLS_INTEGER    := REGEXP_COUNT(v_linea, '[^ ]+( [^ ]+)*');
-        v_celda  VARCHAR2(4000);
-        v_html   VARCHAR2(32767);
-        v_estilo VARCHAR2(200);
+    FUNCTION fn_celdas(p_linea IN VARCHAR2) RETURN t_celdas IS
+        v_linea VARCHAR2(4000) := REPLACE(TRIM(p_linea), CHR(9), '  ');
+        v_res   t_celdas       := t_celdas();
     BEGIN
-        IF p_columnas > 0 AND v_n <> p_columnas THEN
-            -- Fila que no calza con el encabezado (por ejemplo un total): ocupa todo el ancho
-            RETURN '<tr><td colspan="' || p_columnas || '" style="padding:6px 8px;border-bottom:1px solid #e6e9ef;font-weight:bold">'
-                   || fn_escapar_html(v_linea) || '</td></tr>';
-        END IF;
-        FOR i IN 1 .. v_n LOOP
-            v_celda  := REGEXP_SUBSTR(v_linea, '[^ ]+( [^ ]+)*', 1, i);
-            v_estilo := CASE WHEN p_etiqueta = 'th' THEN 'background:#eef3fa;color:#0b3d6e;text-align:left;font-size:12px;'
-                             WHEN REGEXP_LIKE(v_celda, '^(CRC |C )?[-+]?[0-9][0-9.,]*%?$') THEN 'text-align:right;white-space:nowrap;'
-                             ELSE '' END;
-            v_html := v_html || '<' || p_etiqueta || ' style="padding:6px 8px;border-bottom:1px solid #e6e9ef;' || v_estilo || '">'
-                      || fn_escapar_html(v_celda) || '</' || p_etiqueta || '>';
+        FOR i IN 1 .. NVL(REGEXP_COUNT(v_linea, '[^ ]+( [^ ]+)*'), 0) LOOP
+            v_res.EXTEND;
+            v_res(i) := REGEXP_SUBSTR(v_linea, '[^ ]+( [^ ]+)*', 1, i);
         END LOOP;
-        RETURN '<tr>' || v_html || '</tr>';
-    END fn_fila_html;
+        RETURN v_res;
+    END fn_celdas;
+
+    FUNCTION fn_es_numero(p IN VARCHAR2) RETURN BOOLEAN IS
+    BEGIN
+        RETURN REGEXP_LIKE(p, '^(#|CRC |C )?[-+]?[0-9][0-9.,]*%?$');
+    END fn_es_numero;
+
+    -- Texto casi todo en mayusculas (titulos que arman las notificaciones)
+    FUNCTION fn_es_mayusculas(p IN VARCHAR2) RETURN BOOLEAN IS
+    BEGIN
+        RETURN NVL(REGEXP_COUNT(p, '[a-z]'), 0) <= 2 AND NVL(REGEXP_COUNT(p, '[A-Z]'), 0) >= 3;
+    END fn_es_mayusculas;
+
+    -- "REPORTE DE PRODUCTOS VENCIDOS" -> "Reporte de productos vencidos"
+    FUNCTION fn_oracion(p IN VARCHAR2) RETURN VARCHAR2 IS
+        v VARCHAR2(4000) := TRIM(p);
+    BEGIN
+        IF fn_es_mayusculas(v) THEN
+            v := UPPER(SUBSTR(v, 1, 1)) || LOWER(SUBSTR(v, 2));
+            v := REPLACE(REPLACE(REPLACE(REPLACE(v, 'cxc', 'CxC'), 'cxp', 'CxP'), 'crc', 'CRC'), 'cadena_neg', 'CADENA_NEG');
+            v := REPLACE(REPLACE(REPLACE(v, ' bd', ' BD'), 'top ', 'Top '), 'super brunca', 'Super Brunca');
+        END IF;
+        RETURN v;
+    END fn_oracion;
+
+    -- Valor de una celda: los porcentajes se muestran como pastilla de color
+    FUNCTION fn_valor(p IN VARCHAR2) RETURN VARCHAR2 IS
+        v_num NUMBER;
+        v_col VARCHAR2(7);
+        v_bg  VARCHAR2(7);
+    BEGIN
+        IF REGEXP_LIKE(TRIM(p), '^[0-9]+([.,][0-9]+)?%$') THEN
+            BEGIN
+                v_num := TO_NUMBER(REPLACE(REPLACE(TRIM(p), '%', ''), ',', '.'), '999999999D99999',
+                                   'NLS_NUMERIC_CHARACTERS=''.,''');
+            EXCEPTION WHEN OTHERS THEN v_num := NULL;
+            END;
+            IF v_num IS NOT NULL THEN
+                IF    v_num >= 100 THEN v_col := '#D70015'; v_bg := '#FFE5E3';
+                ELSIF v_num >= 85  THEN v_col := '#C93400'; v_bg := '#FFEFDD';
+                ELSIF v_num >= 70  THEN v_col := '#946200'; v_bg := '#FFF6D6';
+                ELSE                    v_col := '#248A3D'; v_bg := '#E3F7E8';
+                END IF;
+                RETURN '<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-weight:600;font-size:13px;'
+                    || 'white-space:nowrap;color:' || v_col || ';background:' || v_bg || '">' || fn_escapar_html(TRIM(p)) || '</span>';
+            END IF;
+        END IF;
+        RETURN fn_escapar_html(p);
+    END fn_valor;
+
+    -- Tema segun el asunto: color, etiqueta superior e icono (entidades HTML: solo ASCII en el codigo)
+    PROCEDURE pr_tema(p_asunto IN VARCHAR2, p_etiqueta OUT VARCHAR2, p_icono OUT VARCHAR2) IS
+        v_a VARCHAR2(4000) := UPPER(p_asunto);
+    BEGIN
+        IF INSTR(v_a, 'INCONSISTENCIA BD') > 0 THEN
+            g_acento := '#FF3B30'; g_texto := '#D70015'; g_suave := '#FFE9E7';
+            p_etiqueta := 'Inconsistencia en la base de datos'; p_icono := '&#x26A0;&#xFE0F;';
+        ELSIF INSTR(v_a, 'ALERTA BD') > 0 THEN
+            g_acento := '#FF3B30'; g_texto := '#D70015'; g_suave := '#FFE9E7';
+            p_etiqueta := 'Errores del sistema'; p_icono := '&#x1F6A8;';
+        ELSIF INSTR(v_a, 'ALERTA SESIONES') > 0 THEN
+            g_acento := '#FF3B30'; g_texto := '#D70015'; g_suave := '#FFE9E7';
+            p_etiqueta := 'Sesiones y bloqueos'; p_icono := '&#x1F512;';
+        ELSIF INSTR(v_a, 'STANDBY') > 0 THEN
+            g_acento := '#FF3B30'; g_texto := '#D70015'; g_suave := '#FFE9E7';
+            p_etiqueta := 'Standby &middot; Data Guard'; p_icono := '&#x1F504;';
+        ELSIF INSTR(v_a, 'VENCID') > 0 THEN
+            g_acento := '#FF9500'; g_texto := '#C93400'; g_suave := '#FFF1E0';
+            p_etiqueta := 'Inventario'; p_icono := '&#x1F4E6;';
+        ELSIF INSTR(v_a, 'ALERTA') > 0 THEN
+            g_acento := '#FF9500'; g_texto := '#C93400'; g_suave := '#FFF1E0';
+            p_etiqueta := 'Alerta de cr&eacute;dito'; p_icono := '&#x1F514;';
+        ELSIF INSTR(v_a, 'AVISO') > 0 THEN
+            g_acento := '#FF9500'; g_texto := '#C93400'; g_suave := '#FFF1E0';
+            p_etiqueta := 'Aviso de cr&eacute;dito'; p_icono := '&#x1F4B3;';
+        ELSIF INSTR(v_a, 'PREMIACION') > 0 THEN
+            g_acento := '#AF52DE'; g_texto := '#8944AB'; g_suave := '#F5EBFA';
+            p_etiqueta := 'Mercadeo &middot; Premiaci&oacute;n'; p_icono := '&#x1F381;';
+        ELSIF INSTR(v_a, 'MERCADEO') > 0 THEN
+            g_acento := '#30B0C7'; g_texto := '#0071A4'; g_suave := '#E3F5F9';
+            p_etiqueta := 'Mercadeo'; p_icono := '&#x1F3F7;&#xFE0F;';
+        ELSIF INSTR(v_a, 'CIERRE') > 0 THEN
+            g_acento := '#34C759'; g_texto := '#248A3D'; g_suave := '#E6F6EA';
+            p_etiqueta := 'Cierre diario'; p_icono := '&#x1F9FE;';
+        ELSE
+            g_acento := '#007AFF'; g_texto := '#0066CC'; g_suave := '#E8F1FD';
+            p_etiqueta := 'Notificaci&oacute;n'; p_icono := '&#x2709;&#xFE0F;';
+        END IF;
+    END pr_tema;
 
     FUNCTION fn_texto_a_html(p_asunto IN VARCHAR2, p_cuerpo IN CLOB) RETURN CLOB IS
         TYPE t_lineas IS TABLE OF VARCHAR2(4000);
-        v_lineas   t_lineas := t_lineas();
+        v_lineas    t_lineas := t_lineas();
         -- NVL: con un cuerpo vacio DBMS_LOB.INSTR devuelve NULL y el ciclo no terminaria
-        v_texto    CLOB := NVL(REPLACE(p_cuerpo, CHR(13), ''), ' ');
-        v_ini      PLS_INTEGER := 1;
-        v_fin      PLS_INTEGER;
-        v_linea    VARCHAR2(4000);
-        v_sig      VARCHAR2(4000);
-        v_html     CLOB;
-        v_en_tabla BOOLEAN := FALSE;
-        v_columnas PLS_INTEGER := 0;
-        v_titulo   BOOLEAN := FALSE;
-        v_saltar   PLS_INTEGER := 0;
+        v_texto     CLOB := NVL(REPLACE(p_cuerpo, CHR(13), ''), ' ');
+        v_ini       PLS_INTEGER := 1;
+        v_fin       PLS_INTEGER;
+        v_t         VARCHAR2(4000);
+        v_sig       VARCHAR2(4000);
+        v_html      CLOB;
+        v_saltar    PLS_INTEGER := 0;
+        -- Estado
+        v_en_tabla  BOOLEAN := FALSE;
+        v_en_lista  BOOLEAN := FALSE;
+        v_primera   BOOLEAN := TRUE;   -- primera fila de la lista (sin linea superior)
+        v_inicio    BOOLEAN := TRUE;   -- todavia no se escribio contenido
+        v_enc       t_celdas;
+        v_filas     t_lineas := t_lineas();
+        -- Encabezado
+        v_etiqueta  VARCHAR2(200);
+        v_icono     VARCHAR2(60);
+        v_titulo    VARCHAR2(4000) := NVL(p_asunto, 'Notificacion');
+        v_prefijo   VARCHAR2(200);
+        v_resumen   VARCHAR2(400);
+        v_porc      VARCHAR2(20);
+        v_fecha     VARCHAR2(60);
+        v_parte     VARCHAR2(4000);
+        v_lbl       VARCHAR2(4000);
+        v_val       VARCHAR2(4000);
 
         FUNCTION es_separador(p IN VARCHAR2) RETURN BOOLEAN IS
         BEGIN
             RETURN REGEXP_LIKE(TRIM(p), '^[=-]{8,}$');
         END;
+
         PROCEDURE agregar(p IN VARCHAR2) IS
         BEGIN
-            DBMS_LOB.WRITEAPPEND(v_html, LENGTH(p), p);
+            IF p IS NOT NULL THEN DBMS_LOB.WRITEAPPEND(v_html, LENGTH(p), p); END IF;
         END;
+
+        PROCEDURE cerrar_lista IS
+        BEGIN
+            IF v_en_lista THEN agregar('</table>'); v_en_lista := FALSE; END IF;
+        END;
+
+        PROCEDURE abrir_lista IS
+        BEGIN
+            cerrar_lista;
+            agregar('<table role="presentation" class="sb-in" width="100%" cellpadding="0" cellspacing="0" '
+                 || 'style="background:#f5f5f7;border-radius:14px;margin:0 0 14px;border-collapse:separate">');
+            v_en_lista := TRUE;
+            v_primera  := TRUE;
+        END;
+
+        PROCEDURE fila_lista(p_lbl IN VARCHAR2, p_val IN VARCHAR2) IS
+            v_borde VARCHAR2(60) := CASE WHEN v_primera THEN '' ELSE 'border-top:1px solid #e5e5ea;' END;
+            v_valor VARCHAR2(4000);
+        BEGIN
+            IF REGEXP_LIKE(p_val, '^(EXEC|SELECT|ALTER|BEGIN) ', 'i') THEN
+                v_valor := '<code style="font-family:SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;'
+                        || 'background:#e8e8ed;padding:2px 6px;border-radius:6px;font-weight:400">' || fn_escapar_html(p_val) || '</code>';
+            ELSE
+                v_valor := fn_valor(p_val);
+            END IF;
+            IF p_lbl IS NULL THEN
+                agregar('<tr><td colspan="2" class="sb-tx sb-ln" style="padding:12px 16px;font-size:15px;color:#1d1d1f;' || v_borde || '">'
+                     || v_valor || '</td></tr>');
+            ELSE
+                agregar('<tr><td class="sb-mu sb-ln" style="padding:12px 8px 12px 16px;font-size:14px;color:#6e6e73;vertical-align:top;'
+                     || CASE WHEN LENGTH(p_lbl) <= 18 THEN 'white-space:nowrap;' END || v_borde || '">'
+                     || fn_escapar_html(p_lbl) || '</td><td class="sb-tx sb-ln" style="padding:12px 16px 12px 8px;font-size:15px;font-weight:600;'
+                     || 'color:#1d1d1f;text-align:right;vertical-align:top;' || v_borde || '">' || v_valor || '</td></tr>');
+            END IF;
+            v_primera := FALSE;
+        END;
+
+        -- Escribe la tabla acumulada dos veces: como tabla (computadora) y como tarjetas (celular)
+        PROCEDURE cerrar_tabla IS
+            v_n      PLS_INTEGER := v_enc.COUNT;
+            v_num    t_celdas    := t_celdas();   -- 'S' si la columna es numerica
+            v_c      t_celdas;
+            v_tit    PLS_INTEGER;
+            v_sub    PLS_INTEGER;
+            v_estilo VARCHAR2(400);
+            v_ult    BOOLEAN;
+        BEGIN
+            v_en_tabla := FALSE;
+            v_num.EXTEND(v_n);
+            FOR c IN 1 .. v_n LOOP v_num(c) := 'N'; END LOOP;
+            FOR f IN 1 .. v_filas.COUNT LOOP
+                v_c := fn_celdas(v_filas(f));
+                IF v_c.COUNT = v_n THEN
+                    FOR c IN 1 .. v_n LOOP
+                        v_num(c) := CASE WHEN fn_es_numero(v_c(c)) THEN 'S' ELSE 'N' END;
+                    END LOOP;
+                    EXIT;
+                END IF;
+            END LOOP;
+
+            -- Computadora: tabla con bordes finos y encabezados pequenos
+            agregar('<div class="sb-desk" style="margin:0 0 18px"><div class="sb-ln" style="overflow-x:auto;border:1px solid #e5e5ea;border-radius:14px">'
+                 || '<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;font-size:14px"><tr>');
+            FOR c IN 1 .. v_n LOOP
+                agregar('<th class="sb-in sb-mu sb-ln" style="padding:10px 14px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;'
+                     || 'color:#86868b;background:#fafafc;border-bottom:1px solid #e5e5ea;white-space:nowrap;text-align:'
+                     || CASE WHEN v_num(c) = 'S' THEN 'right' ELSE 'left' END || '">' || fn_escapar_html(v_enc(c)) || '</th>');
+            END LOOP;
+            agregar('</tr>');
+            FOR f IN 1 .. v_filas.COUNT LOOP
+                v_c   := fn_celdas(v_filas(f));
+                v_ult := (f = v_filas.COUNT);
+                IF v_c.COUNT <> v_n THEN
+                    agregar('<tr><td colspan="' || v_n || '" class="sb-tx" style="padding:12px 14px;font-weight:600;color:#1d1d1f">'
+                         || fn_escapar_html(TRIM(v_filas(f))) || '</td></tr>');
+                ELSE
+                    agregar('<tr>');
+                    FOR c IN 1 .. v_n LOOP
+                        v_estilo := 'padding:11px 14px;color:#1d1d1f;'
+                                 || CASE WHEN NOT v_ult THEN 'border-bottom:1px solid #f0f0f2;' END
+                                 || CASE WHEN v_num(c) = 'S' THEN 'text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;' END
+                                 || CASE WHEN c = 1 THEN 'font-weight:600;white-space:nowrap;' END
+                                 || CASE WHEN INSTR(v_c(c), ' ') = 0 THEN 'white-space:nowrap;' END;
+                        agregar('<td class="sb-tx sb-ln" style="' || v_estilo || '">' || fn_valor(v_c(c)) || '</td>');
+                    END LOOP;
+                    agregar('</tr>');
+                END IF;
+            END LOOP;
+            agregar('</table></div></div>');
+
+            -- Celular: una tarjeta por fila (se muestra solo con pantallas de hasta 600 px)
+            agregar('<div class="sb-mob" style="display:none;max-height:0;overflow:hidden;mso-hide:all">');
+            FOR f IN 1 .. v_filas.COUNT LOOP
+                v_c := fn_celdas(v_filas(f));
+                IF v_c.COUNT <> v_n THEN
+                    agregar('<div class="sb-tx" style="font-size:15px;font-weight:600;color:#1d1d1f;padding:2px 4px 12px">'
+                         || fn_escapar_html(TRIM(v_filas(f))) || '</div>');
+                ELSE
+                    -- Titulo de la tarjeta: la columna del nombre (cliente, proveedor, producto...)
+                    v_tit := 0; v_sub := 0;
+                    FOR c IN 1 .. v_n LOOP
+                        IF REGEXP_LIKE(UPPER(v_enc(c)), 'CLIENTE|PROVEEDOR|PRODUCTO|NOMBRE|TABLESPACE|OBJETO|INDICE') THEN
+                            v_tit := c; EXIT;
+                        END IF;
+                    END LOOP;
+                    IF v_tit = 0 THEN v_tit := 1; END IF;
+                    IF v_tit > 1 THEN v_sub := 1; END IF;
+                    agregar('<div class="sb-in" style="background:#f5f5f7;border-radius:14px;padding:14px 16px;margin:0 0 10px">'
+                         || '<div class="sb-tx" style="font-size:16px;font-weight:600;color:#1d1d1f">' || fn_escapar_html(v_c(v_tit)) || '</div>');
+                    IF v_sub > 0 THEN
+                        agregar('<div class="sb-mu" style="font-size:13px;color:#6e6e73;margin-top:2px">' || fn_escapar_html(v_c(v_sub)) || '</div>');
+                    END IF;
+                    agregar('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px">');
+                    FOR c IN 1 .. v_n LOOP
+                        CONTINUE WHEN c = v_tit OR c = v_sub;
+                        agregar('<tr><td class="sb-mu" style="padding:5px 0;font-size:13px;color:#6e6e73">' || fn_escapar_html(fn_oracion(v_enc(c)))
+                             || '</td><td class="sb-tx" style="padding:5px 0;font-size:14px;font-weight:600;color:#1d1d1f;text-align:right">'
+                             || fn_valor(v_c(c)) || '</td></tr>');
+                    END LOOP;
+                    agregar('</table></div>');
+                END IF;
+            END LOOP;
+            agregar('</div>');
+            v_filas := t_lineas();
+        END cerrar_tabla;
     BEGIN
         -- Separar en lineas
         LOOP
@@ -655,57 +891,186 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_NOTIFICACION IS
             v_ini := v_fin + 1;
         END LOOP;
 
+        -- Tema, titulo y textos del encabezado
+        pr_tema(p_asunto, v_etiqueta, v_icono);
+        v_titulo := REGEXP_REPLACE(v_titulo, ' - Super Brunca$', '');
+        v_prefijo := REGEXP_SUBSTR(v_titulo, '^(Alerta [^:]{3,40}|INCONSISTENCIA BD|ALERTA BD|ALERTA SESIONES): ', 1, 1, 'i');
+        IF v_prefijo IS NOT NULL THEN
+            IF UPPER(v_prefijo) LIKE 'ALERTA %' AND UPPER(v_prefijo) NOT LIKE 'ALERTA BD%' AND UPPER(v_prefijo) NOT LIKE 'ALERTA SESIONES%' THEN
+                -- "Alerta Coordinador: ..." -> etiqueta "Alerta de credito · Coordinador"
+                v_etiqueta := v_etiqueta || ' &middot; ' || fn_escapar_html(TRIM(SUBSTR(v_prefijo, 8, LENGTH(v_prefijo) - 9)));
+            END IF;
+            v_titulo := SUBSTR(v_titulo, LENGTH(v_prefijo) + 1);
+            v_titulo := UPPER(SUBSTR(v_titulo, 1, 1)) || SUBSTR(v_titulo, 2);
+        END IF;
+        v_porc := REGEXP_SUBSTR(p_asunto, '([0-9]+([.,][0-9]+)?)% utilizado', 1, 1, 'i', 1);
+
+        FOR i IN 1 .. v_lineas.COUNT LOOP
+            v_t := TRIM(v_lineas(i));
+            IF v_t IS NOT NULL AND NOT es_separador(v_t) THEN
+                v_resumen := SUBSTR(fn_oracion(v_t), 1, 140);
+                EXIT;
+            END IF;
+        END LOOP;
+        IF v_porc IS NOT NULL THEN
+            v_resumen := 'Su cr&eacute;dito est&aacute; al ' || v_porc || '% de su l&iacute;mite autorizado.';
+        ELSE
+            v_resumen := fn_escapar_html(v_resumen);
+        END IF;
+
+        BEGIN
+            v_fecha := TO_CHAR(CAST(SYSTIMESTAMP AT TIME ZONE 'America/Costa_Rica' AS DATE),
+                               'fmDD "de" month "de" YYYY, fmHH24:MI', 'NLS_DATE_LANGUAGE=SPANISH');
+        EXCEPTION WHEN OTHERS THEN
+            v_fecha := TO_CHAR(SYSDATE, 'DD/MM/YYYY HH24:MI');
+        END;
+
         DBMS_LOB.CREATETEMPORARY(v_html, TRUE);
-        agregar('<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>'
-             || '<body style="margin:0;padding:0;background:#f3f5f8;font-family:Arial,Helvetica,sans-serif">'
-             || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f5f8;padding:12px 0"><tr><td align="center">'
-             || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#ffffff;border-radius:8px">'
-             || '<tr><td style="background:#0b5394;color:#ffffff;padding:16px 20px;border-radius:8px 8px 0 0">'
-             || '<div style="font-size:12px;opacity:.85">Super Brunca &middot; Notificaci&oacute;n autom&aacute;tica</div>'
-             || '<div style="font-size:18px;font-weight:bold;margin-top:4px;line-height:1.3">' || fn_escapar_html(p_asunto) || '</div></td></tr>'
-             || '<tr><td style="padding:16px 20px;font-size:14px;color:#222222;line-height:1.45">');
+        agregar('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+             || '<meta name="viewport" content="width=device-width,initial-scale=1">'
+             || '<meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">'
+             || '<title>' || fn_escapar_html(v_titulo) || '</title><style>'
+             || ':root{color-scheme:light dark;supported-color-schemes:light dark}'
+             || 'body{margin:0;padding:0;-webkit-text-size-adjust:100%}'
+             || '@media only screen and (max-width:600px){'
+             || '.sb-desk{display:none!important;max-height:0!important;overflow:hidden!important}'
+             || '.sb-mob{display:block!important;max-height:none!important;overflow:visible!important}'
+             || '.sb-pad{padding-left:20px!important;padding-right:20px!important}'
+             || '.sb-h1{font-size:24px!important}.sb-wrap{padding:12px 8px!important}}'
+             || '@media (prefers-color-scheme:dark){'
+             || '.sb-bg{background:#000000!important}.sb-card{background:#1c1c1e!important}'
+             || '.sb-tx{color:#f5f5f7!important}.sb-mu{color:#a1a1a6!important}'
+             || '.sb-in{background:#2c2c2e!important}.sb-ln{border-color:#3a3a3c!important}}'
+             || '</style></head>');
+        agregar('<body class="sb-bg" style="margin:0;padding:0;background:#f5f5f7;font-family:' || c_fuente || '">'
+             -- Texto que se ve en la bandeja de entrada junto al asunto (oculto en el correo)
+             || '<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all">' || v_resumen
+             || RPAD(' ', 120, ' ') || '&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>'
+             || '<table role="presentation" class="sb-bg" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7">'
+             || '<tr><td align="center" class="sb-wrap" style="padding:28px 12px">'
+             || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px">'
+             -- Tarjeta
+             || '<tr><td class="sb-card" style="background:#ffffff;border-radius:22px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)">'
+             || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+             -- Franja de color del tipo de aviso
+             || '<tr><td style="height:6px;line-height:6px;font-size:0;background:' || g_acento
+             || ';background-image:linear-gradient(90deg,' || g_acento || ',' || g_suave || ')">&nbsp;</td></tr>'
+             -- Marca y fecha
+             || '<tr><td class="sb-pad" style="padding:22px 32px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+             || '<td class="sb-tx" style="font-size:13px;font-weight:600;color:#1d1d1f;letter-spacing:-.01em">'
+             || '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' || g_acento
+             || ';margin-right:7px;vertical-align:middle"></span>Super Brunca</td>'
+             || '<td align="right" class="sb-mu" style="font-size:12px;color:#86868b">' || v_fecha || '</td></tr></table></td></tr>'
+             -- Icono, etiqueta y titulo
+             || '<tr><td class="sb-pad" style="padding:26px 32px 4px">'
+             || '<div style="width:52px;height:52px;border-radius:14px;background:' || g_suave
+             || ';text-align:center;line-height:52px;font-size:26px">' || v_icono || '</div>'
+             || '<div style="margin-top:18px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:' || g_texto || '">'
+             || v_etiqueta || '</div>'
+             || '<h1 class="sb-tx sb-h1" style="margin:6px 0 0;font-size:28px;line-height:1.18;font-weight:700;letter-spacing:-.02em;color:#1d1d1f">'
+             || fn_escapar_html(v_titulo) || '</h1></td></tr>'
+             || '<tr><td class="sb-pad" style="padding:22px 32px 30px;font-size:16px;line-height:1.55;color:#1d1d1f">');
+
+        -- Medidor grande para el aviso de credito al cliente
+        IF v_porc IS NOT NULL THEN
+            DECLARE
+                v_ancho NUMBER;
+            BEGIN
+                BEGIN
+                    v_ancho := LEAST(100, GREATEST(2, ROUND(TO_NUMBER(REPLACE(v_porc, ',', '.'), '999999D99999',
+                                                                      'NLS_NUMERIC_CHARACTERS=''.,'''))));
+                EXCEPTION WHEN OTHERS THEN v_ancho := 85;
+                END;
+                agregar('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px"><tr>'
+                     || '<td style="background:' || g_suave || ';border-radius:18px;padding:20px 22px">'
+                     || '<div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:' || g_texto
+                     || '">Cr&eacute;dito utilizado</div>'
+                     || '<div style="font-size:46px;font-weight:700;letter-spacing:-.03em;line-height:1.1;margin:6px 0 14px;color:' || g_texto || '">'
+                     || fn_escapar_html(v_porc) || '%</div>'
+                     || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:999px"><tr>'
+                     || '<td width="' || v_ancho || '%" style="height:8px;line-height:8px;font-size:0;background:' || g_acento
+                     || ';border-radius:999px">&nbsp;</td><td style="font-size:0;line-height:0">&nbsp;</td></tr></table></td></tr></table>');
+            END;
+        END IF;
 
         FOR i IN 1 .. v_lineas.COUNT LOOP
             CONTINUE WHEN i = v_saltar;   -- linea '-----' bajo el encabezado de una tabla
-            v_linea := RTRIM(v_lineas(i));
-            v_sig   := CASE WHEN i < v_lineas.COUNT THEN v_lineas(i + 1) END;
+            v_t   := TRIM(REPLACE(v_lineas(i), CHR(9), '  '));
+            v_sig := CASE WHEN i < v_lineas.COUNT THEN TRIM(v_lineas(i + 1)) END;
 
             IF v_en_tabla THEN
-                IF v_linea IS NULL OR es_separador(v_linea) THEN
-                    agregar('</table></div>');
-                    v_en_tabla := FALSE;
+                IF v_t IS NULL OR es_separador(v_t) THEN
+                    cerrar_tabla;
                 ELSE
-                    agregar(fn_fila_html(v_linea, 'td', v_columnas));
+                    v_filas.EXTEND; v_filas(v_filas.COUNT) := v_t;
                 END IF;
-            ELSIF v_linea IS NOT NULL AND NOT es_separador(v_linea) AND v_sig IS NOT NULL
-                  AND REGEXP_LIKE(TRIM(v_sig), '^-{8,}$') AND REGEXP_COUNT(TRIM(v_linea), '[^ ]+( [^ ]+)*') > 1 THEN
+                CONTINUE;
+            END IF;
+
+            IF v_t IS NOT NULL AND NOT es_separador(v_t) AND v_sig IS NOT NULL
+               AND REGEXP_LIKE(v_sig, '^-{8,}$') AND REGEXP_COUNT(v_t, '[^ ]+( [^ ]+)*') > 1 THEN
                 -- Encabezado de tabla: linea con varias columnas seguida de '-----'
-                v_columnas := REGEXP_COUNT(REPLACE(TRIM(v_linea), CHR(9), '  '), '[^ ]+( [^ ]+)*');
-                agregar('<div style="overflow-x:auto;margin:8px 0 12px"><table cellpadding="0" cellspacing="0" '
-                     || 'style="border-collapse:collapse;width:100%;font-size:13px">');
-                agregar(fn_fila_html(v_linea, 'th', 0));
+                cerrar_lista;
+                v_enc      := fn_celdas(v_t);
+                v_filas    := t_lineas();
                 v_en_tabla := TRUE;
                 v_saltar   := i + 1;
-            ELSIF es_separador(v_linea) THEN
-                agregar('<hr style="border:none;border-top:1px solid #e6e9ef;margin:10px 0">');
-            ELSIF v_linea IS NULL THEN
-                agregar('<div style="height:8px"></div>');
-            ELSIF NOT v_titulo THEN
-                agregar('<div style="font-size:15px;font-weight:bold;color:#0b3d6e;margin-bottom:6px">' || fn_escapar_html(TRIM(v_linea)) || '</div>');
-                v_titulo := TRUE;
-            ELSIF REGEXP_LIKE(v_linea, '^[^:]{2,40}:\s') THEN
-                -- "Etiqueta : valor"
-                agregar('<div><b>' || fn_escapar_html(TRIM(REGEXP_SUBSTR(v_linea, '^[^:]+'))) || ':</b> '
-                     || fn_escapar_html(TRIM(SUBSTR(v_linea, INSTR(v_linea, ':') + 1))) || '</div>');
+                v_inicio   := FALSE;
+            ELSIF v_t IS NULL OR es_separador(v_t) THEN
+                cerrar_lista;
+            ELSIF v_inicio AND fn_es_mayusculas(v_t) THEN
+                -- Primera linea en mayusculas: subtitulo debajo del titulo
+                agregar('<p class="sb-mu" style="margin:0 0 22px;font-size:16px;line-height:1.5;color:#6e6e73">'
+                     || fn_escapar_html(fn_oracion(v_t)) || '</p>');
+            ELSIF UPPER(v_t) LIKE 'SECCI%' OR (fn_es_mayusculas(v_t) AND INSTR(v_t, ':') = 0) THEN
+                cerrar_lista;
+                agregar('<div class="sb-tx" style="font-size:19px;font-weight:700;letter-spacing:-.01em;color:#1d1d1f;margin:26px 0 12px">'
+                     || fn_escapar_html(fn_oracion(v_t)) || '</div>');
+            ELSIF UPPER(v_t) LIKE 'ESTIMAD%' THEN
+                cerrar_lista;
+                agregar('<p class="sb-tx" style="margin:0 0 12px;font-size:18px;font-weight:600;color:#1d1d1f">' || fn_escapar_html(v_t) || '</p>');
+            ELSIF v_t LIKE '%:' THEN
+                cerrar_lista;
+                agregar('<div class="sb-mu" style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#86868b;margin:18px 4px 8px">'
+                     || fn_escapar_html(fn_oracion(RTRIM(v_t, ':'))) || '</div>');
+            ELSIF v_t LIKE '(%)' THEN
+                cerrar_lista;
+                agregar('<p class="sb-mu" style="margin:0 0 14px;font-size:14px;font-style:italic;color:#86868b">'
+                     || fn_escapar_html(SUBSTR(v_t, 2, LENGTH(v_t) - 2)) || '</p>');
+            ELSIF REGEXP_LIKE(v_t, '^(- )?[^:|]{1,60}:[[:space:]]*[^[:space:]]') THEN
+                -- "Etiqueta: valor | Etiqueta: valor" -> lista agrupada; cada "- " inicia otra lista
+                IF v_t LIKE '- %' OR NOT v_en_lista THEN abrir_lista; END IF;
+                FOR k IN 1 .. NVL(REGEXP_COUNT(v_t, '[^|]+'), 0) LOOP
+                    v_parte := TRIM(REGEXP_REPLACE(REGEXP_SUBSTR(v_t, '[^|]+', 1, k), '^- ', ''));
+                    IF REGEXP_LIKE(v_parte, '^[^:]{1,60}:[[:space:]]*[^[:space:]]') THEN
+                        v_lbl := TRIM(SUBSTR(v_parte, 1, INSTR(v_parte, ':') - 1));
+                        v_val := TRIM(SUBSTR(v_parte, INSTR(v_parte, ':') + 1));
+                        fila_lista(fn_oracion(v_lbl), v_val);
+                    ELSIF v_parte IS NOT NULL THEN
+                        fila_lista(NULL, v_parte);
+                    END IF;
+                END LOOP;
+            ELSIF v_t LIKE '- %' THEN
+                -- Vineta
+                cerrar_lista;
+                agregar('<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 10px"><tr>'
+                     || '<td style="vertical-align:top;padding:0 10px 0 4px;color:' || g_acento || ';font-size:16px;line-height:1.55">&#9679;</td>'
+                     || '<td class="sb-tx" style="color:#1d1d1f;font-size:15px;line-height:1.55">' || fn_escapar_html(SUBSTR(v_t, 3)) || '</td></tr></table>');
             ELSE
-                agregar('<div>' || fn_escapar_html(v_linea) || '</div>');
+                cerrar_lista;
+                agregar('<p class="sb-tx" style="margin:0 0 14px;color:#1d1d1f">' || fn_escapar_html(v_t) || '</p>');
             END IF;
+            IF v_t IS NOT NULL AND NOT es_separador(v_t) THEN v_inicio := FALSE; END IF;
         END LOOP;
-        IF v_en_tabla THEN agregar('</table></div>'); END IF;
+        IF v_en_tabla THEN cerrar_tabla; END IF;
+        cerrar_lista;
 
-        agregar('</td></tr><tr><td style="padding:12px 20px;font-size:11px;color:#888888;border-top:1px solid #eeeeee">'
-             || 'Enviado directamente desde Oracle Database (UTL_SMTP, sin VPN) &middot; '
-             || TO_CHAR(SYSDATE, 'DD/MM/YYYY HH24:MI') || '</td></tr></table></td></tr></table></body></html>');
+        agregar('</td></tr></table></td></tr>'
+             -- Pie fuera de la tarjeta
+             || '<tr><td align="center" class="sb-mu" style="padding:22px 24px 6px;font-size:12px;line-height:1.6;color:#86868b">'
+             || '<b style="color:#6e6e73">Super Brunca</b> &middot; Notificaci&oacute;n autom&aacute;tica<br>'
+             || 'Enviada directamente desde Oracle Database (UTL_SMTP). No responda a este correo.</td></tr>'
+             || '</table></td></tr></table></body></html>');
         RETURN v_html;
     END fn_texto_a_html;
 
