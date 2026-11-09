@@ -365,8 +365,9 @@ function Op-Failover {
     $r = Get-Rol
     if ($r.Rol -ne "PHYSICAL STANDBY") { Aviso "El failover se hace en la STANDBY. Esta base es $($r.Rol)."; return }
     if (-not (Confirmar "Use esto SOLO si la principal ya no funciona. Despues, la otra PC debe reconstruirse como standby (guia, seccion 7 paso 12).")) { return }
+    # Detener la aplicacion de cambios; si ya estaba detenida (ORA-16136) no es un error
+    Invoke-Sql "ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;" -Silencioso | Out-Null
     Invoke-Sql @"
-ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
 ALTER DATABASE FAILOVER TO $($r.Nombre);
 ALTER DATABASE OPEN;
 ALTER PLUGGABLE DATABASE ALL OPEN;

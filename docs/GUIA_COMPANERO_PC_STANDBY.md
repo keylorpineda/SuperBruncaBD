@@ -251,6 +251,8 @@ Esto lo hace **Keylor** en su PC (instrucciones completas en `docs/GUIA_PASO_A_P
    docker exec -u root ora_standby chown -R oracle:oinstall /opt/oracle/proyecto
    ```
 
+   > **Cada vez que actualice el repositorio** (`git pull`), repita estos dos comandos: los scripts que usan los jobs y el orquestador son la copia que está **dentro** del contenedor. Con una copia vieja, un respaldo nivel 0 puede saltarse archivos (`BACKUP OPTIMIZATION ON`) y la reconstrucción de la standby falla con `RMAN-06023`.
+
 3. Entre al contenedor:
 
    ```powershell

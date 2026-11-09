@@ -520,6 +520,8 @@ Resultado: `PRIMARY` / `READ WRITE` con la última venta (0 pérdida, gracias a 
 4. Si el orquestador dice `[ERROR]`, abra la bitácora que indica y corrija la causa antes de seguir. Compruebe que el destino 2 de la principal esté `VALID`; si quedó en `ERROR`, use `DEFER` y luego `ENABLE` en `LOG_ARCHIVE_DEST_STATE_2`, más `ALTER SYSTEM ARCHIVE LOG CURRENT;`.
 5. Un switchover (11.10) devuelve los roles originales.
 
+> **Verificado otra vez (9 nov 2026) con el menú:** opción 8 en la standby (failover sin pérdida: la última venta escrita antes de `docker kill ora_principal` estaba en la nueva principal), reconstrucción de `ora_principal` con esta sección y switchover de regreso con las opciones 6, 7 y 2. Antes de reconstruir, compruebe que los scripts dentro de los contenedores sean los del repositorio (vuelva a copiarlos con `docker cp`): una copia vieja con `BACKUP OPTIMIZATION ON` dejó fuera los archivos de `PDB$SEED` del nivel 0 (`RMAN-06023`); se resolvió respaldando solo esos archivos (`BACKUP DATAFILE 5,6,8`), catalogándolos y restaurándolos (`RESTORE DATAFILE 5,6,8`).
+
 > Después de un failover la numeración de los archivelogs reinicia (nueva encarnación de la base). Por eso el monitoreo usa `V$ARCHIVE_DEST_STATUS` y no compara números de secuencia.
 
 ### 11.13 Purga y replicación de todas las acciones

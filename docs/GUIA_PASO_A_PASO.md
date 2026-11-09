@@ -150,6 +150,8 @@ docker exec -it -u oracle ora_principal bash
    docker exec -u root ora_principal chown -R oracle:oinstall /opt/oracle/proyecto
    ```
 
+   > **Cada vez que actualice el repositorio** (`git pull`), repita estos dos comandos: los scripts que usan los jobs y el orquestador son la copia que está **dentro** del contenedor. Con una copia vieja, un respaldo nivel 0 puede saltarse archivos (`BACKUP OPTIMIZATION ON`) y la reconstrucción de la standby falla con `RMAN-06023`.
+
    Sin Docker, copie la carpeta a `/opt/oracle/proyecto` (Linux) o `C:\app\oracle\proyecto` (Windows). Son las rutas que los scripts usan por defecto.
 
 2. Cree la base del Entregable #1 (tablespaces, usuario `CADENA_NEG`, tablas y datos):
