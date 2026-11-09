@@ -7,6 +7,8 @@ contenedores de las vistas materializadas, que no son entidades del modelo), 104
 (9 de ellas compuestas), comentarios de cada tabla y columna, y las 12 tablas nuevas del
 Avance 2 marcadas con `[AVANCE 2]` en su nota.
 
+**Diagrama:** [`modelo_relacional_avance_2.pdf`](modelo_relacional_avance_2.pdf) es el diagrama exportado de dbdiagram.io (coincide con el DBML: 61 tablas, 728 columnas y 104 relaciones). Se ve mejor en pantalla con zoom que impreso.
+
 **Cómo abrirlo:** entre a https://dbdiagram.io, cree un diagrama nuevo, borre el ejemplo y
 pegue el contenido del archivo (o *Import → DBML*). Las tablas quedan agrupadas por módulo
 (`TableGroup`: AUD, CAT, COM, INV, PER, PRM, PRO, SEG, VEN).

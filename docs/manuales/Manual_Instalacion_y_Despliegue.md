@@ -65,7 +65,7 @@ La solución se entrega organizada en scripts modulares e independientes, gobern
 | `datos/padron/padron_muestra.csv` | Datos externos | Archivo CSV muestra del padrón electoral para prueba de UTL_FILE. |
 | `docs/manuales/` | Documentación | Los 3 manuales oficiales (`.md` y `.pdf`) y `generar_manuales_pdf.py`, que regenera los PDF. |
 | `docs/entregable1/` | Documentación | Diccionario de datos, documentación técnica y modelo relacional del Entregable #1. |
-| `docs/modelo/` | Documentación | Modelo relacional del Avance 2 en formato DBML (dbdiagram.io) y la justificación de sus desnormalizaciones. |
+| `docs/modelo/` | Documentación | Modelo relacional del Avance 2: diagrama en PDF (`modelo_relacional_avance_2.pdf`), formato DBML (dbdiagram.io) y la justificación de sus desnormalizaciones. |
 | `docs/` (guías) | Documentación | `GUIA_PASO_A_PASO.md`, `GUIA_COMPANERO_PC_STANDBY.md`, `GUIA_PADRON_TSE.md`, `GUIA_DEFENSA.md` y `RESUMEN_DEFENSA.md`. |
 
 ---
