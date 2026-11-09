@@ -73,9 +73,10 @@ Probado en Oracle 21c EE: estado, sincronización, respaldo, solo lectura, switc
 
 1. [Guía paso a paso](docs/GUIA_PASO_A_PASO.md): instalar todo desde cero en las dos computadoras.
    - **¿Usted pone la segunda PC (standby)?** Siga [la guía del compañero](docs/GUIA_COMPANERO_PC_STANDBY.md): desde instalar Docker hasta la defensa, paso a paso.
-2. [Guía del padrón del TSE](docs/GUIA_PADRON_TSE.md): dónde va el archivo del padrón y cómo cargarlo.
-3. [Resumen para la defensa](docs/RESUMEN_DEFENSA.md): cada requerimiento, cómo se hizo y las preguntas probables.
-4. [Guía de la defensa](docs/GUIA_DEFENSA.md): qué archivo cumple cada requisito y qué ejecutar en vivo.
+2. [Pruebas del standby](docs/PRUEBAS_STANDBY.md): las 12 pruebas para ensayar con las dos PC y repetir en la defensa.
+3. [Guía del padrón del TSE](docs/GUIA_PADRON_TSE.md): dónde va el archivo del padrón y cómo cargarlo.
+4. [Resumen para la defensa](docs/RESUMEN_DEFENSA.md): cada requerimiento, cómo se hizo y las preguntas probables.
+5. [Guía de la defensa](docs/GUIA_DEFENSA.md): qué archivo cumple cada requisito y qué ejecutar en vivo.
 
 Manuales oficiales (los que se entregan):
 

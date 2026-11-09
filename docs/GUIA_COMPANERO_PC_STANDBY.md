@@ -371,6 +371,7 @@ Desde entonces, cada noche a la 01:00 la principal saca el respaldo y lo deja en
 > **Atajo:** todo lo de esta sección y de la defensa también se hace con el menú:
 > `powershell -ExecutionPolicy Bypass -File .\menu.ps1` (opción 2 = arrancar la standby,
 > 1 = estado, 5 = mostrar datos, 7 = abrir como principal, 8 = failover). Ver el README.
+> Para ensayar la defensa juntos, sigan [docs/PRUEBAS_STANDBY.md](PRUEBAS_STANDBY.md).
 > Las opciones 11 (correos de destino) y 12 (clave de Gmail) se usan en la principal; si después
 > de un failover su PC queda como principal, también puede usarlas usted.
 

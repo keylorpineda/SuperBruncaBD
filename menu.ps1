@@ -16,6 +16,9 @@ USO (PowerShell, en la carpeta del proyecto):
   powershell -ExecutionPolicy Bypass -File .\menu.ps1
   powershell -ExecutionPolicy Bypass -File .\menu.ps1 -Contenedor ora_standby
   powershell -ExecutionPolicy Bypass -File .\menu.ps1 -Opcion 1     (una sola opcion y sale)
+  powershell -ExecutionPolicy Bypass -File .\menu.ps1 -SinComandos  (no muestra los comandos SQL)
+
+  Cada opcion muestra en color los comandos SQL, RMAN y Docker reales que ejecuta.
 ================================================================================
 #>
 [CmdletBinding()]
@@ -24,7 +27,9 @@ param (
     [string]$Pdb = "PDBCADENA",
     [string]$Opcion = "",
     # Para pruebas automaticas: no pide escribir SI en las opciones peligrosas
-    [switch]$SinConfirmar
+    [switch]$SinConfirmar,
+    # Oculta los comandos SQL / RMAN que se ejecutan (por defecto se muestran)
+    [switch]$SinComandos
 )
 
 $ErrorActionPreference = "Continue"
@@ -60,8 +65,31 @@ function Contenedor-Encendido {
     return ((docker inspect -f "{{.State.Running}}" $script:Contenedor 2>$null) -eq "true")
 }
 
-# Ejecuta SQL como SYSDBA dentro del contenedor y devuelve el texto de salida
-function Invoke-Sql([string]$sql, [switch]$Silencioso) {
+# Muestra los comandos reales que se van a ejecutar, para que se vea que no es una simulacion
+function Mostrar-Comandos([string]$sql) {
+    if ($script:SinComandos) { return }
+    $lineas = @(($sql -replace "`r`n", "`n") -split "`n" | Where-Object { $_.Trim() -and $_ -notmatch "^\s*(SET |PROMPT|COLUMN |/\s*$)" })
+    if ($lineas.Count -eq 0) { return }
+    Write-Host "  [$($script:Contenedor)] sqlplus / as sysdba" -ForegroundColor DarkCyan
+    $sigue = $false
+    foreach ($l in $lineas) {
+        $prefijo = if ($sigue) { "       " } else { "  SQL> " }
+        Write-Host ($prefijo + $l.Trim()) -ForegroundColor DarkCyan
+        $t = $l.TrimEnd()
+        $sigue = -not ($t.EndsWith(";") -or $t -match "^(BEGIN|DECLARE)$")
+        if ($t -match "^(BEGIN|DECLARE)$") { $sigue = $true }
+    }
+}
+
+function Mostrar-Comando-SO([string]$cmd) {
+    if ($script:SinComandos) { return }
+    Write-Host "  [$($script:Contenedor)] `$ $cmd" -ForegroundColor DarkCyan
+}
+
+# Ejecuta SQL como SYSDBA dentro del contenedor y devuelve el texto de salida.
+# -SinEco: no muestra el comando (consultas internas del menu o comandos con una clave)
+function Invoke-Sql([string]$sql, [switch]$Silencioso, [switch]$SinEco) {
+    if (-not $SinEco) { Mostrar-Comandos $sql }
     $tmp = Join-Path $env:TEMP "menu_cadena.sql"
     $texto = "SET LINESIZE 200 PAGESIZE 100 FEEDBACK OFF SERVEROUTPUT ON SIZE UNLIMITED`nWHENEVER SQLERROR CONTINUE`n" +
              ($sql -replace "`r`n", "`n") + "`nEXIT;`n"
@@ -77,14 +105,17 @@ function Invoke-Sql([string]$sql, [switch]$Silencioso) {
 
 # Valor de una sola consulta (sin encabezados)
 function Get-Valor([string]$consulta) {
-    $r = Invoke-Sql "SET HEADING OFF`n$consulta" -Silencioso
-    return ("$r" -split "`n" | Where-Object { $_ -notmatch "^(ORA-|ERROR|\*)" } | Select-Object -First 1).Trim()
+    $r = Invoke-Sql "SET HEADING OFF`n$consulta" -Silencioso -SinEco
+    # Se descartan los mensajes de sqlplus ("ORA-...", "ERROR at line"), no un valor que sea la palabra ERROR
+    $v = "$r" -split "`n" | Where-Object { $_ -notmatch "^(ORA-|SP2-|ERROR at line|\*)" } | Select-Object -First 1
+    if ($null -eq $v) { return "" }
+    return $v.Trim()
 }
 
 function Get-Rol {
     # Marcador ROL= para no confundir el resultado con el eco del SELECT que sqlplus
     # muestra cuando la instancia esta apagada (ORA-01034) o en NOMOUNT
-    $salida = Invoke-Sql "SET HEADING OFF`nSELECT 'ROL=' || database_role || '|' || open_mode || '|' || db_unique_name FROM v`$database;" -Silencioso
+    $salida = Invoke-Sql "SET HEADING OFF`nSELECT 'ROL=' || database_role || '|' || open_mode || '|' || db_unique_name FROM v`$database;" -Silencioso -SinEco
     $linea = "$salida" -split "`n" | Where-Object { $_ -match "^ROL=" } | Select-Object -First 1
     if (-not $linea) { return @{ Rol = "SIN BASE"; Modo = "APAGADA"; Nombre = "-" } }
     $p = $linea.Substring(4) -split "\|"
@@ -100,6 +131,7 @@ function Confirmar([string]$mensaje) {
 function Esperar-Contenedor {
     if (-not (Contenedor-Encendido)) {
         Write-Host "Encendiendo el contenedor $($script:Contenedor)..."
+        if (-not $script:SinComandos) { Write-Host "  `$ docker start $($script:Contenedor)" -ForegroundColor DarkCyan }
         docker start $script:Contenedor | Out-Null
     }
     # La imagen de Oracle tarda en terminar su propio arranque
@@ -210,6 +242,7 @@ function Op-Respaldo {
     Write-Host "Respaldando (nivel $nivel). Tarda unos minutos..."
     docker exec -u root $script:Contenedor bash -c "mkdir -p /opt/oracle/backups /opt/oracle/logs && chown oracle:oinstall /opt/oracle/backups /opt/oracle/logs" | Out-Null
     $cmd = 'NIVEL_BACKUP=' + $nivel + ' bash 02_Traslado_Archivelogs_10min_y_Ondemand.sh backup ' + $dest + ' x /opt/oracle/backups /tmp/stby_bk 3 CADENA $ORACLE_HOME 10'
+    Mostrar-Comando-SO "cd $ScriptsStandby && $cmd   (RMAN: 04_RMAN_Backup_Full_Incremental.rman)"
     docker exec -u oracle -w $ScriptsStandby $script:Contenedor bash -c $cmd 2>&1 | Where-Object { $_ -match "\[OK\]|\[ERROR\]|RMAN:" } | ForEach-Object { Write-Host $_ }
     Write-Host "Respaldos en el contenedor: /opt/oracle/backups"
 }
@@ -384,7 +417,7 @@ function Op-ClaveGmail {
         $sql += "EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CORREO_EMISOR', 'CORREO', 'Correo emisor del sistema', 'Cuenta remitente de las notificaciones automaticas (Gmail autenticado).', 'N', '$v');`n"
     }
     $sql += "EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', '$clave');`n"
-    Invoke-Sql $sql -Silencioso | Out-Null
+    Invoke-Sql $sql -Silencioso -SinEco | Out-Null   # lleva la clave: nunca se muestra
     $clave = $null
     Write-Host "[OK] Clave guardada cifrada." -ForegroundColor Green
     # El wallet con los certificados de Gmail (se pierde el parametro al reinstalar el esquema)

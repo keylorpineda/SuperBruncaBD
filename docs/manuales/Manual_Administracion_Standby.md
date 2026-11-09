@@ -585,6 +585,8 @@ powershell -ExecutionPolicy Bypass -File .\menu.ps1
 | 12 | Clave de aplicación de Gmail (cifrada) y wallet SSL | Principal | Pasos 8 y 9 del Manual de Instalación |
 | 13 | Enviar una notificación ahora (submenú con los 10 avisos que mandan los jobs; muestra el asunto y si se entregó) | Principal | Procedimientos de `PKG_ADM_NOTIFICACION`, `PKG_VEN_OPERACION`, `PKG_INV_GESTION`, `PKG_ADM_MONITOREO`, `PKG_ADM_STANDBY` y `PKG_PRM_MERCADEO` |
 
+Cada opción muestra en pantalla, antes de ejecutarlo, el comando SQL, RMAN o Docker real que envía (por ejemplo `SQL> ALTER DATABASE SWITCHOVER TO CADENA_STBY;`), para que se vea que la operación ocurre de verdad. `-SinComandos` los oculta. La lista de pruebas para ensayar con las dos PC está en `docs/PRUEBAS_STANDBY.md`.
+
 ### 13.2 Qué hacer ante cada incidente
 
 | Síntoma | Causa probable | Qué hacer |
