@@ -3,7 +3,7 @@
 -- ARCHIVO:  04_Triggers_Negocio_y_Auditoria.sql
 -- CURSO:    Administracion de Bases de Datos
 -- FECHA:    Octubre 2026 - Avance 2
--- MOTOR:    Oracle Database 21c / 23ai / 26ai Free
+-- MOTOR:    Oracle Database 21c Enterprise Edition (compatible con 23ai / 26ai Free)
 -- DESCRIPCION:
 --   Implementacion de disparadores (triggers) de reglas de negocio automatizadas
 --   y disparadores de auditoria profunda en las 7 tablas principales del sistema.
@@ -200,7 +200,7 @@ BEGIN
          WHERE ID_PROVEEDOR = :NEW.ID_PROVEEDOR;
 
         IF v_estado_prov <> 'A' THEN
-            RAISE_APPLICATION_ERROR(-20014, 'El proveedor "' || v_codigo_prov || '" se encuentra inactivo para compras a credito.');
+            RAISE_APPLICATION_ERROR(-20017, 'El proveedor "' || v_codigo_prov || '" se encuentra inactivo para compras a credito.');
         END IF;
 
         -- Calculo explicito del total para evitar valor NULL de columna virtual en BEFORE trigger
@@ -214,7 +214,7 @@ BEGIN
         END IF;
 
         IF v_limite_max > 0 AND v_diferencia > 0 AND (v_saldo_actual + v_diferencia) > v_limite_max THEN
-            RAISE_APPLICATION_ERROR(-20015, 'Limite de credito otorgado por proveedor ' || v_codigo_prov || 
+            RAISE_APPLICATION_ERROR(-20018, 'Limite de credito otorgado por proveedor ' || v_codigo_prov || 
                                            ' excedido. Limite: C' || TO_CHAR(v_limite_max, '999,999,990.00') || 
                                            ', Saldo pendiente: C' || TO_CHAR(v_saldo_actual, '999,999,990.00') || 
                                            ', Monto factura: C' || TO_CHAR(v_diferencia, '999,999,990.00'));
@@ -222,7 +222,7 @@ BEGIN
     END IF;
 EXCEPTION
     WHEN NO_DATA_FOUND THEN
-        RAISE_APPLICATION_ERROR(-20016, 'El proveedor indicado no existe en el catalogo de proveedores.');
+        RAISE_APPLICATION_ERROR(-20019, 'El proveedor indicado no existe en el catalogo de proveedores.');
 END;
 /
 SHOW ERRORS TRIGGER TRG_COM_FACTURA_CRED_BIU;

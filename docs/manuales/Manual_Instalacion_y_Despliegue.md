@@ -13,7 +13,7 @@
 Diego Bonilla Mora  
 Pineda Alvarez Keylor Steven  
 
-Octubre del 2026
+Noviembre del 2026
 
 </div>
 
@@ -32,12 +32,12 @@ El presente manual describe paso a paso el procedimiento oficial para la instala
   * Oracle SQL Developer 23.x+ o DBeaver Community.
   * Oracle Recovery Manager (`rman`).
 * **Intérprete de Comandos:** Windows PowerShell 5.1 / PowerShell 7+ o GNU Bash.
-* **Memoria y almacenamiento:** cada contenedor usa hasta 2,5 GB de RAM (`--memory 2560m`, SGA 1024 MB, PGA 300 MB). Mínimo 15 GB libres en disco por base para datafiles, redo logs multiplexados, respaldos RMAN y archivado continuo.
+* **Memoria y almacenamiento:** cada contenedor usa hasta 2,5 GB de RAM (`--memory 2560m`, SGA 1024 MB, PGA 300 MB); para cargar el padrón completo conviene subir la principal a 3,5 GB (`docker update --memory 3584m --memory-swap 3584m ora_principal`). Mínimo 15 GB libres en disco por base para datafiles, redo logs multiplexados, respaldos RMAN y archivado continuo.
 
 ### 1.2 Parámetros de Red y Correo
 * **Puerto de Base de Datos:** 1521 TCP (Listener Oracle).
 * **Puerto de Envío SMTP:** 465 TCP (SMTPS con SSL / `smtp.gmail.com`); 587 con STARTTLS como alternativa.
-* **Destinatario Institucional de Pruebas:** `keylorpineda729@gmail.com` (configurado en `CADENA_NEG.SEG_PARAMETRO` para coordinadores, gerencia y DBA).
+* **Correos de destino:** el enunciado pide notificar a un correo externo definido antes de la defensa. Se guarda en `CADENA_NEG.SEG_PARAMETRO` (`CORREO_COORDINADOR`, `CORREO_GERENTE`, `CORREO_DBA`; se aceptan varios separados por coma) y se cambia en el momento con el menú, **opción 11** (Paso 9). El instalador deja `keylorpineda729@gmail.com` como valor inicial.
 
 ---
 
@@ -49,21 +49,24 @@ La solución se entrega organizada en scripts modulares e independientes, gobern
 | :--- | :--- | :--- |
 | `sql/script_bd_v2.sql` | DDL Base | Línea base del Entregable #1 (tablespaces, usuario `CADENA_NEG`, tablas transaccionales y catálogos). Se ejecuta antes del maestro. |
 | `sql/00_Master_Instalacion_Avance2.sql` | SQL Maestro | Orquestador de instalación integral en orden determinista. |
-| `sql/01_Estructuras_Avance2.sql` | DDL / DML | 11 tablas nuevas, secuencias, índices, 2 MV y datos semilla. |
+| `sql/01_Estructuras_Avance2.sql` | DDL / DML | 12 tablas nuevas, 2 tablas externas del padrón, secuencias, índices, 2 MV y datos semilla. |
 | `sql/02_Paquetes_Seguridad_Auditoria_Notificaciones.sql` | PL/SQL | Seguridad AES-256, auditoría autónoma y correo UTL_SMTP. |
 | `sql/03_Paquetes_Negocio_Monitoreo.sql` | PL/SQL | Padrón TSE, inventario, compras, ventas, mercadeo y salud. |
-| `sql/04_Triggers_Negocio_y_Auditoria.sql` | PL/SQL | 11 triggers de negocio y 7 triggers de bitácora profunda. |
+| `sql/04_Triggers_Negocio_y_Auditoria.sql` | PL/SQL | 21 triggers: 11 de negocio, 1 de parametrización y 9 de auditoría. |
 | `sql/05_Seguridad_Perfiles_Roles_Usuarios.sql` | SQL / DCL | Perfiles, 4 roles con clave cifrada, usuarios y pruebas de mínimos privilegios. |
-| `sql/06_Scheduler_Optimizacion_y_Pruebas.sql` | PL/SQL | 5 Jobs DBMS_SCHEDULER, EXPLAIN PLAN y 12 suites de prueba de extremo a extremo. |
+| `sql/06_Scheduler_Optimizacion_y_Pruebas.sql` | PL/SQL | 5 jobs de negocio y los 2 del padrón (DBMS_SCHEDULER), EXPLAIN PLAN y 12 pruebas de extremo a extremo. |
+| `menu.ps1` | Script PowerShell | Menú para operar el proyecto sin escribir comandos: estado, standby, respaldo, switchover, failover, correos de destino (opción 11) y clave de Gmail (opción 12). |
 | `sql/07_Standby_y_RMAN/` | Directorio | Configuración de la principal (redo 50 MB / 5 min), creación y sincronización de la standby en la segunda PC, RMAN, purga, switchover y failover. |
 | `sql/07_Standby_y_RMAN/07_Paquete_Jobs_Standby_RMAN.sql` | PL/SQL | Paquete `PKG_ADM_STANDBY` y 4 jobs DBMS_SCHEDULER: traslado cada 10 min, respaldo RMAN diario, purga de 3 días y monitoreo. |
+| `sql/07_Standby_y_RMAN/10_Enlace_Respaldos_DataGuard.sql` | SQL | Enlace de base de datos `LNK_STANDBY` para que los respaldos RMAN viajen a la standby con `DBMS_FILE_TRANSFER` (Data Guard). |
 | `sql/07_Standby_y_RMAN/docker/` | Configuración | `README.md` para levantar los contenedores `ora_principal` y `ora_standby`, y los archivos de red de Data Guard `tnsnames_dataguard.ora` y `listener_standby.ora`. El archivo local `oracle_ee.env` (clave) no se versiona. |
 | `sql/08_Wallet_SMTP_Gmail.sh` | Script SO | Crea el Oracle Wallet auto-login con los certificados raíz de Gmail para `UTL_SMTP` y registra `SMTP_WALLET_PATH` (Paso 8). |
 | `datos/padron/Descargar_Padron_TSE.ps1` / `.sh` | Script SO | Descarga `padron_completo.zip` del TSE y deja `PADRON_COMPLETO.txt` y `DISTELEC.txt` en `DIR_PADRON`. |
 | `datos/padron/padron_muestra.csv` | Datos externos | Archivo CSV muestra del padrón electoral para prueba de UTL_FILE. |
 | `docs/manuales/` | Documentación | Los 3 manuales oficiales (`.md` y `.pdf`) y `generar_manuales_pdf.py`, que regenera los PDF. |
 | `docs/entregable1/` | Documentación | Diccionario de datos, documentación técnica y modelo relacional del Entregable #1. |
-| `docs/` (guías) | Documentación | `GUIA_PASO_A_PASO.md`, `GUIA_PADRON_TSE.md` y `GUIA_DEFENSA.md`. |
+| `docs/modelo/` | Documentación | Modelo relacional del Avance 2 en formato DBML (dbdiagram.io) y la justificación de sus desnormalizaciones. |
+| `docs/` (guías) | Documentación | `GUIA_PASO_A_PASO.md`, `GUIA_COMPANERO_PC_STANDBY.md`, `GUIA_PADRON_TSE.md`, `GUIA_DEFENSA.md` y `RESUMEN_DEFENSA.md`. |
 
 ---
 
@@ -112,7 +115,7 @@ El script maestro ejecuta de forma consecutiva las siete fases del avance:
 2. Configura el directorio lógico `DIR_PADRON` apuntando a la ruta física de datos para carga de archivos con `UTL_FILE`.
 3. Ejecuta limpieza idempotente de tablas, secuencias y vistas materializadas preexistentes.
 4. Modifica tablas base del Entregable #1 adicionando columnas de enlace electoral (`ID_PADRON` en `PER_CLIENTE`).
-5. Crea las **11 tablas nuevas**:
+5. Crea las **12 tablas nuevas** y las 2 tablas externas del padrón:
    * `CAT_PADRON`: Almacenamiento optimizado del padrón electoral nacional.
    * `CAT_DISTRITO_ELECTORAL`: Nombres oficiales de provincia, cantón y distrito electoral (`DISTELEC.txt`).
    * `EXT_PADRON_TSE` y `EXT_DISTELEC_TSE`: Tablas externas (Latin-1) que leen los archivos oficiales del TSE sin copiarlos; vista `V_PADRON_DETALLE`.
@@ -141,9 +144,9 @@ El script maestro ejecuta de forma consecutiva las siete fases del avance:
 3. Compila el procedimiento público `PRC_ACTIVAR_ROL_SESION` con `AUTHID CURRENT_USER`:
    * Permite a los usuarios autenticados activar sus roles protegidos desencriptando la clave en memoria y ejecutando `DBMS_SESSION.SET_ROLE`.
 4. Compila el paquete `PKG_ADM_NOTIFICACION`:
-   * Envío directo de correos sin requerir VPN mediante `UTL_SMTP` y comandos EHLO/STARTTLS/AUTH LOGIN.
+   * Envío directo de correos sin requerir VPN mediante `UTL_SMTP`: conexión SSL al puerto 465 (o `STARTTLS` si se configura el 587), `EHLO` y `AUTH LOGIN`. Cada correo sale en texto y en HTML adaptable al celular.
    * Implementa `PR_NOTIF_CLIENTES_85_CREDITO`, `PR_NOTIF_PROVEEDORES_70_CREDITO`, `PR_NOTIF_CLIENTES_MOROSOS` y `PR_NOTIF_PRODUCTOS_VENCIDOS`.
-5. Configura la lista de control de acceso de red (ACL) en el puerto 587 para permitir la salida SMTP desde Oracle.
+5. Configura la lista de control de acceso de red (ACL, `DBMS_NETWORK_ACL_ADMIN.APPEND_HOST_ACE` con `connect` y `resolve`) para permitir que `CADENA_NEG` salga a Internet por `UTL_SMTP`.
 
 ### Paso 3: Paquetes de Negocio y Monitoreo (`03_Paquetes_Negocio_Monitoreo.sql`)
 1. `PKG_PER_PADRON`: Carga masiva del padrón oficial del TSE (`PR_CARGAR_PADRON_MASIVO`, tablas externas y `MERGE` por provincia), carga fila por fila con validación para archivos pequeños (`PR_CARGAR_PADRON_TSE`), actualización mensual automática (`JOB_PADRON_MENSUAL`) y `PR_CREAR_CLIENTE_DESDE_PADRON`.
@@ -186,7 +189,7 @@ Compila 21 disparadores en estado `ENABLED`:
    * Conexión como `USR_GERENTE`: Activa su rol; consulta las vistas materializadas ejecutivas; intenta un `INSERT` operativo y es **rechazado por mínimo privilegio**.
 
 ### Paso 6: Automatización DBMS_SCHEDULER, Optimización SQL y Pruebas (`06_Scheduler_Optimizacion_y_Pruebas.sql`)
-1. Programa los **5 Jobs en Segundo Plano**:
+1. Programa los **5 jobs de negocio** (y configura los 2 del padrón, `JOB_PADRON_MENSUAL` y `JOB_PADRON_DESCARGA`, con `PKG_PER_PADRON.PR_CONFIGURAR_JOBS_PADRON`):
    * `JOB_CIERRE_DIARIO_AUTO`: Diario a las 23:00 (cierre consolidado y por cajero).
    * `JOB_MONITOREO_SALUD_DIARIO`: Diario a las 06:00 (tablespaces, objetos, índices).
    * `JOB_NOTIF_CREDITOS_DIARIO`: Diario a las 07:00 (alertas de crédito, morosidad y vencidos).
@@ -234,15 +237,23 @@ orapki wallet add -wallet C:\app\oracle\wallet_smtp -trusted_cert -cert C:\temp\
 EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('SMTP_WALLET_PATH', 'CORREO', 'Ruta del Oracle Wallet SMTP', 'Wallet auto-login con los certificados raiz de Gmail para UTL_SMTP (SSL/TLS).', 'N', 'file:C:\app\oracle\wallet_smtp');
 ```
 
-### Paso 9: Clave de aplicación de Gmail
+### Paso 9: Clave de aplicación de Gmail y correos de destino
 La clave sembrada por el instalador es solo de ejemplo. Antes de la defensa:
 
 1. En la cuenta de Google del correo emisor: **Gestionar tu cuenta** → **Seguridad** → **Verificación en 2 pasos** → **Contraseñas de aplicaciones**. Crear una y copiar las 16 letras.
-2. Guardarla cifrada con AES-256 (en `PDBCADENA`):
+2. Guardarla cifrada con AES-256. **Forma fácil:** `menu.ps1`, **opción 12** (pide la clave sin mostrarla, la guarda cifrada y crea el wallet del Paso 8). **Forma manual** (en `PDBCADENA`):
    ```sql
    EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', '<clave de aplicacion de 16 letras>');
    ```
-3. Probar: `EXEC CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_PRODUCTOS_VENCIDOS;` y revisar `CADENA_NEG.AUD_ERROR_SISTEMA` si no llega.
+3. Definir los correos de destino (el correo externo que se indique para la defensa). **Forma fácil:** `menu.ps1`, **opción 11**: muestra los valores actuales, pide un correo (o varios separados por coma) para todas las alertas o uno por cada destinatario, valida que estén bien escritos, los guarda y ofrece mandar un correo de prueba. Opcionalmente también pone ese correo a los clientes, para que en la defensa lleguen los avisos individuales de "crédito al 85 %". **Forma manual:**
+   ```sql
+   EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CORREO_COORDINADOR', 'CORREO', 'Correo del coordinador', 'Destinatario de alertas de mercadeo, clientes 85%, vencidos y cierres.', 'N', 'correo@ejemplo.com');
+   EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CORREO_GERENTE', 'CORREO', 'Correo del gerente', 'Destinatario de alertas de proveedores 70%, morosidad y cierres diarios.', 'N', 'correo@ejemplo.com');
+   EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CORREO_DBA', 'CORREO', 'Correo del administrador BD', 'Destinatario de alertas de tablespaces, objetos invalidos e indices danados.', 'N', 'correo@ejemplo.com');
+   ```
+4. Probar: `EXEC CADENA_NEG.PKG_ADM_NOTIFICACION.PR_NOTIF_PRODUCTOS_VENCIDOS;` (o el correo de prueba de la opción 11) y revisar `CADENA_NEG.AUD_ERROR_SISTEMA` si no llega. Verificado en Oracle 21c EE: la opción 11 rechaza un correo mal escrito, guarda el correcto y el correo de prueba termina con `Notificacion entregada al servidor de correo`.
+
+> Al reinstalar el esquema (`script_bd_v2.sql` + maestro) se vuelven a sembrar los valores de ejemplo: repita las opciones 12 y 11 del menú.
 
 ### Paso 10: Carga del Padrón Nacional Electoral oficial (TSE)
 El enunciado pide cargar el padrón **con la información actual**. Las pruebas del paso 6 usan un archivo pequeño (`PADRON_PRUEBA.TXT`); el padrón real se carga así:
@@ -256,13 +267,13 @@ El enunciado pide cargar el padrón **con la información actual**. Las pruebas 
    .\datos\padron\Descargar_Padron_TSE.ps1 -Destino <carpeta de DIR_PADRON>
    ```
    En Docker: `docker exec -it -u oracle ora_principal bash /opt/oracle/proyecto/datos/padron/Descargar_Padron_TSE.sh https://www.tse.go.cr/zip/padron/padron_completo.zip /opt/oracle/oradata/CADENA/PDBCADENA`
-3. Cargarlo. Verificado en Oracle 26ai Free (Docker) con el padrón del 30/09/2026: 3.762.240 personas, 0 rechazos, 2.179 distritos electorales, unos 39 minutos y 553 MB. Las cargas mensuales siguientes solo reescriben a las personas que cambiaron. El padrón oficial no publica el sexo (su campo 3 es `RELLENO`), por eso se guarda `N` = no indicado.
+3. Cargarlo. Verificado en Oracle 21c EE (Docker, con Data Guard activo) con el padrón del 30/09/2026: 3.762.240 personas, 0 rechazos, 2.179 distritos electorales, unos 52 minutos (más lento que sin Data Guard porque cada cambio viaja también a la standby) y unos 765 MB entre tabla e índices; la standby lo recibió completo con atraso 0. Las cargas mensuales siguientes solo reescriben a las personas que cambiaron. El padrón oficial no publica el sexo (su campo 3 es `RELLENO`), por eso se guarda `N` = no indicado.
    ```sql
    SET SERVEROUTPUT ON
    EXEC CADENA_NEG.PKG_PER_PADRON.PR_CARGAR_PADRON_MASIVO;
    SELECT * FROM CADENA_NEG.V_PADRON_DETALLE WHERE cedula_padr = '<una cedula real>';
    ```
-4. Desde entonces `JOB_PADRON_MENSUAL` lo descarga y recarga solo el día `PADRON_DIA_CARGA` (5) de cada mes. La descarga automática usa la misma credencial del SO del paso 7.
+4. Desde entonces `JOB_PADRON_MENSUAL` lo descarga y recarga solo el día `PADRON_DIA_CARGA` (5) de cada mes. La descarga automática la hace `JOB_PADRON_DESCARGA` con la misma credencial del SO del paso 7 (verificado en Oracle 21c EE: descargó y descomprimió el padrón del TSE en unos 40 segundos).
 
 Las líneas rechazadas quedan en `padron_tse.bad` y el detalle en `padron_tse.log`, dentro de la misma carpeta.
 
@@ -287,23 +298,23 @@ SELECT object_type, status, COUNT(*) AS cantidad
 * **PACKAGE:** 10 (todos `VALID`, incluye `PKG_ADM_STANDBY`).
 * **PACKAGE BODY:** 10 (todos `VALID`).
 * **TRIGGER:** 21 (todos `VALID` y `ENABLED`).
-* **JOB (Scheduler):** 11: los 5 de negocio, `JOB_PADRON_MENSUAL` y `JOB_STANDBY_MONITOREO` en `SCHEDULED`; los jobs externos (3 del standby y `JOB_PADRON_DESCARGA`) se habilitan al registrar la credencial.
+* **JOB (Scheduler):** 11: los 5 de negocio, `JOB_PADRON_MENSUAL` y `JOB_STANDBY_MONITOREO` en `SCHEDULED`; los 3 jobs externos del standby se habilitan al registrar la credencial. `JOB_PADRON_DESCARGA` no tiene horario propio: al habilitarse se ejecuta una vez y queda `SUCCEEDED` / deshabilitado, y `JOB_PADRON_MENSUAL` lo vuelve a lanzar cada mes con `DBMS_SCHEDULER.RUN_JOB` (que funciona aunque esté deshabilitado).
 * **VIEW:** 7 (todas `VALID`, incluye `V_PADRON_DETALLE`).
 * **MATERIALIZED VIEW:** 2 (`MV_VENTAS_MENSUALES`, `MV_INVENTARIO_CONSOLIDADO`, `VALID`).
 * **PROCEDURE:** 1 (`PRC_ACTIVAR_ROL_SESION`, `VALID`).
 * **TOTAL DE OBJETOS INVÁLIDOS:** **0**.
 
 ### 5.2 Comprobación de Parámetros de Notificación
-Para constatar la parametrización del correo del evaluador:
+Para constatar los correos de destino (o verlos con la opción 11 del menú):
 
 ```sql
 SELECT codigo_para, valor_texto_para 
   FROM CADENA_NEG.SEG_PARAMETRO 
  WHERE codigo_para LIKE '%CORREO%';
 ```
-* `CORREO_COORDINADOR`: `keylorpineda729@gmail.com`
-* `CORREO_GERENTE`: `keylorpineda729@gmail.com`
-* `CORREO_DBA`: `keylorpineda729@gmail.com`
+* `CORREO_COORDINADOR`, `CORREO_GERENTE`, `CORREO_DBA`: el correo externo definido para la defensa (valor inicial `keylorpineda729@gmail.com`).
+* `CORREO_EMISOR`: la cuenta de Gmail que envía.
+* `CLAVE_CORREO_EMISOR`: no aparece en `VALOR_TEXTO_PARA` porque está cifrada (`ES_CIFRADO_PARA = 'S'`, valor en `VALOR_RAW_PARA`).
 
 ---
 
@@ -342,3 +353,21 @@ SELECT codigo_para, valor_texto_para
      ```sql
      ALTER USER USR_DIGITADOR ACCOUNT UNLOCK;
      ```
+
+5. **Error `535 Username and Password not accepted` al enviar correo:**
+   * *Causa:* la clave de aplicación de Gmail es la de ejemplo, se escribió mal o se revocó en la cuenta de Google.
+   * *Solución:* generar una nueva contraseña de aplicación y guardarla con `menu.ps1`, opción 12 (Paso 9).
+
+6. **El correo de prueba no llega pero no hay error:**
+   * *Causa:* el destinatario está mal escrito o Gmail lo dejó en *Spam*.
+   * *Solución:* revisar los destinatarios con la opción 11 del menú y la carpeta de *Spam*; los errores de envío quedan en `CADENA_NEG.AUD_ERROR_SISTEMA`.
+
+7. **Un procedimiento rechaza una operación con `ORA-200xx`:**
+   * *Causa:* es una regla de negocio del sistema (límite de crédito, existencia insuficiente, proveedor inactivo, etc.), no una falla.
+   * *Solución:* buscar el código en el catálogo de errores (sección 5.2 del **Manual Técnico de Administración y Mantenimiento**); cada código tiene un único significado.
+
+8. **`ORA-01034: ORACLE not available` o el contenedor aparece apagado:**
+   * *Causa:* se reinició la computadora o Docker, o el contenedor se quedó sin memoria.
+   * *Solución:* `docker start ora_principal` y esperar a que `docker ps` muestre `(healthy)`; la opción 1 del menú indica el estado. Para la standby use la opción 2 del menú (la arranca y reanuda la sincronización).
+
+Los problemas propios del standby (sincronización detenida, huecos de archivelogs, cambio de roles) se atienden en la sección 10 ("Acciones que pueden no replicarse y cómo actuar") y la sección 13 (incidentes) del **Manual de Administración del Standby**.

@@ -61,10 +61,12 @@ El menú detecta solo si en esa PC está `ora_principal` u `ora_standby` y qué 
 | 8 | Failover: la principal se cayó | Standby |
 | 9 | Consola SQL ya conectada al proyecto (`PDBCADENA`) | Cualquiera |
 | 10 | Consola SYSDBA | Cualquiera |
+| 11 | Correos de destino de las notificaciones (el correo externo de la defensa), con correo de prueba | Principal |
+| 12 | Clave de aplicación de Gmail (se guarda cifrada) y wallet SSL | Principal |
 
 Las opciones 6 y 8 piden escribir `SI` y se niegan si se eligen en la PC equivocada.
 **Switchover con el menú:** principal → 6; la otra PC → 7; la que era principal → 2.
-Probado en Oracle 21c EE: estado, sincronización, respaldo, solo lectura y switchover de ida y vuelta.
+Probado en Oracle 21c EE: estado, sincronización, respaldo, solo lectura, switchover de ida y vuelta y cambio de correos de destino con correo de prueba (opción 11).
 
 ## Empiece aquí
 

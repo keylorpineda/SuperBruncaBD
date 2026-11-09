@@ -13,7 +13,7 @@
 Diego Bonilla Mora  
 Pineda Alvarez Keylor Steven  
 
-Octubre del 2026
+Noviembre del 2026
 
 </div>
 
@@ -78,6 +78,7 @@ Todos los archivos de esta tabla están en la carpeta `sql/07_Standby_y_RMAN/` d
 | Failover, switchover, recuperación y sincronización | Procedimientos para modo manual y Data Guard | `06_Standby_Switchover_y_Failover.sql` |
 | Replicar todas las acciones y manual ante inconvenientes | `FORCE LOGGING`, `STANDBY_FILE_MANAGEMENT=AUTO` y guía de incidentes | Sección 10 |
 | Procesos automáticos con DBMS_SCHEDULER | 4 jobs administrados por `PKG_ADM_STANDBY` | Sección 5 |
+| Operación sencilla y guía de incidentes | `menu.ps1` (raíz del repositorio) y tabla de incidentes | Sección 13 |
 
 ---
 
@@ -263,7 +264,7 @@ Si algo falla, el script termina con código 1; así DBMS_SCHEDULER marca el job
 
 `&1` es el valor de `STANDBY_PURGE_DIAS`. RMAN no borra un archivelog que no cumpla la política: muestra `RMAN-08120` y lo conserva. En modo manual RMAN avisa `RMAN-08591` (no hay destino standby registrado) y exige solo el respaldo; que el archivo ya llegó a la PC 2 lo garantiza el traslado cada 10 minutos, vigilado por `JOB_STANDBY_MONITOREO`.
 
-> Verificado en Oracle 26ai Free (Docker, modo manual): con 86 archivelogs, la purga eliminó los 41 que tenían más de 3 días y ya estaban respaldados.
+> Verificado en modo manual (prueba previa con Oracle 26ai Free en Docker, sin Data Guard): con 86 archivelogs, la purga eliminó los 41 que tenían más de 3 días y ya estaban respaldados.
 >
 > Verificado en Oracle 21c EE con Data Guard (con 0 días, de prueba): la purga borró solo los archivelogs aplicados en la standby **y** respaldados; avisó `RMAN-08120` (aún no aplicado) y `RMAN-08138` (falta respaldo) y conservó esos archivos.
 
@@ -547,12 +548,55 @@ monitoreo reporta "Standby sincronizado: sin inconsistencias".
 
 # 12. Guion para la demostración
 
-Con Data Guard (sección 11), con las dos bases sincronizadas y la standby en `READ ONLY WITH APPLY`:
+Con Data Guard (sección 11), con las dos bases sincronizadas y la standby en `READ ONLY WITH APPLY`. Entre paréntesis, la opción de `menu.ps1` que hace lo mismo:
 
-1. **PC 1:** `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_ESTADO_STANDBY;` y `SELECT dest_id, status, gap_status FROM v$archive_dest_status WHERE dest_id = 2;` – destino `VALID`, sin huecos.
-2. **PC 2:** `SELECT database_role, open_mode FROM v$database;` (`PHYSICAL STANDBY` / `READ ONLY WITH APPLY`) y `SELECT name, value FROM v$dataguard_stats WHERE name LIKE '%lag';` (lag 0).
+1. **PC 1 (opción 1):** `EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_ESTADO_STANDBY;` y `SELECT dest_id, status, gap_status FROM v$archive_dest_status WHERE dest_id = 2;` – destino `VALID`, sin huecos.
+2. **PC 2 (opción 1):** `SELECT database_role, open_mode FROM v$database;` (`PHYSICAL STANDBY` / `READ ONLY WITH APPLY`) y `SELECT name, value FROM v$dataguard_stats WHERE name LIKE '%lag';` (lag 0).
 3. **PC 1:** insertar una factura de prueba (o crear la tabla `CADENA_NEG.DG_PRUEBA` con una fila) y `COMMIT`.
-4. **PC 2:** consultarla en `PDBCADENA` a los pocos segundos: la sincronización es automática.
-5. **PC 1:** respaldo RMAN a petición (`EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_RESPALDAR_AHORA;`, o el orquestador en modo `backup` si la credencial del SO no está registrada) y purga (`PR_PURGAR_AHORA` o modo `purga`).
-6. **Switchover** (11.10): la PC 2 pasa a principal, se consulta la factura en ella y se devuelven los roles con `SWITCHOVER TO CADENA`.
-7. **Failover** (11.11), al final: detener la PC 1 (en Docker `docker kill ora_principal`), activar la PC 2 y consultar la factura en la base activada. Si hay tiempo, recuperar la PC 1 como standby (11.12).
+4. **PC 2 (opción 5):** consultarla en `PDBCADENA` a los pocos segundos: la sincronización es automática.
+5. **PC 1 (opción 4):** respaldo RMAN a petición (`EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_RESPALDAR_AHORA;`, o el orquestador en modo `backup` si la credencial del SO no está registrada) y purga (`PR_PURGAR_AHORA` o modo `purga`).
+6. **Switchover** (opciones 6 y 7; sección 11.10): la PC 2 pasa a principal, se consulta la factura en ella y se devuelven los roles con `SWITCHOVER TO CADENA`.
+7. **Failover** (opciones 8 y 7; sección 11.11), al final: detener la PC 1 (en Docker `docker kill ora_principal`), activar la PC 2 y consultar la factura en la base activada. Si hay tiempo, recuperar la PC 1 como standby (11.12).
+
+---
+
+# 13. Operación con el menú y guía de incidentes
+
+### 13.1 Menú (`menu.ps1`)
+
+Para no escribir comandos de Oracle a mano durante la operación diaria o la defensa, en la raíz del repositorio está `menu.ps1`. Funciona en las dos PC: detecta si en esa computadora está `ora_principal` u `ora_standby` y qué rol tiene la base en ese momento.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\menu.ps1
+```
+
+| Opción | Qué hace | Dónde | Equivale a |
+| :-: | :--- | :--- | :--- |
+| 1 | Estado: rol y modo, destino 2 de Data Guard y huecos, procesos `MRP0`/`RFS`, atraso; en la principal además objetos inválidos, jobs habilitados, personas del padrón y facturas | Las dos | Secciones 9.1 y 11.8 |
+| 2 | Arranca / reanuda la standby después de reiniciar (la deja `READ ONLY WITH APPLY`) | Standby | Secciones 11.8 y 11.9 |
+| 3 | En la principal: reactiva el destino 2 (pasa por `DEFER` si quedó en `ERROR`), cierra el redo actual y muestra el envío. En la standby: muestra el atraso y los procesos | Las dos | `ALTER SYSTEM ARCHIVE LOG CURRENT` |
+| 4 | Respaldo RMAN ahora (nivel 0 o 1) en `/opt/oracle/backups` con el orquestador; el traslado a la standby lo hace el job o `PR_RESPALDAR_AHORA` | Principal | Sección 8.1 |
+| 5 | Muestra datos del proyecto en la standby (solo lectura) | Standby | Sección 11.9 |
+| 6 | Switchover hacia la otra PC (pide escribir `SI`) | Principal | Sección 11.10 |
+| 7 | Abre como nueva principal (después de la 6 o de la 8) | La nueva principal | Secciones 11.10 y 11.11 |
+| 8 | Failover: la principal se perdió (pide escribir `SI`) | Standby | Sección 11.11 |
+| 9 / 10 | Consola SQL\*Plus en `PDBCADENA` / en la CDB como SYSDBA | Las dos | — |
+| 11 | Correos de destino de las notificaciones (el correo externo de la defensa) | Principal | `PR_GUARDAR_PARAMETRO` de `CORREO_*` |
+| 12 | Clave de aplicación de Gmail (cifrada) y wallet SSL | Principal | Pasos 8 y 9 del Manual de Instalación |
+
+### 13.2 Qué hacer ante cada incidente
+
+| Síntoma | Causa probable | Qué hacer |
+| :--- | :--- | :--- |
+| Después de reiniciar la PC 2, la opción 1 dice `SIN BASE` / `APAGADA` o `MOUNTED` sin `MRP0` | La imagen de Docker no levanta sola una standby | Opción 2 del menú (o `STARTUP MOUNT` + el comando de la sección 11.8). |
+| En la principal `v$archive_dest_status` muestra el destino 2 en `ERROR` (`ORA-12541`, `ORA-12514`) | La PC 2 estaba apagada, cambió de IP o el firewall bloquea el 1521 | Encender la standby (opción 2), revisar `ping` y `tnsping STANDBY_TNS`, abrir el puerto 1521 en el firewall de la PC 2 y luego opción 3 (reactiva el destino y se pone al día sola con `FAL_SERVER`). |
+| `transport lag` o `apply lag` crecen y no bajan | Red lenta o `MRP0` detenido | Opción 1 para ver si `MRP0` está `APPLYING_LOG`; si no, opción 2. Si el lag es de transporte, revisar la red. `JOB_STANDBY_MONITOREO` envía correo al DBA si supera `STANDBY_MAX_LAG_MIN`. |
+| `gap_status` distinto de `NO GAP` | Faltan archivelogs en la standby | Opción 3. Si el archivo ya no existe en la principal: `BACKUP INCREMENTAL FROM SCN <scn de la standby> DATABASE` en la principal y `RECOVER` en la standby (sección 10). |
+| `ORA-16047: DGID mismatch` | `log_archive_config` vacío o distinto en la standby | `ALTER SYSTEM SET log_archive_config='DG_CONFIG=(CADENA,CADENA_STBY)' SCOPE=BOTH;` en la standby (nota de la sección 11.6). |
+| `ORA-01017` / `ORA-16191` al enviar redo | El archivo de claves de las dos PC es distinto | Volver a copiar `orapwCADENA` de la principal a la standby (sección 11.4). |
+| Un job `EXECUTABLE` queda `FAILED` | Credencial del SO vencida o clave cambiada | `PR_REGISTRAR_CREDENCIAL_OS` con la clave nueva; ver el detalle en `DBA_SCHEDULER_JOB_RUN_DETAILS` y en la bitácora del orquestador. |
+| La copia del respaldo a la standby falla (`ORA-02019`, `ORA-12514` en `LNK_STANDBY`) | La standby no está abierta en `READ ONLY WITH APPLY` | Opción 2 en la PC 2; luego opción 4 o `PR_RESPALDAR_AHORA`. |
+| La purga no borra nada (`RMAN-08120` / `RMAN-08138`) | Es lo esperado: esos archivelogs aún no se aplicaron o no se respaldaron | No hacer nada; se borran en la siguiente purga cuando cumplan la política (sección 7). |
+| La principal se perdió por completo | Desastre (disco, energía, robo) | Opción 8 en la PC 2 y luego opción 7: la PC 2 queda como principal con 0 pérdida. Cambiar la conexión de las cajas a la IP de la PC 2. Recuperar la PC 1 como standby con la sección 11.12. |
+| Después de un failover la antigua principal no vuelve como standby (`RMAN-06023`) | El respaldo usado no es autosuficiente | Usar un nivel 0 nuevo de la nueva principal (el script usa `BACKUP OPTIMIZATION OFF`) y repetir la sección 11.12. |
+| Wi-Fi de la universidad: las dos PC no se ven (`ping` falla aunque estén en la misma red) | Aislamiento de clientes en la red inalámbrica | Conectar las dos PC al punto de acceso de un celular, o con un cable de red directo, y actualizar las IP en `tnsnames.ora` (sección 11.1). |

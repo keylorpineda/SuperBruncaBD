@@ -120,7 +120,8 @@ externas del padrón + 2 contenedores de vistas materializadas), 225 índices, 1
 ### 2.8 Límites al facturar a crédito (clientes y proveedores)
 - **Cómo:** `TRG_VEN_FACTURA_CRED_BIU` y `TRG_COM_FACTURA_CRED_BIU` (BEFORE INSERT OR UPDATE).
   Si saldo actual + factura supera `MONTO_MAX_CREDITO_CLI` (o `LIMITE_CREDITO_PROVE`), lanzan
-  `ORA-20010` (cliente) / `ORA-20015` (proveedor) y la factura **no se guarda** con estado pendiente.
+  `ORA-20010` (cliente) / `ORA-20018` (proveedor) y la factura **no se guarda** con estado pendiente.
+  Cada error del sistema tiene su propio código (catálogo en el Manual Técnico, sección de errores).
 - **Demostrar:** prueba 10: venta de 50 millones a crédito → rechazo, y se verifica que no quedó
   ni la factura ni la cuenta por cobrar (atomicidad con `ROLLBACK TO SAVEPOINT`).
 
@@ -174,6 +175,9 @@ externas del padrón + 2 contenedores de vistas materializadas), 225 índices, 1
     negocio continúa (la factura no se pierde porque falle un correo).
   - *¿Se puede mandar a cualquier correo?* Sí, cambiando `CORREO_COORDINADOR`, `CORREO_GERENTE`
     o `CORREO_DBA` (varios separados por coma).
+  - *El enunciado dice que el correo externo se define antes de la defensa: ¿cómo lo cambian?*
+    En el momento, con `menu.ps1`, **opción 11**: pide el correo, lo valida, lo guarda en
+    `SEG_PARAMETRO` y manda un correo de prueba. No hay que tocar código.
 
 ---
 
@@ -373,9 +377,10 @@ externas del padrón + 2 contenedores de vistas materializadas), 225 índices, 1
 | :--- | :--- |
 | ¿Qué es un PDB/CDB? | Oracle 21c es multitenant: el contenedor `CADENA` (CDB) tiene adentro bases "enchufables"; el proyecto vive en el PDB `PDBCADENA`. Los parámetros de redo, archivado y Data Guard son del CDB. |
 | ¿Por qué Enterprise Edition? | Porque Data Guard (standby administrada, switchover y failover) solo viene en EE. Hay un "modo manual" para XE/Free como respaldo. |
-| ¿Está la base en 5FN? | El modelo base (Entregable 1) sí, con 2 desnormalizaciones declaradas. El Avance 2 agrega **desnormalizaciones controladas** que pide el enunciado (saldos de clientes y proveedores, saldos de cuentas, totales del cierre como fotografía histórica); las mantienen los triggers para que no se desincronicen. |
+| ¿Está la base en 5FN? | El modelo base (Entregable 1) sí, con 2 desnormalizaciones declaradas. El Avance 2 agrega **desnormalizaciones controladas** que pide el enunciado (saldos de clientes y proveedores, saldos de cuentas, totales del cierre como fotografía histórica); las mantienen los triggers para que no se desincronicen. La lista completa, con de dónde sale cada dato y quién lo mantiene, está en `docs/modelo/README.md` (sección "Desnormalizaciones del Avance 2"). |
 | ¿Por qué `PRAGMA AUTONOMOUS_TRANSACTION` en la auditoría? | Para que el registro de error o bitácora se confirme aunque la transacción principal haga rollback. |
 | ¿Qué pasa si la standby se apaga? | La principal sigue trabajando (ASYNC); al volver, Data Guard detecta el hueco y lo rellena solo (`FAL_SERVER`). El monitoreo avisa al DBA mientras tanto. |
+| ¿Por qué cada error tiene un código distinto? | Para saber exactamente qué regla falló al ver el código en pantalla o en `AUD_ERROR_SISTEMA`. El catálogo está en la sección 5.2 del Manual Técnico (por ejemplo `-20010` límite del cliente, `-20015` sin existencia, `-20018` límite del proveedor). |
 | ¿Qué es RPO y RTO aquí? | RPO (datos que se pueden perder): segundos con Data Guard en tiempo real. RTO (tiempo para volver a operar): lo que tarda el failover, unos minutos. |
 | ¿Qué diferencia hay entre respaldo nivel 0 y 1? | Nivel 0 copia todos los bloques (base del incremental); nivel 1 solo los bloques cambiados desde el último respaldo. |
 | ¿Cómo se restaura a una hora antes de un error humano? | Recuperación a un punto en el tiempo: `SET UNTIL TIME`, `RESTORE`, `RECOVER` y `OPEN RESETLOGS` (escenario 2 del script 05). Después hay que recrear la standby. |
@@ -389,12 +394,9 @@ externas del padrón + 2 contenedores de vistas materializadas), 225 índices, 1
   declarada en el Manual Técnico; en producción iría en un Oracle Wallet.
 - **Las claves de los usuarios de prueba están en el script 05** (repositorio público). Conviene
   cambiarlas antes de la defensa.
-- **El código `-20015` se usa para dos errores:** existencia insuficiente (`PKG_INV_GESTION`) y
-  límite de crédito de proveedor (`TRG_COM_FACTURA_CRED_BIU`). El mensaje los distingue, pero un
-  profesor puede notarlo.
 - **La red entre dos PC reales** (IPs, firewall, Wi-Fi de la universidad) no se probó: todo se
   verificó con dos contenedores en una PC. Plan B: hotspot de un celular.
 - **Al reinstalar el esquema se borran la clave de Gmail y el parámetro del wallet:** hay que
-  volver a guardarlos (Paso 9 del Manual de Instalación y `08_Wallet_SMTP_Gmail.sh`).
+  volver a guardarlos con el menú (opción 12 la clave y el wallet, opción 11 los destinatarios).
 - **Active Data Guard** (abrir la standby en solo lectura mientras aplica) es una opción con
   licencia aparte en producción; para el curso se usa con la licencia de desarrollo.

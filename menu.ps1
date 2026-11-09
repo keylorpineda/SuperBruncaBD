@@ -68,6 +68,7 @@ function Invoke-Sql([string]$sql, [switch]$Silencioso) {
     [IO.File]::WriteAllText($tmp, $texto, (New-Object Text.UTF8Encoding $false))
     docker cp $tmp "$($script:Contenedor):/tmp/menu_cadena.sql" 2>$null | Out-Null
     $salida = docker exec -u oracle $script:Contenedor sqlplus -s "/ as sysdba" "@/tmp/menu_cadena.sql" 2>&1
+    docker exec -u root $script:Contenedor rm -f /tmp/menu_cadena.sql 2>$null | Out-Null   # puede contener una clave
     Remove-Item $tmp -ErrorAction SilentlyContinue
     $salida = ($salida | Where-Object { $_ -ne $null -and "$_".Trim() -ne "" }) -join "`n"
     if (-not $Silencioso) { Write-Host $salida }
@@ -302,6 +303,95 @@ function Op-ConsolaCdb {
     docker exec -it -u oracle $script:Contenedor sqlplus "/ as sysdba"
 }
 
+# Valida una lista de correos separados por coma; devuelve la lista limpia o $null
+function Validar-Correos([string]$texto) {
+    $lista = @($texto -split "[,;]" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($lista.Count -eq 0) { return $null }
+    foreach ($c in $lista) {
+        if ($c -notmatch "^[^@\s'`"]+@[^@\s'`"]+\.[A-Za-z]{2,}$") { Write-Host "Correo no valido: $c" -ForegroundColor Red; return $null }
+    }
+    return ($lista -join ", ")
+}
+
+function Op-ConfigurarCorreos {
+    Titulo "CORREOS DE DESTINO DE LAS NOTIFICACIONES"
+    $r = Get-Rol
+    if ($r.Rol -ne "PRIMARY" -or $r.Modo -ne "READ WRITE") { Write-Host "Esta opcion se usa en la PRINCIPAL (abierta). Esta base es $($r.Rol) / $($r.Modo)." -ForegroundColor Yellow; return }
+    Invoke-Sql @"
+SET HEADING OFF
+ALTER SESSION SET CONTAINER = $Pdb;
+PROMPT Valores actuales:
+SELECT '  ' || RPAD(codigo_para, 20) || valor_texto_para FROM CADENA_NEG.SEG_PARAMETRO
+ WHERE codigo_para IN ('CORREO_EMISOR', 'CORREO_COORDINADOR', 'CORREO_GERENTE', 'CORREO_DBA') ORDER BY codigo_para;
+"@ | Out-Null
+    Write-Host ""
+    Write-Host "Puede escribir varios correos separados por coma."
+    $todos = Read-Host "Correo para TODAS las alertas (Enter = configurar uno por uno)"
+    $valores = @{}
+    if ($todos.Trim()) {
+        $v = Validar-Correos $todos; if (-not $v) { return }
+        foreach ($k in "CORREO_COORDINADOR", "CORREO_GERENTE", "CORREO_DBA") { $valores[$k] = $v }
+    } else {
+        foreach ($k in "CORREO_COORDINADOR", "CORREO_GERENTE", "CORREO_DBA") {
+            $t = Read-Host "  $k (Enter = no cambiar)"
+            if ($t.Trim()) { $v = Validar-Correos $t; if (-not $v) { return }; $valores[$k] = $v }
+        }
+    }
+    if ($valores.Count -eq 0) { Write-Host "No se cambio nada."; return }
+
+    $desc = @{
+        "CORREO_COORDINADOR" = @("Correo del coordinador", "Destinatario de alertas de mercadeo, clientes 85%, vencidos y cierres.")
+        "CORREO_GERENTE"     = @("Correo del gerente", "Destinatario de alertas de proveedores 70%, morosidad y cierres diarios.")
+        "CORREO_DBA"         = @("Correo del administrador BD", "Destinatario de alertas de tablespaces, objetos invalidos e indices danados.")
+    }
+    $sql = "ALTER SESSION SET CONTAINER = $Pdb;`n"
+    foreach ($k in $valores.Keys) {
+        $sql += "EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('$k', 'CORREO', '$($desc[$k][0])', '$($desc[$k][1])', 'N', '$($valores[$k])');`n"
+    }
+    # Los avisos individuales de "credito al 85%" van al correo de cada cliente (PER_CONTACTO)
+    $cli = Read-Host "Enviar tambien los avisos a CLIENTES a ese correo (demostracion)? (s/N)"
+    if ($cli -match "^[sS]") {
+        $correoCli = (@($valores.Values) | Select-Object -First 1).Split(",")[0].Trim()
+        $sql += "UPDATE CADENA_NEG.PER_CONTACTO SET VALOR_CONT = '$correoCli' WHERE TIPO_CONT = 'E';`nCOMMIT;`n"
+    }
+    Invoke-Sql $sql -Silencioso | Out-Null
+    Write-Host "[OK] Correos guardados en SEG_PARAMETRO." -ForegroundColor Green
+
+    if ((Read-Host "Enviar un correo de prueba ahora? (S/n)") -notmatch "^[nN]") {
+        $dest = (@($valores.Values) | Select-Object -Unique) -join ", "
+        Invoke-Sql @"
+ALTER SESSION SET CONTAINER = $Pdb;
+SET SERVEROUTPUT ON SIZE UNLIMITED
+EXEC CADENA_NEG.PKG_ADM_NOTIFICACION.PR_ENVIAR_CORREO('$dest', 'Prueba de notificaciones - Super Brunca', 'PRUEBA DE CORREO DESDE ORACLE' || CHR(10) || 'Este es un correo de prueba enviado directamente desde la base de datos.' || CHR(10) || 'Destinatarios : $dest');
+"@ -Silencioso | Where-Object { $_ } | ForEach-Object { $_ -split "`n" } | Where-Object { $_ -match "Estado SMTP" } | ForEach-Object { Write-Host $_ }
+    }
+}
+
+function Op-ClaveGmail {
+    Titulo "CLAVE DE APLICACION DE GMAIL (correo que envia)"
+    $r = Get-Rol
+    if ($r.Rol -ne "PRIMARY" -or $r.Modo -ne "READ WRITE") { Write-Host "Esta opcion se usa en la PRINCIPAL (abierta). Esta base es $($r.Rol) / $($r.Modo)." -ForegroundColor Yellow; return }
+    Write-Host "Se usa una 'contrasena de aplicacion' de 16 letras (https://myaccount.google.com/apppasswords),"
+    Write-Host "no la contrasena normal de Gmail. Se guarda CIFRADA con AES-256 en SEG_PARAMETRO."
+    $emisor = Read-Host "Correo de Gmail que envia (Enter = no cambiar)"
+    $segura = Read-Host "Clave de aplicacion (no se muestra)" -AsSecureString
+    $clave = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($segura))
+    $clave = ($clave -replace "\s", "")
+    if ($clave -notmatch "^[A-Za-z]{16}$") { Write-Host "La clave de aplicacion de Gmail son 16 letras. No se guardo nada." -ForegroundColor Red; return }
+    $sql = "ALTER SESSION SET CONTAINER = $Pdb;`n"
+    if ($emisor.Trim()) {
+        $v = Validar-Correos $emisor; if (-not $v) { return }
+        $sql += "EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CORREO_EMISOR', 'CORREO', 'Correo emisor del sistema', 'Cuenta remitente de las notificaciones automaticas (Gmail autenticado).', 'N', '$v');`n"
+    }
+    $sql += "EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', '$clave');`n"
+    Invoke-Sql $sql -Silencioso | Out-Null
+    $clave = $null
+    Write-Host "[OK] Clave guardada cifrada." -ForegroundColor Green
+    # El wallet con los certificados de Gmail (se pierde el parametro al reinstalar el esquema)
+    docker exec -u oracle $script:Contenedor bash -c "test -f /opt/oracle/proyecto/sql/08_Wallet_SMTP_Gmail.sh && bash /opt/oracle/proyecto/sql/08_Wallet_SMTP_Gmail.sh | tail -1" 2>$null | ForEach-Object { Write-Host $_ }
+    Write-Host "Pruebe el envio con la opcion 11 (correo de prueba)."
+}
+
 function Mostrar-Menu {
     $r = if (Contenedor-Encendido) { Get-Rol } else { @{ Rol = "APAGADO"; Modo = "-"; Nombre = "-" } }
     Titulo "PROYECTO SUPER BRUNCA  |  $($script:Contenedor)  |  $($r.Rol) / $($r.Modo)"
@@ -315,6 +405,8 @@ function Mostrar-Menu {
     Write-Host "  8. Failover: la principal se cayo              (en la standby)"
     Write-Host "  9. Consola SQL del proyecto ($Pdb)"
     Write-Host " 10. Consola SYSDBA (CDB)"
+    Write-Host " 11. Correos de destino de las notificaciones    (en la principal)"
+    Write-Host " 12. Clave de Gmail que envia los correos        (en la principal)"
     Write-Host "  0. Salir"
 }
 
@@ -330,6 +422,8 @@ function Ejecutar([string]$o) {
         "8"  { Op-Failover }
         "9"  { Op-ConsolaProyecto }
         "10" { Op-ConsolaCdb }
+        "11" { Op-ConfigurarCorreos }
+        "12" { Op-ClaveGmail }
         default { Write-Host "Opcion no valida." -ForegroundColor Yellow }
     }
 }

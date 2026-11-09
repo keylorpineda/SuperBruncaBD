@@ -22,7 +22,7 @@ def build_cover_html(title: str) -> str:
     - Solo el Título en negrita 12pt (sin subtítulos, sin 'Entregable #2').
     - Información del curso y profesor (Regular 12pt).
     - Bloque de estudiantes: Diego Bonilla Mora y Pineda Alvarez Keylor Steven (Regular 12pt).
-    - Fecha: Octubre del 2026 (Regular 12pt).
+    - Fecha: Noviembre del 2026 (Regular 12pt).
     Todo 100% centrado horizontalmente en Times New Roman.
     """
     return f"""
@@ -41,7 +41,7 @@ def build_cover_html(title: str) -> str:
             <p>Diego Bonilla Mora</p>
             <p style="margin-bottom: 0;">Pineda Alvarez Keylor Steven</p>
         </div>
-        <p class="p-date">Octubre del 2026</p>
+        <p class="p-date">Noviembre del 2026</p>
     </div>
     """
 

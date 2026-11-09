@@ -3,7 +3,7 @@
 -- ARCHIVO:  06_Scheduler_Optimizacion_y_Pruebas.sql
 -- CURSO:    Administracion de Bases de Datos
 -- FECHA:    Octubre 2026 - Avance 2
--- MOTOR:    Oracle Database 21c / 23ai / 26ai Free
+-- MOTOR:    Oracle Database 21c Enterprise Edition (compatible con 23ai / 26ai Free)
 -- DESCRIPCION:
 --   1. Automatizacion de tareas en segundo plano mediante DBMS_SCHEDULER:
 --      - Cierre diario por cajero y consolidado de ventas.
@@ -639,7 +639,7 @@ BEGIN
             END IF;
     END;
     IF NOT v_fallo_esperado THEN
-        RAISE_APPLICATION_ERROR(-20092, 'Fallo prueba negativa 11: Se permitio vender sin stock sin ORA-20015.');
+        RAISE_APPLICATION_ERROR(-20095, 'Fallo prueba negativa 11: Se permitio vender sin stock sin ORA-20015.');
     END IF;
 
     -- ------------------------------------------------------------------------

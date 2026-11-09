@@ -80,7 +80,7 @@ Qué hace:
 1. Lee los dos archivos con las **tablas externas** `EXT_PADRON_TSE` y `EXT_DISTELEC_TSE` (juego de caracteres Latin-1, que es el del TSE). No copia los archivos: Oracle los lee directamente.
 2. Carga los distritos y luego hace un **`MERGE` por provincia** en `CAT_PADRON`. En las cargas mensuales siguientes solo reescribe a las personas que cambiaron.
 
-Resultado verificado (Oracle 26ai Free en Docker, padrón del 30/09/2026): **3.762.240 personas, 0 rechazos**, unos **39 minutos** y unos **553 MB** en la base.
+Primera prueba (Oracle 26ai Free en Docker, sin Data Guard, padrón del 30/09/2026): **3.762.240 personas, 0 rechazos**, unos **39 minutos**.
 
 > **Verificado en Oracle 21c EE con Data Guard activo:** padrón del 30/09/2026, 3.762.240 personas, 0 rechazos, 2.179 distritos electorales, ~52 minutos (más lento que sin Data Guard porque cada cambio viaja también a la standby). Al terminar, la standby seguía sincronizada: `transport lag` y `apply lag` en 0 y `GAP_STATUS = NO GAP`.
 
@@ -155,4 +155,5 @@ Para la defensa hay que cargar el **padrón real** (el enunciado pide la informa
 | Nombres con caracteres raros (tildes, ñ) | El archivo se convirtió a otro juego de caracteres al copiarlo. | Use el archivo tal como viene del ZIP (Latin-1), sin abrirlo y guardarlo con otro editor. |
 | Muchas líneas en `padron_tse.bad` | El archivo está incompleto o no es el oficial. | Vuelva a descargar el ZIP. |
 | `[ERROR] Se necesita unzip o python3` | El contenedor no tiene con qué descomprimir. | Descomprima en su PC y copie los `.txt` con `docker cp` (sección 3). |
-| `JOB_PADRON_DESCARGA` deshabilitado o `FAILED` | Falta la credencial del SO o no hay internet en el servidor. | Registre la credencial (Guía paso a paso, 6.2) o descargue a mano. |
+| `JOB_PADRON_DESCARGA` aparece deshabilitado con estado `SUCCEEDED` | Es normal: no tiene horario propio, se ejecutó una vez al habilitarse y `JOB_PADRON_MENSUAL` lo vuelve a lanzar con `RUN_JOB`. | Nada. |
+| `JOB_PADRON_DESCARGA` sin credencial o `FAILED` | Falta la credencial del SO o no hay internet en el servidor. | Registre la credencial (Guía paso a paso, 6.2) o descargue a mano. |

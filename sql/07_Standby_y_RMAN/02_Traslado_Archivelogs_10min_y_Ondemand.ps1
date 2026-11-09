@@ -1,7 +1,7 @@
 <#
 ================================================================================
 PROYECTO: Sistema Integral de Cadena de Supermercados
-MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c / 26ai (Windows)
+MODULO:   Alta Disponibilidad y Respaldo — Oracle 21c EE (compatible con 26ai Free) (Windows)
 ARCHIVO:  sql/07_Standby_y_RMAN/02_Traslado_Archivelogs_10min_y_Ondemand.ps1
 CURSO:    Administracion de Bases de Datos
 DESCRIPCION:

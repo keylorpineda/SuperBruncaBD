@@ -3,7 +3,7 @@
 -- ARCHIVO:  05_Seguridad_Perfiles_Roles_Usuarios.sql
 -- CURSO:    Administracion de Bases de Datos
 -- FECHA:    Octubre 2026 - Avance 2
--- MOTOR:    Oracle Database 21c / 23ai / 26ai Free
+-- MOTOR:    Oracle Database 21c Enterprise Edition (compatible con 23ai / 26ai Free)
 -- DESCRIPCION:
 --   Implementacion integral del esquema de seguridad:
 --   1. Perfiles de contrasena y recursos (PERFIL_CADENA_ADMIN, PERFIL_CADENA_OPER).

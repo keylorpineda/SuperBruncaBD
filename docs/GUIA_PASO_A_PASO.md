@@ -193,6 +193,8 @@ docker exec -it -u oracle ora_principal bash
 
 Gmail exige conexión segura (SSL/TLS). Oracle 21c necesita un **wallet** con los certificados raíz de Google; sin él, el correo falla con `ORA-29024: Certificate validation failure`.
 
+> **Forma fácil:** el menú hace los puntos 1, 3 y 4 por usted. Opción **12**: pide la clave de aplicación de Gmail (no se ve al escribirla), la guarda cifrada y crea el wallet. Opción **11**: pide el correo de destino (o varios, separados por coma), lo guarda y manda un correo de prueba. Úsela antes de la defensa con el correo externo que indique el profesor. Abajo está la forma manual.
+
 1. **Crear el wallet** (Docker / Linux). El script toma los certificados raíz GTS R1-R4 y GlobalSign del propio Linux, crea un wallet auto-login en `/opt/oracle/oradata/wallet_smtp` y registra la ruta en `SEG_PARAMETRO` (`SMTP_WALLET_PATH`):
 
    ```powershell
@@ -209,7 +211,7 @@ Gmail exige conexión segura (SSL/TLS). Oracle 21c necesita un **wallet** con lo
    EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', '<clave de 16 letras sin espacios>');
    ```
 
-4. Si el correo emisor o los destinatarios no son los suyos, cámbielos igual, con `'N'` (sin cifrar) en lugar de `'S'`: `CORREO_EMISOR`, `CORREO_COORDINADOR`, `CORREO_GERENTE` y `CORREO_DBA`.
+4. Si el correo emisor o los destinatarios no son los suyos, cámbielos igual, con `'N'` (sin cifrar) en lugar de `'S'`: `CORREO_EMISOR`, `CORREO_COORDINADOR`, `CORREO_GERENTE` y `CORREO_DBA` (o con la opción 11 del menú).
 
    ```sql
    SELECT codigo_para, valor_texto_para FROM CADENA_NEG.SEG_PARAMETRO WHERE codigo_para LIKE '%CORREO%';
@@ -503,7 +505,9 @@ Verificado en dos contenedores Docker con `container-registry.oracle.com/databas
 | Prueba | Resultado |
 | :--- | :--- |
 | Instalación (`script_bd_v2.sql` + `00_Master_Instalacion_Avance2.sql`) | 0 objetos inválidos (65 tablas, 225 índices, 10 paquetes, 21 triggers, 11 jobs, 7 vistas, 2 vistas materializadas). Las 12 pruebas con 100 % de éxito. |
-| Correo con wallet (`08_Wallet_SMTP_Gmail.sh`) | El `ORA-29024` desaparece; el siguiente error es `535` hasta guardar la clave de aplicación real de Gmail. |
+| Correo con wallet (`08_Wallet_SMTP_Gmail.sh`) | El `ORA-29024` desaparece; el siguiente error es `535` hasta guardar la clave de aplicación real de Gmail. Con la clave real, el correo HTML llega a la bandeja de entrada. |
+| Menú, opción 11 (correos de destino) | Rechaza un correo mal escrito, guarda el correcto en `SEG_PARAMETRO` y el correo de prueba termina con `Notificacion entregada al servidor de correo`. |
+| Descarga del padrón por el job (`JOB_PADRON_DESCARGA`) | Con la credencial del SO, `DBMS_SCHEDULER.RUN_JOB` descargó y descomprimió el padrón del TSE en `DIR_PADRON` en unos 40 segundos (`SUCCEEDED`). |
 | Configuración de la principal (`01_...sql`, dos veces) | `LOG_ARCHIVE_DEST_2` hacia `CADENA_STBY`, `DG_CONFIG=(CADENA,CADENA_STBY)`, redo 3 × 50 MB × 2 miembros y 4 standby redo logs de 50 MB. |
 | Respaldo nivel 0 con el orquestador | 682 MB, sin advertencias, incluye el controlfile de standby. |
 | Creación de la standby (`crearstandby`) | `PHYSICAL STANDBY` / `MOUNTED` en unos 3,5 minutos. |
@@ -524,7 +528,6 @@ Verificado en dos contenedores Docker con `container-registry.oracle.com/databas
 | Prueba | Motivo |
 | :--- | :--- |
 | Wallet en Windows nativo con `orapki` | Solo se probó en Linux / Docker. |
-| Descarga automática mensual del padrón (`JOB_PADRON_DESCARGA`) por el job | Quedó habilitada con la credencial; la descarga y la carga se probaron con el script y el procedimiento a mano. |
 | Red entre dos PC distintas | Todo se probó con dos contenedores en una misma PC. |
 
 > **Verificado en Oracle 21c EE con Data Guard activo:** padrón del 30/09/2026, 3.762.240 personas, 0 rechazos, 2.179 distritos electorales, ~52 minutos (más lento que sin Data Guard porque cada cambio viaja también a la standby). Al terminar, la standby seguía sincronizada: `transport lag` y `apply lag` en 0 y `GAP_STATUS = NO GAP`.

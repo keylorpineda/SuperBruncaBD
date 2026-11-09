@@ -3,7 +3,7 @@
 -- ARCHIVO:  sql/00_Master_Instalacion_Avance2.sql
 -- CURSO:    Administracion de Bases de Datos
 -- FECHA:    Octubre 2026 - Avance 2
--- MOTOR:    Oracle Database 21c / 23ai / 26ai Free
+-- MOTOR:    Oracle Database 21c Enterprise Edition (compatible con 23ai / 26ai Free)
 -- DESCRIPCION:
 --   Script Maestro de Instalacion y Despliegue Automatizado.
 --   Ejecuta en el orden correcto y de forma limpia los 6 scripts principales

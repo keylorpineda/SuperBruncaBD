@@ -13,7 +13,7 @@
 Diego Bonilla Mora  
 Pineda Alvarez Keylor Steven  
 
-Octubre del 2026
+Noviembre del 2026
 
 </div>
 
@@ -39,14 +39,14 @@ El sistema opera sobre una arquitectura modular de tres capas de almacenamiento 
 |  +---------------------------+  +---------------------------+  +---------------------+  |
 |  |         TBS_DATOS         |  |        TBS_INDICES        |  |    TBS_AUDITORIA    |  |
 |  | Tablas Transaccionales    |  | Índices B-Tree Compuestos |  | Bitácora Autónoma   |  |
-|  | (Ventas, Compras, Stock)  |  | (IX_CUCO_EST_VENC)        |  | Inmutable / Errores |  |
+|  | (Ventas, Compras, Stock)  |  | (IX_CUCO_ESTADO_VENCIM)   |  | Inmutable / Errores |  |
 |  +---------------------------+  +---------------------------+  +---------------------+  |
 |                                                                                         |
 |  • Seguridad Criptográfica: Cifrado simétrico AES-256 (DBMS_CRYPTO) en SEG_PARAMETRO.   |
 |  • Automatización: 11 Jobs DBMS_SCHEDULER (negocio, padrón TSE y Standby/RMAN).         |
-|  • Notificaciones Directas: UTL_SMTP sin VPN hacia keylorpineda729@gmail.com.           |
+|  • Notificaciones: UTL_SMTP (Gmail, SSL) a los correos de SEG_PARAMETRO.                |
 |  • Vistas Materializadas: MV_VENTAS_MENSUALES y MV_INVENTARIO_CONSOLIDADO.              |
-|  • Disparadores Autónomos: Validación de crédito, stock y kardex en tiempo real         |
+|  • 21 Disparadores: crédito, existencias, kardex y auditoría en tiempo real.            |
 +-----------------------------------------------------------------------------------------+
                                              │
                      Rotación 5 min / 50 MB  │  Respaldo Diario RMAN
@@ -113,19 +113,51 @@ CADENA_NEG.PRC_ACTIVAR_ROL_SESION('ROL_DIGITADOR');
 El procedimiento lee la clave cifrada de `SEG_PARAMETRO`, la descifra en memoria volátil de sesión mediante `PKG_SEG_SEGURIDAD.FN_OBTENER_CLAVE_ROL`, ejecuta `DBMS_SESSION.SET_ROLE` y registra el inicio de sesión en la bitácora de auditoría.
 
 ### 3.4 Matriz de Mínimos Privilegios de Objeto
-Ningún rol recibe privilegios `DELETE` sobre catálogos ni permisos de modificación estructural `DDL`:
+Cada rol recibe solo lo que su puesto necesita. Ningún rol recibe `DELETE` ni privilegios de modificación estructural (`DDL`). La tabla sale de la consulta real a `DBA_TAB_PRIVS` (S = SELECT, I = INSERT, U = UPDATE; las columnas son los roles `ROL_DIGITADOR`, `ROL_JEFE_PROVEEDURIA`, `ROL_JEFE_DEPARTAMENTO` y `ROL_GERENTE`):
 
-| OBJETO / ACCIÓN (roles `ROL_...`) | `DIGITADOR` | `JEFE_PROVEEDURIA` | `JEFE_DEPARTAMENTO` | `GERENTE` |
+| OBJETO | Digitador | Jefe de proveeduría | Jefe de departamento | Gerente |
 | :--- | :---: | :---: | :---: | :---: |
-| Facturación Ventas (`VEN_FACTURA`, `DET`) | SELECT, INSERT | SELECT | SELECT | SELECT |
-| Cobros y Abonos (`VEN_ABONO_COBRAR`, `CxC`) | SELECT, INSERT | SELECT | SELECT | SELECT |
-| Compras Proveedores (`COM_FACTURA`, `DET`) | Sin acceso | SELECT, INSERT, UPDATE | SELECT | SELECT |
-| Abonos Proveedores (`COM_ABONO_PAGAR`, `CxP`) | Sin acceso | SELECT, INSERT | SELECT | SELECT |
-| Catálogo de Productos (`PRO_PRODUCTO`) | SELECT | SELECT | SELECT, UPDATE | SELECT |
-| Vistas Materializadas (`MV_VENTAS`, `MV_INV`) | Sin acceso | Sin acceso | SELECT | SELECT |
-| Bitácoras de Auditoría (`AUD_REGISTRO_CAMBIO`) | Sin acceso | Sin acceso | Sin acceso | SELECT |
-| Borrado de Registros (`DELETE`) | **DENEGADO** | **DENEGADO** | **DENEGADO** | **DENEGADO** |
-| Modificación DDL (`DROP TABLE`, `ALTER`) | **DENEGADO** | **DENEGADO** | **DENEGADO** | **DENEGADO** |
+| Ventas (`VEN_FACTURA`, `VEN_FACTURA_DET`) | S, I | — | S, I, U | S |
+| Pagos de venta (`VEN_PAGO`) | S, I | — | — | — |
+| Abonos de clientes (`VEN_ABONO_COBRAR`) | S, I | — | S, I | — |
+| Cuentas por cobrar (`VEN_CUENTA_COBRAR`) | S | — | S | — |
+| Clientes (`PER_CLIENTE`) | S, I | — | S, I | S |
+| Compras (`COM_FACTURA_COMPRA`, `_DET`) | — | S, I, U | S, I, U | S |
+| Devoluciones a proveedor (`COM_DEVOLUCION`, `_DET`) | — | S, I, U | — | — |
+| Abonos a proveedores (`COM_ABONO_PAGAR`) | — | S, I | S, I | — |
+| Cuentas por pagar (`COM_CUENTA_PAGAR`) | — | S | S | — |
+| Proveedores (`PER_PROVEEDOR`) | — | S, I | S, I, U | S |
+| Productos (`PRO_PRODUCTO`) | S | S | S, I, U | S |
+| Existencias (`INV_EXISTENCIA`) | S | S | S, I, U | S |
+| Kardex (`INV_MOVIMIENTO`) | — | — | S, I | S |
+| Promociones (`PRM_PROMOCION`, `PRM_DESCUENTO_DET`, `PRM_ACCION_CLIENTE`) | — | — | S, I, U | — |
+| Historial de precios (`PRO_PRECIO_HIST`) | — | — | S | S |
+| Vistas materializadas (`MV_VENTAS_MENSUALES`, `MV_INVENTARIO_CONSOLIDADO`) | — | — | S | S |
+| Auditoría (`AUD_*`) | — | — | — | S |
+| Paquetes (EXECUTE) | `PKG_VEN_OPERACION` | `PKG_COM_OPERACION` | `PKG_VEN_OPERACION`, `PKG_COM_OPERACION`, `PKG_INV_GESTION`, `PKG_PRM_MERCADEO` | `PKG_ADM_MONITOREO`, `PKG_ADM_STANDBY`, `PKG_INV_GESTION`, `PKG_PRM_MERCADEO` |
+| Borrado (`DELETE`) y `DDL` | **DENEGADO** | **DENEGADO** | **DENEGADO** | **DENEGADO** |
+
+### 3.5 Privilegios de Sistema vs. Privilegios de Objeto
+* **Privilegio de sistema:** permite una *acción* en la base de datos, sin importar el objeto (`CREATE SESSION`, `CREATE TABLE`, `CREATE JOB`). Se consultan en `DBA_SYS_PRIVS`.
+* **Privilegio de objeto:** permite una acción sobre *un objeto concreto* de un esquema (`SELECT ON CADENA_NEG.VEN_FACTURA`, `EXECUTE ON PKG_VEN_OPERACION`). Se consultan en `DBA_TAB_PRIVS`.
+
+| QUIÉN | PRIVILEGIOS DE SISTEMA | PRIVILEGIOS DE OBJETO |
+| :--- | :--- | :--- |
+| `CADENA_NEG` (dueño del esquema) | `CREATE SESSION`, `CREATE TABLE`, `CREATE VIEW`, `CREATE SEQUENCE`, `CREATE PROCEDURE`, `CREATE TRIGGER`, `CREATE TYPE`, `CREATE SYNONYM`, `CREATE MATERIALIZED VIEW`, `CREATE JOB`, `CREATE EXTERNAL JOB`, `CREATE CREDENTIAL`, `CREATE ROLE`, `ALTER ANY ROLE`, `CREATE ANY DIRECTORY` | `EXECUTE` sobre `DBMS_CRYPTO`, `UTL_SMTP`, `UTL_TCP`, `UTL_FILE`; `SELECT` sobre las vistas de monitoreo (`V$SESSION`, `V$DATABASE`, `V$LOG`, `V$ARCHIVED_LOG`, `V$ARCHIVE_DEST_STATUS` y las `DBA_*` de espacio y objetos); `READ, WRITE` sobre el directorio `DIR_PADRON` |
+| `ROL_DIGITADOR` | `CREATE SESSION` | Ver matriz 3.4 |
+| `ROL_JEFE_PROVEEDURIA`, `ROL_JEFE_DEPARTAMENTO`, `ROL_GERENTE` | `CREATE SESSION`, `ALTER SESSION` | Ver matriz 3.4 |
+| `USR_GERENTE`, `USR_JEFE_DEPTO`, `USR_JEFE_PROV`, `USR_DIGITADOR` | `CREATE SESSION` (para conectarse antes de activar su rol) | Ninguno directo: todo llega por el rol, que está en `DEFAULT ROLE NONE` |
+
+No se usan los roles `DBA`, `CONNECT` ni `RESOURCE`. Para revisarlo en la defensa (desde `PDBCADENA` como SYSDBA):
+```sql
+SELECT grantee, privilege FROM dba_sys_privs
+ WHERE grantee IN ('CADENA_NEG', 'ROL_DIGITADOR', 'ROL_JEFE_PROVEEDURIA', 'ROL_JEFE_DEPARTAMENTO', 'ROL_GERENTE') ORDER BY 1, 2;
+SELECT grantee, table_name, privilege FROM dba_tab_privs
+ WHERE grantee IN ('ROL_DIGITADOR', 'ROL_JEFE_PROVEEDURIA', 'ROL_JEFE_DEPARTAMENTO', 'ROL_GERENTE') ORDER BY 1, 2;
+-- Debe devolver 0 filas:
+SELECT grantee, granted_role FROM dba_role_privs
+ WHERE granted_role IN ('DBA', 'CONNECT', 'RESOURCE') AND (grantee LIKE 'USR%' OR grantee LIKE 'ROL%' OR grantee = 'CADENA_NEG');
+```
 
 ---
 
@@ -149,7 +181,7 @@ Esto inicia un contexto de transacción independiente que ejecuta `INSERT` y `CO
 
 ## 5. Módulo de Reglas de Negocio y Triggers
 
-El sistema implementa 11 disparadores de negocio para forzar la integridad en el motor de base de datos:
+El esquema tiene **21 disparadores**: 12 de reglas de negocio y 9 de auditoría. Las reglas que no se pueden expresar con restricciones (`CHECK`, `FOREIGN KEY`) se programan aquí o en los paquetes:
 
 ```
 [Venta a Crédito] ──► TRG_VEN_FACTURA_CRED_BIU ──► Valida: Saldo Actual + Total <= Límite Máximo
@@ -167,8 +199,60 @@ El sistema implementa 11 disparadores de negocio para forzar la integridad en el
                                                ──► Si saldo = 0: ESTADO_FAVE pasa de 'P' a 'C'
 ```
 
+| DISPARADOR | TABLA | QUÉ HACE |
+| :--- | :--- | :--- |
+| `TRG_VEN_FACTURA_CRED_BIU` | `VEN_FACTURA` | Rechaza la venta a crédito si supera el límite del cliente (`ORA-20010`), si el cliente está inactivo (`ORA-20011`) o si no existe (`ORA-20013`). |
+| `TRG_VEN_FACTURA_CRED_AI` | `VEN_FACTURA` | Crea la cuenta por cobrar y suma al saldo del cliente. |
+| `TRG_VEN_FACTURA_DET_INV_AI` | `VEN_FACTURA_DET` | Descuenta la existencia y registra la salida en el kardex. |
+| `TRG_VEN_ABONO_SALDO_AI` | `VEN_ABONO_COBRAR` | Rebaja la cuenta por cobrar y el saldo del cliente; cancela la factura al llegar a 0. |
+| `TRG_VEN_DEVOLUCION_DET_INV_AI` | `VEN_DEVOLUCION_DET` | Regresa al inventario lo devuelto por el cliente. |
+| `TRG_COM_FACTURA_CRED_BIU` | `COM_FACTURA_COMPRA` | Rechaza la compra a crédito si el proveedor está inactivo (`ORA-20017`), supera el límite que da el proveedor (`ORA-20018`) o no existe (`ORA-20019`). |
+| `TRG_COM_FACTURA_CRED_AI` | `COM_FACTURA_COMPRA` | Crea la cuenta por pagar y suma al saldo con el proveedor. |
+| `TRG_COM_FACTURA_DET_INV_AI` | `COM_FACTURA_COMPRA_DET` | Suma la existencia y registra la entrada en el kardex. |
+| `TRG_COM_ABONO_SALDO_AI` | `COM_ABONO_PAGAR` | Rebaja la cuenta por pagar y el saldo con el proveedor. |
+| `TRG_COM_DEVOLUCION_DET_INV_AI` | `COM_DEVOLUCION_DET` | Saca del inventario lo devuelto al proveedor. |
+| `TRG_PRO_HISTORIAL_PRECIO_AU` | `PRO_PRODUCTO` | Guarda el precio anterior en `PRO_PRECIO_HIST` cada vez que cambia. |
+| `TRG_SEG_PARAM_PREMIACION_AU` | `SEG_PARAMETRO` | Si cambia la frecuencia de premiación, reprograma `JOB_PREMIACION_SEMESTRAL`. |
+| `TRG_AUD_*` (9) | `VEN_FACTURA`, `COM_FACTURA_COMPRA`, `PER_CLIENTE`, `PER_PROVEEDOR`, `PRO_PRODUCTO`, `INV_MOVIMIENTO`, `PRM_PROMOCION`, `PRM_DESCUENTO`, `PRM_DESCUENTO_DET` | Registran cada `INSERT`, `UPDATE` y `DELETE` en `AUD_REGISTRO_CAMBIO` con valor anterior, valor nuevo, usuario, terminal e IP. |
+
 ### 5.1 Regla de Exclusividad de Proveedores y Personas
 El modelo impide inconsistencias mediante el supertipo `PER_PERSONA` y la clave alterna `UK_PERS_NATURALEZA (ID_PERSONA, ES_JURIDICA_PERS)`. Se garantiza por diseño del motor que todo proveedor pertenezca forzosamente a una persona jurídica (`ES_JURIDICA_PERS = 'S'`) y nunca a una persona física.
+
+### 5.2 Catálogo de Códigos de Error del Sistema
+Cada error propio del sistema tiene un código único de `RAISE_APPLICATION_ERROR` (rango de Oracle `-20000` a `-20999`), agrupado por módulo. Al ver el código en pantalla o en `AUD_ERROR_SISTEMA` se sabe exactamente qué regla se incumplió:
+
+| CÓDIGO | DÓNDE | SIGNIFICADO |
+| :--- | :--- | :--- |
+| `-20001` | `script_bd_v2.sql` | No hay ningún PDB abierto en lectura y escritura para instalar. |
+| `-20010` | `TRG_VEN_FACTURA_CRED_BIU` | Límite de crédito del cliente excedido. |
+| `-20011` | `TRG_VEN_FACTURA_CRED_BIU` | Cliente inactivo para ventas a crédito. |
+| `-20013` | `TRG_VEN_FACTURA_CRED_BIU` | El cliente no existe. |
+| `-20014` | `PKG_INV_GESTION` | La cantidad a mover en inventario debe ser mayor a cero. |
+| `-20015` | `PKG_INV_GESTION` | Existencia insuficiente (o sin inventario registrado) en la bodega. |
+| `-20016` | `PKG_INV_GESTION` | El inventario está bloqueado por otro cajero (`NOWAIT`); se debe intentar de nuevo. |
+| `-20017` | `TRG_COM_FACTURA_CRED_BIU` | Proveedor inactivo para compras a crédito. |
+| `-20018` | `TRG_COM_FACTURA_CRED_BIU` | Límite de crédito otorgado por el proveedor excedido. |
+| `-20019` | `TRG_COM_FACTURA_CRED_BIU` | El proveedor no existe. |
+| `-20021` / `-20022` | `PKG_SEG_SEGURIDAD` | Error al cifrar / descifrar con `DBMS_CRYPTO`. |
+| `-20023` / `-20024` | `PKG_SEG_SEGURIDAD` | Parámetro de texto / numérico inexistente o inactivo en `SEG_PARAMETRO`. |
+| `-20025` | `PKG_SEG_SEGURIDAD` | Nombre de rol inválido. |
+| `-20031` | `PKG_PER_PADRON` | La cédula no existe en el padrón (`CAT_PADRON`). |
+| `-20035` | `PKG_PER_PADRON` | Nombre de archivo de padrón inválido. |
+| `-20036` | `PKG_PER_PADRON` | No se puede leer el archivo del padrón en `DIR_PADRON`. |
+| `-20037` | `PKG_PER_PADRON` | El archivo del padrón no tiene registros válidos. |
+| `-20038` | `PKG_PRM_MERCADEO` | La frecuencia de premiación (meses) debe ser mayor a cero. |
+| `-20041` | `PKG_COM_OPERACION` | El abono al proveedor supera el saldo de la factura. |
+| `-20042` | `PKG_COM_OPERACION` | Factura de compra sin líneas de detalle. |
+| `-20043` | `PKG_VEN_OPERACION` | Factura de venta sin líneas de detalle. |
+| `-20044` | `PKG_VEN_OPERACION` | El abono del cliente supera el saldo de la factura. |
+| `-20090` a `-20095` | `06_Scheduler_Optimizacion_y_Pruebas.sql` | Falla de una prueba automática del instalador (solo aparecen si algo no funciona). |
+| `-20131` a `-20134` | `PKG_ADM_STANDBY` | Job inexistente, falta la credencial del sistema operativo, usuario o clave vacíos, o falta `STANDBY_RUTA_SCRIPTS`. |
+
+Para ver los últimos errores registrados:
+```sql
+SELECT fecha_ersi, paquete_ersi, subprograma_ersi, codigo_sql_ersi, mensaje_error_ersi
+  FROM CADENA_NEG.AUD_ERROR_SISTEMA ORDER BY id_error_sistema DESC FETCH FIRST 20 ROWS ONLY;
+```
 
 ---
 
@@ -184,6 +268,7 @@ El modelo impide inconsistencias mediante el supertipo `PER_PERSONA` y la clave 
 | `CADENA_NEG.JOB_MERCADEO_SEMANAL` | Lunes a las 05:00 | Ejecuta `PKG_INV_GESTION.PR_REPORTE_SEMANAL_MERCADEO` y activa descuentos en `PRM_DESCUENTO` sobre lotes con caducidad próxima (<7 días) o sin rotación (>6 meses). |
 | `CADENA_NEG.JOB_PREMIACION_SEMESTRAL` | 30 jun y 31 dic (23:30) | Ejecuta `PKG_PRM_MERCADEO.PR_PREMIAR_MEJORES_CLIENTES`, premiando al Top 10 de clientes con órdenes de compra de ₡100,000 c/u emitidas en `PRM_ORDEN_PREMIACION`. |
 | `CADENA_NEG.JOB_PADRON_MENSUAL` | Día `PADRON_DIA_CARGA` (5) de cada mes, 02:00 | `PKG_PER_PADRON.PR_ACTUALIZAR_PADRON_MENSUAL`: ejecuta `JOB_PADRON_DESCARGA` (descarga `padron_completo.zip` del TSE) y `PR_CARGAR_PADRON_MASIVO` (tablas externas Latin-1, `MERGE` por provincia, inactiva cédulas que ya no están). |
+| `CADENA_NEG.JOB_PADRON_DESCARGA` | Sin horario propio (lo lanza `JOB_PADRON_MENSUAL`) | Job EXECUTABLE deshabilitado a propósito: ejecuta `descargar_padron_tse.sh` en el servidor (descarga y descomprime el padrón del TSE en `DIR_PADRON`). |
 | `CADENA_NEG.JOB_STANDBY_TRASLADO_ARCHIVELOG` | Cada `STANDBY_SYNC_MIN` (10) min | Job EXECUTABLE: copia archivelogs y respaldos RMAN nuevos a la PC standby. |
 | `CADENA_NEG.JOB_RMAN_BACKUP_DIARIO` | Diario, `STANDBY_HORA_BACKUP` (01:00) | Job EXECUTABLE: RMAN nivel 0 (domingo) o nivel 1 y copia del respaldo a la PC standby. |
 | `CADENA_NEG.JOB_STANDBY_PURGA_ARCHIVELOG` | Diario, `STANDBY_HORA_PURGA` (03:00) | Job EXECUTABLE: purga archivelogs con más de `STANDBY_PURGE_DIAS` (3) días ya aplicados. |
@@ -194,6 +279,7 @@ Los jobs del standby se reconfiguran en caliente con `PKG_ADM_STANDBY.PR_CONFIGU
 ### 6.2 Envío Directo de Correo Electrónico (`UTL_SMTP`)
 * **Sin Dependencia de VPN:** Se conecta de forma directa a servidores SMTP estándar (`smtp.gmail.com` en puerto 465 con SSL; 587 con STARTTLS como alternativa) usando el wallet de Oracle.
 * **Formato del correo:** cada notificación sale como mensaje MIME `multipart/alternative` en UTF-8: una versión en texto y otra en **HTML adaptable al celular** (encabezado con el asunto, tablas reales en vez de columnas con espacios y totales en negrita). `PR_ENVIAR_CORREO` convierte automáticamente el texto de cada notificación con `fn_texto_a_html`; `PKG_ADM_NOTIFICACION.FN_VISTA_PREVIA_HTML` devuelve ese HTML para revisarlo sin enviar.
+* **Destinatarios parametrizados:** los correos de destino están en `SEG_PARAMETRO` (`CORREO_COORDINADOR`, `CORREO_GERENTE`, `CORREO_DBA`; se aceptan varios separados por coma) y el remitente en `CORREO_EMISOR`, con su clave cifrada en `CLAVE_CORREO_EMISOR`. Se cambian sin tocar código con el menú (`menu.ps1`: opción 11 para los destinatarios, opción 12 para la clave de Gmail) o con `PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO`.
 * **Tolerancia a Fallos de Red:** Si la conexión a Internet o el servidor SMTP no responde, la excepción es capturada y registrada en bitácora local (`AUD_ERROR_SISTEMA`), evitando que la facturación de los cajeros se interrumpa.
 
 ---
@@ -289,4 +375,25 @@ SELECT tablespace_name,
        ROUND(used_percent, 2) AS porc_uso
   FROM dba_tablespace_usage_metrics
  WHERE tablespace_name IN ('TBS_DATOS', 'TBS_INDICES', 'TBS_AUDITORIA');
+```
+
+---
+
+## 9. Documentación Interna del Código
+
+Todo el código fuente está comentado en español con la misma convención, para que cualquier DBA pueda mantenerlo:
+
+| NIVEL | QUÉ DOCUMENTA | DÓNDE VERLO |
+| :--- | :--- | :--- |
+| Encabezado de cada archivo | Universidad, curso, entregable, módulo, motor de base de datos, requisitos previos, orden de ejecución y forma de uso | Primeras líneas de cada `.sql`, `.rman`, `.sh` y `.ps1` |
+| Bloques por sección | Título numerado del paquete, tabla o paso (`-- 1. PAQUETE: PKG_PER_PADRON`) y qué requerimiento del enunciado atiende | Separadores `----` dentro de cada script |
+| Especificación de cada paquete | Una línea de comentario antes de cada procedimiento y función pública explicando qué hace | `CREATE OR REPLACE PACKAGE ...` de los archivos `02`, `03` y `07` |
+| Cuerpo de los procedimientos | Pasos numerados (`-- 1) Descargar el padrón`, `-- 2) Cargarlo`), el porqué de cada decisión (bloqueos `FOR UPDATE NOWAIT`, `SAVEPOINT`, transacciones autónomas) y los códigos de error que lanza | Cuerpos (`PACKAGE BODY`) y triggers |
+| Diccionario de datos | `COMMENT ON TABLE` y `COMMENT ON COLUMN` en las tablas del modelo | `SELECT table_name, comments FROM all_tab_comments WHERE owner = 'CADENA_NEG';` |
+| Modelo | Nota por tabla y por columna, tablas del Avance 2 marcadas con `[AVANCE 2]` y la justificación de cada desnormalización | `docs/modelo/modelo_relacional_avance2.dbml` y `docs/modelo/README.md` |
+
+Para revisar en la base la descripción de cualquier objeto del modelo:
+```sql
+SELECT column_name, comments FROM all_col_comments
+ WHERE owner = 'CADENA_NEG' AND table_name = 'VEN_CUENTA_COBRAR';
 ```

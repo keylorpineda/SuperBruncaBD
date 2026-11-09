@@ -1386,7 +1386,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRM_MERCADEO IS
     ) IS
     BEGIN
         IF p_meses IS NULL OR p_meses <= 0 THEN
-            RAISE_APPLICATION_ERROR(-20035, 'La frecuencia de premiacion en meses debe ser mayor a cero.');
+            RAISE_APPLICATION_ERROR(-20038, 'La frecuencia de premiacion en meses debe ser mayor a cero.');
         END IF;
 
         -- 1. Actualizar el parametro en SEG_PARAMETRO
@@ -1956,7 +1956,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_VEN_OPERACION IS
            FOR UPDATE NOWAIT;
 
         IF p_monto_abono > v_saldo_actual THEN
-            RAISE_APPLICATION_ERROR(-20042,
+            RAISE_APPLICATION_ERROR(-20044,
                 'El monto del abono (' || p_monto_abono || ') supera el saldo pendiente de la factura (' || v_saldo_actual || ').');
         END IF;
 
