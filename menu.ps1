@@ -226,6 +226,13 @@ SET HEADING OFF
 ALTER SESSION SET CONTAINER = $Pdb;
 PROMPT
 PROMPT === Proyecto (esquema CADENA_NEG en $Pdb) ===
+BEGIN
+    -- Una vista materializada pendiente de compilar (por cambios en sus tablas) no esta danada
+    FOR mv IN (SELECT mview_name FROM dba_mviews WHERE owner = 'CADENA_NEG' AND compile_state = 'NEEDS_COMPILE') LOOP
+        EXECUTE IMMEDIATE 'ALTER MATERIALIZED VIEW CADENA_NEG.' || mv.mview_name || ' COMPILE';
+    END LOOP;
+END;
+/
 SELECT 'Objetos invalidos : ' || COUNT(*) FROM dba_objects WHERE owner = 'CADENA_NEG' AND status <> 'VALID';
 SELECT 'Jobs habilitados  : ' || COUNT(*) FROM dba_scheduler_jobs WHERE owner = 'CADENA_NEG' AND enabled = 'TRUE';
 SELECT 'Personas padron   : ' || COUNT(*) FROM CADENA_NEG.CAT_PADRON;

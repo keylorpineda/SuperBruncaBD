@@ -2286,6 +2286,16 @@ CREATE OR REPLACE PACKAGE BODY PKG_ADM_MONITOREO IS
                AND status <> 'VALID'
              ORDER BY object_type, object_name;
     BEGIN
+        -- Una vista materializada queda en NEEDS_COMPILE (INVALID) cuando cambian sus tablas base;
+        -- no esta danada: se revalida al compilarla. Se compila primero para no avisar de un falso
+        -- problema; si no compila, sigue invalida y el cursor la reporta.
+        FOR mv IN (SELECT mview_name FROM user_mviews WHERE compile_state = 'NEEDS_COMPILE') LOOP
+            BEGIN
+                EXECUTE IMMEDIATE 'ALTER MATERIALIZED VIEW ' || mv.mview_name || ' COMPILE';
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        END LOOP;
+
         v_correo_dba := PKG_SEG_SEGURIDAD.FN_OBTENER_PARAM_TEXTO('CORREO_DBA');
         v_cuerpo_alerta := 'INCONSISTENCIA DETECTADA: OBJETOS INVALIDOS EN ESQUEMA CADENA_NEG' || CHR(10) ||
                            RPAD('=', 72, '=') || CHR(10);
