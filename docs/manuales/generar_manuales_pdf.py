@@ -410,8 +410,8 @@ if __name__ == "__main__":
         ),
         (
             "../modelo/README.md",
-            "../modelo/Modelo_Relacional_Avance2.pdf",
-            "Modelo Relacional del Avance 2"
+            "../modelo/Descripcion_y_Desnormalizaciones_del_Modelo.pdf",
+            "Modelo Relacional del Avance 2: Descripción y Desnormalizaciones"
         )
     ]
     

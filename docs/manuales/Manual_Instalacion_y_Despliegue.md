@@ -64,7 +64,7 @@ La solución se entrega organizada en scripts modulares e independientes, gobern
 | `datos/padron/Descargar_Padron_TSE.ps1` / `.sh` | Script SO | Descarga `padron_completo.zip` del TSE y deja `PADRON_COMPLETO.txt` y `DISTELEC.txt` en `DIR_PADRON`. |
 | `datos/padron/padron_muestra.csv` | Datos externos | Archivo CSV muestra del padrón electoral para prueba de UTL_FILE. |
 | `Manuales/` | Documentación | Los 3 manuales en PDF: instalación y despliegue, administración del standby, y técnico de administración y mantenimiento. |
-| `Modelo_Relacional/` | Documentación | Modelo relacional del Avance 2: diagrama en PDF, el modelo en formato DBML (dbdiagram.io) y el documento con sus desnormalizaciones. |
+| `Modelo_Relacional/` | Documentación | Modelo relacional del Avance 2: el diagrama, el modelo en formato DBML (dbdiagram.io), el documento con su descripción y desnormalizaciones, y el diccionario de datos actualizado (61 tablas, 728 columnas, restricciones y comentarios, generado desde la base instalada). |
 
 ---
 
