@@ -1,2 +1,5 @@
 # Clave local de los contenedores de prueba Oracle EE (no subir)
 sql/07_Standby_y_RMAN/docker/oracle_ee.env
+
+# Zip de la entrega (se genera, no se versiona)
+Entregable2_*.zip
