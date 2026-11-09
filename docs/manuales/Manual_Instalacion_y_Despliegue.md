@@ -222,7 +222,7 @@ Gmail solo acepta conexiones cifradas. En Oracle 21c, sin un wallet con los cert
    docker exec -u oracle ora_principal bash /opt/oracle/proyecto/sql/08_Wallet_SMTP_Gmail.sh
    ```
 2. El script toma del propio Linux los certificados raíz **GTS Root R1-R4** y **GlobalSign Root CA**, crea un wallet auto-login (`cwallet.sso`) en `/opt/oracle/oradata/wallet_smtp` y registra la ruta en `SEG_PARAMETRO` (`SMTP_WALLET_PATH = file:/opt/oracle/oradata/wallet_smtp`). Debe terminar con `[OK] Wallet listo.`
-3. Verificado en Oracle 21c EE: después del wallet el `ORA-29024` desaparece y el siguiente error es `535` (*Username and Password not accepted*) hasta guardar la clave de aplicación real (Paso 9).
+3. Verificado en Oracle 21c EE: después del wallet el `ORA-29024` desaparece y el siguiente error es `535` (*Username and Password not accepted*) hasta guardar la clave de aplicación real (Paso 9). Con la clave guardada, el envío se verificó de punta a punta: `PR_NOTIF_PRODUCTOS_VENCIDOS` terminó con `Notificacion entregada al servidor de correo` y el mensaje llegó a la bandeja de entrada con su formato HTML.
 
 **Windows nativo (alternativa, no probada en este proyecto):** el mismo concepto con `orapki`. Se exportan desde `certmgr.msc` los certificados raíz GTS Root R1-R4 y GlobalSign Root CA en formato Base 64 (`.cer`) y luego:
 ```bat
