@@ -565,6 +565,45 @@ END;
     if ($n -gt 0) { Exito "Correos enviados: $n" } else { Aviso "No se envio correo: no habia nada que avisar." }
 }
 
+# Purga en la standby los archivos de cambios ya aplicados con mas de STANDBY_PURGE_DIAS dias.
+# En la standby no corre DBMS_SCHEDULER (la base esta en solo lectura), por eso la tarea diaria
+# se programa en el Programador de tareas de Windows de esa PC.
+function Op-PurgaStandby {
+    Titulo "Purgar en la standby los archivos ya aplicados"
+    $r = Get-Rol
+    if ($r.Rol -ne "PHYSICAL STANDBY") {
+        Aviso "Esta opcion es para la STANDBY. En la principal la purga la hace el job JOB_STANDBY_PURGA_ARCHIVELOG (o EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_PURGAR_AHORA)."
+        return
+    }
+    $c = $script:Contenedor
+    $dias = Get-Valor "ALTER SESSION SET CONTAINER = $Pdb;`nSELECT valor_num_para FROM CADENA_NEG.SEG_PARAMETRO WHERE codigo_para = 'STANDBY_PURGE_DIAS';"
+    if ($dias -notmatch "^\d+$") { $dias = "3" }
+    $ruta = Get-Valor "SELECT destination FROM v`$archive_dest WHERE dest_id = 1;"
+    if ($ruta -notmatch "^/") { $ruta = "/opt/oracle/oradata/CADENA/archive_logs" }
+    Paso "Se borran los archivos ya aplicados con mas de $dias dias (parametro STANDBY_PURGE_DIAS) en $ruta"
+    $cmd = 'bash 02_Traslado_Archivelogs_10min_y_Ondemand.sh purgastandby x ' + $ruta + ' x x ' + $dias + ' CADENA $ORACLE_HOME 10'
+    Mostrar-Comando-SO "cd $ScriptsStandby && $cmd   (RMAN: 03_Purga_Archivelogs_Standby.rman)"
+    docker exec -u oracle -w $ScriptsStandby $c bash -c $cmd 2>&1 | Where-Object { $_ -match "\[OK\]|\[ERROR\]|RMAN:" } | ForEach-Object { Escribir-Salida "$_" }
+    $n = docker exec -u oracle $c bash -c "ls -t /opt/oracle/logs/rman_03_Purga_Archivelogs_Standby_* 2>/dev/null | head -1 | xargs -r grep -c 'deleted archived log'" 2>$null
+    if ("$n" -match "^\d+$") { Escribir-Salida "Archivos borrados en esta ejecucion: $n" }
+
+    if ($SinConfirmar) { return }   # la tarea programada llama a esta misma opcion
+    $tarea = "SuperBrunca_Purga_Standby"
+    $existe = Get-ScheduledTask -TaskName $tarea -ErrorAction SilentlyContinue
+    Write-Host ""
+    if ($existe) { Paso "La purga diaria ya esta programada en esta PC (tarea '$tarea', todos los dias a las 03:30)." ; return }
+    if ((Read-Host "  Programar esta purga todos los dias a las 03:30 en esta PC (Programador de tareas)? (s/N)") -match "^[sS]") {
+        $arg = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Contenedor $c -Opcion 15 -SinConfirmar -SinComandos"
+        Mostrar-Comando-SO "Register-ScheduledTask $tarea (diaria 03:30): powershell $arg"
+        $accion   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arg
+        $horario  = New-ScheduledTaskTrigger -Daily -At "03:30"
+        try {
+            Register-ScheduledTask -TaskName $tarea -Action $accion -Trigger $horario -Description "Super Brunca: purga diaria de archivos ya aplicados en la standby" -Force -ErrorAction Stop | Out-Null
+            Exito "Tarea '$tarea' creada. Se ejecuta todos los dias a las 03:30 (con Docker encendido)."
+        } catch { Falla "No se pudo crear la tarea: $($_.Exception.Message)" }
+    }
+}
+
 # Prueba real de que las dos PC estan conectadas y termina con un veredicto claro
 function Op-Conexion {
     Titulo "Comprobar que las dos PC esten conectadas"
@@ -702,7 +741,8 @@ function Mostrar-Menu {
             @("3",  "Sincronizar ahora y ver el retraso",      ($principal -or $standby)),
             @("6",  "Switchover: pasar el rol a la otra PC",   $principal),
             @("7",  "Abrir como nueva principal",              $abrir),
-            @("8",  "Failover: la principal se cayo",          $standby))),
+            @("8",  "Failover: la principal se cayo",          $standby),
+            @("15", "Purgar archivos ya aplicados (y programarla)", $standby))),
         @("Respaldo", @(
             , @("4",  "Respaldo RMAN ahora (nivel 0 o 1)",     $principal))),   # la coma evita que PowerShell aplane la lista de un elemento
         @("Correos", @(
@@ -740,6 +780,7 @@ function Ejecutar([string]$o) {
         "12" { Op-ClaveGmail }
         "13" { Op-EnviarNotificacion }
         "14" { Op-Conexion }
+        "15" { Op-PurgaStandby }
         default { Aviso "Opcion no valida." }
     }
 }

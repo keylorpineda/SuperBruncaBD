@@ -369,3 +369,97 @@ SELECT codigo_para, valor_texto_para
    * *Solución:* `docker start ora_principal` y esperar a que `docker ps` muestre `(healthy)`; la opción 1 del menú indica el estado. Para la standby use la opción 2 del menú (la arranca y reanuda la sincronización).
 
 Los problemas propios del standby (sincronización detenida, huecos de archivelogs, cambio de roles) se atienden en la sección 10 ("Acciones que pueden no replicarse y cómo actuar") y la sección 13 (incidentes) del **Manual de Administración del Standby**.
+
+---
+
+## 7. Solución dada a cada requerimiento
+
+Esta sección relaciona cada punto del enunciado con el objeto de la base que lo resuelve y una forma de comprobarlo. Las consultas se ejecutan en `PDBCADENA` con el esquema `CADENA_NEG` (menú, opción 9).
+
+### 7.1 Funcionalidades
+
+| Requerimiento | Solución | Cómo comprobarlo |
+| :--- | :--- | :--- |
+| Factura de venta pendiente aumenta el saldo del cliente y crea la cuenta por cobrar | `TRG_VEN_FACTURA_CRED_AI` (después de `PKG_VEN_OPERACION.PR_CREAR_FACTURA_VENTA`) | `SELECT * FROM VEN_CUENTA_COBRAR ORDER BY 1 DESC FETCH FIRST 5 ROWS ONLY;` |
+| Factura de proveedor pendiente aumenta lo que se le debe (cuentas por pagar) | `TRG_COM_FACTURA_CRED_AI` (después de `PKG_COM_OPERACION.PR_CREAR_FACTURA_COMPRA`) | `SELECT * FROM COM_CUENTA_PAGAR ORDER BY 1 DESC FETCH FIRST 5 ROWS ONLY;` |
+| Factura pagada por completo cambia de pendiente a cancelada | `TRG_VEN_ABONO_SALDO_AI` y `TRG_COM_ABONO_SALDO_AI` | Abonar el total con `PR_REGISTRAR_ABONO_COBRAR`: `ESTADO_FAVE` pasa de `P` a `C` |
+| Padrón nacional cargado con la información actual, modelo adaptado y enlazado a clientes | `CAT_PADRON` (3 762 240 personas), `CAT_DISTRITO_ELECTORAL`, tablas externas `EXT_PADRON_TSE` / `EXT_DISTELEC_TSE`, vista `V_PADRON_DETALLE`, columna `PER_CLIENTE.ID_PADRON`; `PKG_PER_PADRON.PR_CREAR_CLIENTE_DESDE_PADRON` | `SELECT * FROM V_PADRON_DETALLE WHERE cedula_padr = '101053316';` |
+| Procedimiento que carga el padrón automáticamente | `PKG_PER_PADRON.PR_CARGAR_PADRON_MASIVO` y `PR_ACTUALIZAR_PADRON_MENSUAL`; jobs `JOB_PADRON_MENSUAL` (día 5) y `JOB_PADRON_DESCARGA` (descarga el ZIP del TSE) | `SELECT job_name, state FROM user_scheduler_jobs WHERE job_name LIKE 'JOB_PADRON%';` |
+| Las facturas de venta y de compra modifican el inventario | `TRG_VEN_FACTURA_DET_INV_AI` y `TRG_COM_FACTURA_DET_INV_AI` (usan `PKG_INV_GESTION.PR_AFECTAR_EXISTENCIA` y registran el kardex) | `SELECT * FROM V_KARDEX ORDER BY 1 DESC FETCH FIRST 5 ROWS ONLY;` |
+| Las devoluciones modifican el inventario | `TRG_VEN_DEVOLUCION_DET_INV_AI` (entrada `DEVOL_CLI`) y `TRG_COM_DEVOLUCION_DET_INV_AI` (salida `DEVOL_PROV`) | Insertar una devolución: `CANTIDAD_EXIS` sube (cliente) o baja (proveedor) |
+| Precio de costo distinto queda en el historial de precios | La compra actualiza `PRO_PRODUCTO.PRECIO_COSTO_PROD` (`TRG_COM_FACTURA_DET_INV_AI`) y `TRG_PRO_HISTORIAL_PRECIO_AU` guarda el costo anterior en `PRO_PRECIO_HIST` | `SELECT * FROM PRO_PRECIO_HIST ORDER BY 1 DESC FETCH FIRST 5 ROWS ONLY;` |
+| Límites al facturar a crédito (clientes y proveedores) | `TRG_VEN_FACTURA_CRED_BIU` (`ORA-20010`) y `TRG_COM_FACTURA_CRED_BIU` (`ORA-20018`); la factura no se guarda | Una venta a crédito de ₡50 000 000 es rechazada |
+| Reporte semanal a mercadeo: por vencer (una semana) y más de 6 meses en bodega, al coordinador | `PKG_INV_GESTION.PR_REPORTE_SEMANAL_MERCADEO`, `JOB_MERCADEO_SEMANAL` (lunes 05:00); parámetros `DIAS_ALERTA_POR_VENCER`, `MESES_ANTIGUEDAD_BODEGA` | `EXEC PKG_INV_GESTION.PR_REPORTE_SEMANAL_MERCADEO;` |
+| Promociones con acciones según productos patrocinadores (cantidad definida en la promoción) | `PKG_PRM_MERCADEO.FN_CALCULAR_ACCIONES_FACTURA` y `PR_OTORGAR_ACCIONES_LINEA` (desde el trigger de detalle de venta); tablas `PRM_PROMOCION`, `PRM_PATROCINADOR`, `PRM_ACCION_CLIENTE` | Al facturar aparece `[PROMOCION AUTOMATICA] Se otorgaron N accion(es)` |
+| Verificación semanal de descuentos planeados (por vencer o antigüedad) | `PKG_PRM_MERCADEO.PR_VERIFICAR_DESCUENTOS_SEMANAL` (en `JOB_MERCADEO_SEMANAL`): agrega los lotes a `PRM_DESCUENTO_DET` según `PRM_DESCUENTO_REGLA` | `SELECT * FROM PRM_DESCUENTO_DET;` |
+| Top 10 clientes con orden de ₡100 000 cada 6 meses, notificado al coordinador | `PKG_PRM_MERCADEO.PR_PREMIAR_MEJORES_CLIENTES`, `JOB_PREMIACION_SEMESTRAL`, tabla `PRM_ORDEN_PREMIACION`; parámetros `TOP_CLIENTES_PREMIADOS`, `MONTO_ORDEN_PREMIACION`, `MESES_FRECUENCIA_PREMIACION` (al cambiarlo, `TRG_SEG_PARAM_PREMIACION_AU` reprograma el job) | `SELECT * FROM PRM_ORDEN_PREMIACION;` |
+| Bitácoras de facturación, cambio de precios, movimientos de inventario, clientes, proveedores, promociones y descuentos | `TRG_AUD_VEN_FACTURA`, `TRG_AUD_COM_FACTURA`, `TRG_AUD_PRO_PRODUCTO` y `PRO_PRECIO_HIST`, `TRG_AUD_INV_MOVIMIENTO`, `TRG_AUD_PER_CLIENTE`, `TRG_AUD_PER_PROVEEDOR`, `TRG_AUD_PRM_PROMOCION`, `TRG_AUD_PRM_DESCUENTO`, `TRG_AUD_PRM_DESCUENTO_DET` → `AUD_REGISTRO_CAMBIO` | `SELECT * FROM AUD_REGISTRO_CAMBIO ORDER BY 1 DESC FETCH FIRST 10 ROWS ONLY;` |
+| Notificaciones parametrizadas (correo, clave y destinatarios) | `SEG_PARAMETRO`: `SMTP_HOST`, `SMTP_PORT`, `CORREO_EMISOR`, `CLAVE_CORREO_EMISOR`, `CORREO_COORDINADOR`, `CORREO_GERENTE`, `CORREO_DBA` (menú, opciones 11 y 12) | `SELECT codigo_para, es_cifrado_para, valor_texto_para FROM SEG_PARAMETRO WHERE modulo_para = 'CORREO';` |
+| Clave del correo cifrada | AES-256 con `DBMS_CRYPTO` (`PKG_SEG_SEGURIDAD`), guardada en `VALOR_RAW_PARA` | La consulta anterior muestra `CLAVE_CORREO_EMISOR` cifrada y sin texto |
+| Correo enviado directamente desde Oracle, sin VPN | `PKG_ADM_NOTIFICACION.PR_ENVIAR_CORREO` con `UTL_SMTP` hacia `smtp.gmail.com:465` (wallet SSL) | Menú, opción 13 |
+
+### 7.2 Seguridad
+
+| Requerimiento | Solución | Cómo comprobarlo |
+| :--- | :--- | :--- |
+| Perfiles, roles y usuarios; roles Gerente, Jefe Departamento, Jefe Proveeduría y Digitador | Perfiles `PERFIL_CADENA_ADMIN` y `PERFIL_CADENA_OPER`; roles `ROL_GERENTE`, `ROL_JEFE_DEPARTAMENTO`, `ROL_JEFE_PROVEEDURIA`, `ROL_DIGITADOR`; usuarios `USR_*` | `SELECT username, profile FROM dba_users WHERE username LIKE 'USR%';` |
+| Roles protegidos con clave, cifrada en una tabla de parámetros | Parámetros `CLAVE_ROL_*` cifrados en `SEG_PARAMETRO`; `PKG_SEG_SEGURIDAD.PR_ASIGNAR_CLAVE_ROL` asigna la clave al rol | `SELECT codigo_para, es_cifrado_para FROM SEG_PARAMETRO WHERE codigo_para LIKE 'CLAVE_ROL%';` |
+| Procedimiento que asigna la clave para usar el rol | `PRC_ACTIVAR_ROL_SESION` descifra la clave y ejecuta `DBMS_SESSION.SET_ROLE` | Como `USR_DIGITADOR`: `EXEC CADENA_NEG.PRC_ACTIVAR_ROL_SESION('ROL_DIGITADOR');` |
+
+### 7.3 Notificaciones
+
+| Requerimiento | Solución | Cómo comprobarlo |
+| :--- | :--- | :--- |
+| Clientes con 85 % o más de su límite (correo a cada cliente) y lista completa al coordinador | `PKG_ADM_NOTIFICACION.PR_NOTIF_CLIENTES_85_CREDITO`; parámetro `PORC_ALERTA_CREDITO_CLI` | Menú, opción 13 → 1 |
+| Proveedores cerca del 70 % del límite, en un solo correo al gerente | `PR_NOTIF_PROVEEDORES_70_CREDITO`; parámetro `PORC_ALERTA_CREDITO_PROV` | Menú, opción 13 → 2 |
+| Clientes con saldo pendiente y último pago de hace más de un mes, al gerente y al coordinador | `PR_NOTIF_CLIENTES_MOROSOS`; parámetro `MESES_MOROSIDAD_CLIENTE` | Menú, opción 13 → 3 |
+| Productos vencidos con su total, al coordinador | `PR_NOTIF_PRODUCTOS_VENCIDOS` | Menú, opción 13 → 4 |
+| Cierre diario automático con fecha, cantidad vendida, devoluciones y total, y detalle por cajero, notificado al coordinador y al gerente | `PKG_VEN_OPERACION.PR_EJECUTAR_CIERRE_DIARIO`, `JOB_CIERRE_DIARIO_AUTO` (23:00); tablas nuevas `VEN_CIERRE_DIARIO` y `VEN_CIERRE_DIARIO_DET` | Menú, opción 13 → 6 |
+| Tablespaces sin pasar del 85 %, todos los días | `PKG_ADM_MONITOREO.PR_VERIFICAR_TABLESPACES`, `JOB_MONITOREO_SALUD_DIARIO` (06:00); parámetro `PORC_MAX_TABLESPACE` | Menú, opción 13 → 8 |
+| Objetos inválidos, todos los días | `PR_VERIFICAR_OBJETOS_INVALIDOS` (mismo job) | Crear una vista inválida y usar la opción 13 → 8 |
+| Índices dañados, todos los días | `PR_VERIFICAR_INDICES_DANADOS` (mismo job) | `ALTER INDEX IX_CUCO_ESTADO_VENCIM UNUSABLE;` y la opción 13 → 8 (después, `ALTER INDEX ... REBUILD;`) |
+
+Las notificaciones solo se envían cuando hay algo que avisar. El contenido y el diseño de los correos se describen en la sección 6.2 del Manual Técnico.
+
+### 7.4 Standby
+
+La solución completa está en la sección 1.3 del **Manual de Administración del Standby**. En resumen:
+
+| Requerimiento | Solución |
+| :--- | :--- |
+| Dos servidores distintos | PC principal (`CADENA`) y PC standby (`CADENA_STBY`) con Oracle Data Guard |
+| Archivo de actualización cada 5 minutos o 50 MB (parametrizado), sin intervención del DBA | Redo logs de 50 MB y `ARCHIVE_LAG_TARGET = 300`; parámetros `STANDBY_SWITCH_MIN` y `STANDBY_SWITCH_MB` |
+| Traslado cada 10 minutos (parametrizado) y a petición del académico | Data Guard envía cada cambio apenas se genera; `JOB_STANDBY_TRASLADO_ARCHIVELOG` cada `STANDBY_SYNC_MIN` minutos; a petición: `PKG_ADM_STANDBY.PR_SINCRONIZAR_AHORA` o menú, opción 3 |
+| Oracle 21c en Linux o Windows | Oracle 21c Enterprise Edition (Linux, en contenedores Docker) |
+| Borrar en la principal lo ya trasladado y en la standby lo ya aplicado, con más de 3 días (parametrizado) | Principal: `JOB_STANDBY_PURGA_ARCHIVELOG` (`03_Purga_Archivelogs_3Dias.rman`). Standby: `03_Purga_Archivelogs_Standby.rman`, que la opción 15 del menú ejecuta y programa todos los días en la PC standby. Parámetro `STANDBY_PURGE_DIAS` |
+| Respaldo diario automático, trasladado a la standby y a petición | `JOB_RMAN_BACKUP_DIARIO` (nivel 0 los domingos, nivel 1 los demás días), envío por `DBMS_FILE_TRANSFER` y el enlace `LNK_STANDBY`; a petición: `PR_RESPALDAR_AHORA` o menú, opción 4 |
+
+### 7.5 Requerimientos de base de datos
+
+| # | Requerimiento | Solución |
+| :-: | :--- | :--- |
+| 1 | Arquitectura en paquetes | 10 paquetes por módulo: `PKG_AUD_CONTROL`, `PKG_SEG_SEGURIDAD`, `PKG_ADM_NOTIFICACION`, `PKG_PER_PADRON`, `PKG_INV_GESTION`, `PKG_PRM_MERCADEO`, `PKG_COM_OPERACION`, `PKG_VEN_OPERACION`, `PKG_ADM_MONITOREO`, `PKG_ADM_STANDBY` |
+| 2 | `COMMIT`, `ROLLBACK` y `SAVEPOINT` | Facturación atómica (`PR_FACTURAR_VENTA_ATOMICA`, `PR_FACTURAR_COMPRA_ATOMICA`): si una línea falla se vuelve al `SAVEPOINT` y no quedan filas a medias |
+| 3 | Manejo de excepciones en cada procedimiento | Bloques `EXCEPTION` en todos los procedimientos; los errores se guardan en `AUD_ERROR_SISTEMA` con `PRAGMA AUTONOMOUS_TRANSACTION`; catálogo de códigos en la sección 5.2 del Manual Técnico |
+| 4 | Auditoría con tablas y triggers | 9 triggers `TRG_AUD_*` → `AUD_REGISTRO_CAMBIO`; operaciones críticas en `AUD_BITACORA` |
+| 5 | Procesos automáticos con `DBMS_SCHEDULER` | 11 jobs (sección 6.1 del Manual Técnico) |
+| 6 | Seguridad: password profile, roles mínimos sin `DBA`/`CONNECT`/`RESOURCE`, privilegios de sistema y de objeto | Sección 7.2 y secciones 3.1, 3.4 y 3.5 del Manual Técnico |
+| 7 | Cifrado con `DBMS_CRYPTO` | AES-256 CBC con relleno PKCS5 en `PKG_SEG_SEGURIDAD` (clave del correo y claves de los roles) |
+| 8 | Optimización con `EXPLAIN PLAN` | Sección 2 de `06_Scheduler_Optimizacion_y_Pruebas.sql` e índice `IX_CUCO_ESTADO_VENCIM` (sección 7 del Manual Técnico) |
+| 9 | Vistas materializadas de ventas mensuales e inventario consolidado | `MV_VENTAS_MENSUALES` y `MV_INVENTARIO_CONSOLIDADO`, refrescadas en el cierre diario |
+| 10 | Parametrización en tablas | Tabla `SEG_PARAMETRO` (módulos `CORREO`, `NEGOCIO`, `MONITOREO`, `SEGURIDAD`, `STANDBY`) |
+| 11 | Concurrencia con `SELECT FOR UPDATE`, `NOWAIT` y `WAIT` | `FOR UPDATE WAIT 5` al mover inventario (si otro cajero tiene la fila: `ORA-20016`) y `FOR UPDATE NOWAIT` al registrar abonos |
+| 12 | Integridad con paquetes o triggers | Triggers de crédito e inventario y validaciones de los paquetes, con códigos de error únicos |
+| 13 | Monitoreo de crecimiento, tablespaces, sesiones y errores | `PKG_ADM_MONITOREO` → `AUD_MONITOREO_BD` |
+| 14 | Standby con failover, switchover, recuperación y sincronización | Data Guard; procedimientos verificados en la sección 11 del Manual del Standby |
+| 15 | RMAN: respaldo completo, incremental, restauración y recuperación | `04_RMAN_Backup_Full_Incremental.rman` y `05_RMAN_Restore_Recovery_PointInTime.rman` (sección 8 del Manual del Standby) |
+
+### 7.6 Documentación
+
+| Requerimiento | Dónde está |
+| :--- | :--- |
+| Manual de instalación y despliegue (paso a paso, conceptos y solución de cada requerimiento) | Este manual |
+| Manual de administración del standby (y cómo actuar ante inconvenientes) | `Manual_Administracion_Standby.pdf` (secciones 10 y 13) |
+| Manual técnico de administración y mantenimiento | `Manual_Tecnico_de_Administracion_y_Mantenimiento.pdf` |
+| Documentación interna del código | Encabezados y comentarios de cada script (sección 9 del Manual Técnico) |
+| Modelo relacional | Carpeta `Modelo_Relacional/`: diagrama, DBML, desnormalizaciones y diccionario de datos |

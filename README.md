@@ -65,6 +65,7 @@ El menú detecta solo si en esa PC está `ora_principal` u `ora_standby` y qué 
 | 12 | Clave de aplicación de Gmail (se guarda cifrada) y wallet SSL | Principal |
 | 13 | Enviar una notificación ahora: clientes 85 %, proveedores 70 %, morosos, vencidos, cierre, mercadeo, salud de la base, standby o premiación | Principal |
 | 14 | Comprobar que las dos PC están conectadas: prueba real y veredicto CONECTADAS / NO CONECTADAS con qué revisar | Cualquiera |
+| 15 | Purgar en la standby los archivos ya aplicados (más de 3 días) y programar la purga diaria | Standby |
 
 Las opciones 6 y 8 piden escribir `SI` y se niegan si se eligen en la PC equivocada.
 **Switchover con el menú:** principal → 6; la otra PC → 7; la que era principal → 2.

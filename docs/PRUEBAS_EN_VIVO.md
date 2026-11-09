@@ -317,8 +317,9 @@ END;
 /
 ```
 
-**Debe salir en B, de inmediato:** `ORA-20016: El registro de inventario esta siendo modificado por otro
-cajero. Intente nuevamente.` (usa `SELECT ... FOR UPDATE NOWAIT`: no se queda esperando).
+**Debe salir en B, a los 5 segundos:** `ORA-20016: El registro de inventario esta siendo modificado por otro
+cajero. Intente nuevamente.` (usa `SELECT ... FOR UPDATE WAIT 5`: espera hasta 5 segundos y, si la fila
+sigue bloqueada, avisa en lugar de quedarse colgado). Los abonos usan `FOR UPDATE NOWAIT`, que responde de inmediato.
 Luego en **A**: `ROLLBACK;`. Si repite el bloque en B, ahora sí pasa.
 
 ## 14. Usuario con permisos limitados (roles con clave)

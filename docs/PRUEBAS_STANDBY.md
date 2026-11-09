@@ -186,6 +186,9 @@ EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_ESTADO_STANDBY;
 en la standby) o `RMAN-08138` (falta respaldo): es lo correcto. `PR_ESTADO_STANDBY` lista los 4
 jobs del standby con su última ejecución `SUCCEEDED`.
 
+**En la PC 2:** menú → **opción 15**. Borra en la standby los archivos ya aplicados con más de 3 días
+(`03_Purga_Archivelogs_Standby.rman`) y, la primera vez, ofrece programarla todos los días.
+
 - [ ] Hecho
 
 ## 10. Switchover (cambio de roles planeado) y regreso

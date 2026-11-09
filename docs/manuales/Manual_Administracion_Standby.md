@@ -260,7 +260,7 @@ Si algo falla, el script termina con código 1; así DBMS_SCHEDULER marca el job
 | Lado | Script | Regla |
 | :--- | :--- | :--- |
 | PC 1 | `03_Purga_Archivelogs_3Dias.rman` (job diario) | `ARCHIVELOG DELETION POLICY TO APPLIED ON ALL STANDBY BACKED UP 1 TIMES` y `DELETE ARCHIVELOG ALL COMPLETED BEFORE 'SYSDATE-&1'`. |
-| PC 2 | `03_Purga_Archivelogs_Standby.rman` (tarea diaria) | `CATALOG` de la carpeta recibida, política `APPLIED ON ALL STANDBY` y borrado de lo aplicado con más de `&1` días. |
+| PC 2 | `03_Purga_Archivelogs_Standby.rman` (menú, opción 15: la ejecuta y la programa a diario en el Programador de tareas de Windows de la PC standby, porque en una standby no corre `DBMS_SCHEDULER`) | `CATALOG` de la carpeta recibida, política `APPLIED ON ALL STANDBY` y borrado de lo aplicado con más de `&1` días. |
 
 `&1` es el valor de `STANDBY_PURGE_DIAS`. RMAN no borra un archivelog que no cumpla la política: muestra `RMAN-08120` y lo conserva. En modo manual RMAN avisa `RMAN-08591` (no hay destino standby registrado) y exige solo el respaldo; que el archivo ya llegó a la PC 2 lo garantiza el traslado cada 10 minutos, vigilado por `JOB_STANDBY_MONITOREO`.
 
@@ -587,6 +587,7 @@ powershell -ExecutionPolicy Bypass -File .\menu.ps1
 | 12 | Clave de aplicación de Gmail (cifrada) y wallet SSL | Principal | Pasos 8 y 9 del Manual de Instalación |
 | 13 | Enviar una notificación ahora (submenú con los 10 avisos que mandan los jobs; muestra el asunto y si se entregó) | Principal | Procedimientos de `PKG_ADM_NOTIFICACION`, `PKG_VEN_OPERACION`, `PKG_INV_GESTION`, `PKG_ADM_MONITOREO`, `PKG_ADM_STANDBY` y `PKG_PRM_MERCADEO` |
 | 14 | Comprobar que las dos PC están conectadas: `tnsping`, estado del envío (o procesos RFS/MRP0 en la standby) y una prueba real (cierra un archivo de cambios y espera a que la standby lo reciba). Termina con **CONECTADAS** o **NO CONECTADAS** y qué revisar | Las dos | Secciones 9.1 y 11.8 |
+| 15 | Purga los archivos ya aplicados con más de `STANDBY_PURGE_DIAS` días y ofrece programarla todos los días a las 03:30 (tarea de Windows `SuperBrunca_Purga_Standby`) | Standby | Sección 7 |
 
 Cada opción muestra en pantalla, antes de ejecutarlo, el comando SQL, RMAN o Docker real que envía (por ejemplo `SQL> ALTER DATABASE SWITCHOVER TO CADENA_STBY;`), para que se vea que la operación ocurre de verdad. `-SinComandos` los oculta.
 

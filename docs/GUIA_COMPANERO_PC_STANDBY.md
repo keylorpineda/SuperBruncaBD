@@ -364,6 +364,11 @@ Desde entonces, cada noche a la 01:00 la principal saca el respaldo y lo deja en
 `/opt/oracle/standby_backups`, sin que nadie haga nada. Para verlo:
 `docker exec ora_standby ls -la /opt/oracle/standby_backups`.
 
+4. 🟢 Usted programa la **purga diaria** de su PC (el enunciado pide borrar los archivos ya aplicados
+   en la standby con más de 3 días): menú → opción **15**. Borra lo que ya cumple los 3 días y
+   pregunta *"Programar esta purga todos los días a las 03:30?"*: responda **s**. Queda una tarea en el
+   Programador de tareas de Windows (`SuperBrunca_Purga_Standby`) que corre sola mientras Docker esté encendido.
+
 > El paso 10 (pasar el respaldo a mano) solo se hace **una vez**, para crear la standby.
 
 ---
