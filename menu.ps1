@@ -38,11 +38,48 @@ $ScriptsStandby = "/opt/oracle/proyecto/sql/07_Standby_y_RMAN"
 # ------------------------------------------------------------------------------
 # Utilidades
 # ------------------------------------------------------------------------------
+# Pantalla: solo caracteres ASCII en el codigo (PowerShell 5.1 lee el archivo como ANSI);
+# las lineas se dibujan con [char] para que se vean bien en cualquier consola.
+$script:Linea = [string][char]0x2500
+$script:Punto = [string][char]0x2022
+
+function Ancho {
+    try { $w = $Host.UI.RawUI.WindowSize.Width } catch { $w = 0 }
+    if (-not $w -or $w -lt 60) { $w = 100 }
+    return [Math]::Min($w - 1, 110)
+}
+
 function Titulo([string]$t) {
     Write-Host ""
-    Write-Host ("=" * 70) -ForegroundColor Cyan
-    Write-Host "  $t" -ForegroundColor Cyan
-    Write-Host ("=" * 70) -ForegroundColor Cyan
+    Write-Host ("  " + $t.ToUpper()) -ForegroundColor Cyan
+    Write-Host ("  " + ($script:Linea * ([Math]::Min($t.Length + 4, (Ancho) - 4)))) -ForegroundColor DarkCyan
+}
+
+# Mensajes de la operacion
+function Paso([string]$t)  { Write-Host "  > $t" -ForegroundColor White }
+function Aviso([string]$t) { Write-Host "  ! $t" -ForegroundColor Yellow }
+function Exito([string]$t) { Write-Host "  OK $t" -ForegroundColor Green }
+function Falla([string]$t) { Write-Host "  X $t" -ForegroundColor Red }
+
+# Escribe la salida de sqlplus sangrada, sin tabuladores y con color:
+# "=== Seccion ===" como subtitulo, verde lo correcto y rojo los errores
+function Escribir-Salida([string]$texto) {
+    foreach ($l in ($texto -split "`n")) {
+        $l = ($l -replace "`t", "  ").TrimEnd()
+        if (-not $l.Trim()) { continue }
+        if ($l -match "^\s*===\s*(.+?)\s*===\s*$") {
+            Write-Host ""
+            Write-Host ("  " + $Matches[1]) -ForegroundColor Yellow
+        } elseif ($l -cmatch "ORA-|SP2-|ERROR|FAILED|Fallo|RESOLVABLE GAP|UNRESOLVABLE") {
+            Write-Host ("    " + $l) -ForegroundColor Red
+        } elseif ($l -cmatch "VALID|SUCCEEDED|NO GAP|entregada|\[OK\]|READ WRITE|APPLYING_LOG") {
+            Write-Host ("    " + $l) -ForegroundColor Green
+        } elseif ($l -match "^\s*-{3,}[\s-]*$") {
+            Write-Host ("    " + $l) -ForegroundColor DarkGray
+        } else {
+            Write-Host ("    " + $l)
+        }
+    }
 }
 
 function Elegir-Contenedor {
@@ -65,25 +102,35 @@ function Contenedor-Encendido {
     return ((docker inspect -f "{{.State.Running}}" $script:Contenedor 2>$null) -eq "true")
 }
 
-# Muestra los comandos reales que se van a ejecutar, para que se vea que no es una simulacion
+# Muestra los comandos reales que se van a ejecutar, para que se vea que no es una simulacion.
+# Una linea por instruccion, recortada al ancho de la ventana.
 function Mostrar-Comandos([string]$sql) {
     if ($script:SinComandos) { return }
     $lineas = @(($sql -replace "`r`n", "`n") -split "`n" | Where-Object { $_.Trim() -and $_ -notmatch "^\s*(SET |PROMPT|COLUMN |/\s*$)" })
     if ($lineas.Count -eq 0) { return }
-    Write-Host "  [$($script:Contenedor)] sqlplus / as sysdba" -ForegroundColor DarkCyan
-    $sigue = $false
+    # Unir las instrucciones de varias lineas (terminan en ';'); un bloque BEGIN ... END; va completo en una linea
+    $instrucciones = @(); $actual = ""; $bloque = $false
     foreach ($l in $lineas) {
-        $prefijo = if ($sigue) { "       " } else { "  SQL> " }
-        Write-Host ($prefijo + $l.Trim()) -ForegroundColor DarkCyan
-        $t = $l.TrimEnd()
-        $sigue = -not ($t.EndsWith(";") -or $t -match "^(BEGIN|DECLARE)$")
-        if ($t -match "^(BEGIN|DECLARE)$") { $sigue = $true }
+        $t = ($l.Trim() -replace "\s+", " ")
+        if ($t -match "^(BEGIN|DECLARE)$") { $bloque = $true }
+        $actual = ($actual + " " + $t).Trim()
+        if ((-not $bloque -and $t.EndsWith(";")) -or ($bloque -and $t -match "^END;?$")) { $instrucciones += $actual; $actual = ""; $bloque = $false }
+    }
+    if ($actual) { $instrucciones += $actual }
+    $max = (Ancho) - 10
+    Write-Host ("  " + $script:Contenedor + " | sqlplus / as sysdba") -ForegroundColor DarkGray
+    foreach ($i in $instrucciones) {
+        if ($i.Length -gt $max) { $i = $i.Substring(0, $max - 3) + "..." }
+        Write-Host ("    SQL> " + $i) -ForegroundColor DarkCyan
     }
 }
 
 function Mostrar-Comando-SO([string]$cmd) {
     if ($script:SinComandos) { return }
-    Write-Host "  [$($script:Contenedor)] `$ $cmd" -ForegroundColor DarkCyan
+    $max = (Ancho) - 8
+    if ($cmd.Length -gt $max) { $cmd = $cmd.Substring(0, $max - 3) + "..." }
+    Write-Host ("  " + $script:Contenedor + " | bash") -ForegroundColor DarkGray
+    Write-Host ("    `$ " + $cmd) -ForegroundColor DarkCyan
 }
 
 # Ejecuta SQL como SYSDBA dentro del contenedor y devuelve el texto de salida.
@@ -91,7 +138,7 @@ function Mostrar-Comando-SO([string]$cmd) {
 function Invoke-Sql([string]$sql, [switch]$Silencioso, [switch]$SinEco) {
     if (-not $SinEco) { Mostrar-Comandos $sql }
     $tmp = Join-Path $env:TEMP "menu_cadena.sql"
-    $texto = "SET LINESIZE 200 PAGESIZE 100 FEEDBACK OFF SERVEROUTPUT ON SIZE UNLIMITED`nWHENEVER SQLERROR CONTINUE`n" +
+    $texto = "SET LINESIZE 200 PAGESIZE 100 FEEDBACK OFF SERVEROUTPUT ON SIZE UNLIMITED`nSET TAB OFF`nWHENEVER SQLERROR CONTINUE`n" +
              ($sql -replace "`r`n", "`n") + "`nEXIT;`n"
     [IO.File]::WriteAllText($tmp, $texto, (New-Object Text.UTF8Encoding $false))
     docker cp $tmp "$($script:Contenedor):/tmp/menu_cadena.sql" 2>$null | Out-Null
@@ -99,7 +146,7 @@ function Invoke-Sql([string]$sql, [switch]$Silencioso, [switch]$SinEco) {
     docker exec -u root $script:Contenedor rm -f /tmp/menu_cadena.sql 2>$null | Out-Null   # puede contener una clave
     Remove-Item $tmp -ErrorAction SilentlyContinue
     $salida = ($salida | Where-Object { $_ -ne $null -and "$_".Trim() -ne "" }) -join "`n"
-    if (-not $Silencioso) { Write-Host $salida }
+    if (-not $Silencioso) { Escribir-Salida $salida }
     return $salida
 }
 
@@ -124,14 +171,14 @@ function Get-Rol {
 
 function Confirmar([string]$mensaje) {
     if ($SinConfirmar) { return $true }
-    Write-Host $mensaje -ForegroundColor Yellow
-    return ((Read-Host "Escriba SI para continuar") -eq "SI")
+    Aviso $mensaje
+    return ((Read-Host "  Escriba SI para continuar") -eq "SI")
 }
 
 function Esperar-Contenedor {
     if (-not (Contenedor-Encendido)) {
-        Write-Host "Encendiendo el contenedor $($script:Contenedor)..."
-        if (-not $script:SinComandos) { Write-Host "  `$ docker start $($script:Contenedor)" -ForegroundColor DarkCyan }
+        Paso "Encendiendo el contenedor $($script:Contenedor)..."
+        if (-not $script:SinComandos) { Write-Host "    `$ docker start $($script:Contenedor)" -ForegroundColor DarkCyan }
         docker start $script:Contenedor | Out-Null
     }
     # La imagen de Oracle tarda en terminar su propio arranque
@@ -147,10 +194,10 @@ function Esperar-Contenedor {
 # ------------------------------------------------------------------------------
 function Op-Estado {
     Titulo "ESTADO DE $($script:Contenedor)"
-    if (-not (Contenedor-Encendido)) { Write-Host "El contenedor esta APAGADO. Use la opcion 2 (standby) o: docker start $($script:Contenedor)" -ForegroundColor Yellow; return }
+    if (-not (Contenedor-Encendido)) { Aviso "El contenedor esta APAGADO. Use la opcion 2 (standby) o: docker start $($script:Contenedor)"; return }
     if ((Get-Rol).Rol -eq "SIN BASE") {
-        Write-Host "La instancia de Oracle esta APAGADA (o en NOMOUNT)." -ForegroundColor Yellow
-        Write-Host "Si esta PC es la standby use la opcion 2. Si es la principal: docker restart $($script:Contenedor)"
+        Aviso "La instancia de Oracle esta APAGADA (o en NOMOUNT)."
+        Paso "Si esta PC es la standby use la opcion 2. Si es la principal: docker restart $($script:Contenedor)"
         return
     }
     Invoke-Sql @"
@@ -171,7 +218,7 @@ SELECT 'Retraso ' || REPLACE(name, ' lag', '') || ': ' || NVL(value, '-')
     # Datos del proyecto: solo si la base esta abierta en escritura (la principal)
     $r = Get-Rol
     if ($r.Modo -ne "READ WRITE") {
-        Write-Host "(Base en modo $($r.Modo): los datos del proyecto se ven en la principal o con la opcion 5.)"
+        Write-Host ""; Paso "Base en modo $($r.Modo): los datos del proyecto se ven en la principal o con la opcion 5."
         return
     }
     Invoke-Sql @"
@@ -190,19 +237,19 @@ function Op-ArrancarStandby {
     Titulo "ARRANCAR / REANUDAR LA STANDBY"
     Esperar-Contenedor
     $r = Get-Rol
-    if ($r.Rol -eq "PRIMARY") { Write-Host "Esta base es la PRINCIPAL ($($r.Modo)): no hace falta esta opcion." -ForegroundColor Yellow; return }
+    if ($r.Rol -eq "PRIMARY") { Aviso "Esta base es la PRINCIPAL ($($r.Modo)): no hace falta esta opcion."; return }
     if ($r.Rol -eq "SIN BASE") {
-        Write-Host "La instancia esta apagada: STARTUP MOUNT..."
+        Paso "La instancia esta apagada: STARTUP MOUNT..."
         Invoke-Sql "STARTUP MOUNT;" | Out-Null
         $r = Get-Rol
     }
     # Se deja abierta en solo lectura (Active Data Guard): asi el database link
     # LNK_STANDBY puede recibir el respaldo diario y se pueden consultar los datos.
     if ($r.Modo -eq "MOUNTED") {
-        Write-Host "Abriendo la standby en solo lectura..."
+        Paso "Abriendo la standby en solo lectura..."
         Invoke-Sql "ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;`nALTER DATABASE OPEN READ ONLY;`nALTER PLUGGABLE DATABASE ALL OPEN READ ONLY;" -Silencioso | Out-Null
     }
-    Write-Host "Activando la aplicacion automatica de cambios (Data Guard)..."
+    Paso "Activando la aplicacion automatica de cambios (Data Guard)..."
     Invoke-Sql "ALTER DATABASE RECOVER MANAGED STANDBY DATABASE USING CURRENT LOGFILE DISCONNECT FROM SESSION;" -Silencioso | Out-Null
     Start-Sleep -Seconds 5
     Op-Estado
@@ -214,7 +261,7 @@ function Op-Sincronizar {
     if ($r.Rol -eq "PRIMARY") {
         # Reintenta el envio ya (si la standby estuvo apagada, Oracle esperaria 5 minutos)
         # y cierra el redo actual para mandarlo a la standby
-        Write-Host "Reintentando el envio y cerrando el redo actual..."
+        Paso "Reintentando el envio y cerrando el redo actual..."
         # Si el destino quedo en ERROR (pasa tras un switchover, failover o reconstruccion),
         # un simple ENABLE no basta: hay que pasarlo por DEFER para que Oracle reconecte.
         $estadoDestino = Get-Valor "SELECT status FROM v`$archive_dest_status WHERE dest_id = 2;"
@@ -224,7 +271,7 @@ function Op-Sincronizar {
         Invoke-Sql "ALTER SYSTEM SET LOG_ARCHIVE_DEST_STATE_2 = ENABLE SCOPE = BOTH;`nALTER SYSTEM ARCHIVE LOG CURRENT;" -Silencioso | Out-Null
         Start-Sleep -Seconds 10
         Invoke-Sql "SET HEADING OFF`nSELECT 'Destino 2: ' || status || NVL2(error, ' - ' || error, '') || '   huecos: ' || NVL(gap_status, '-') AS envio FROM v`$archive_dest_status WHERE dest_id = 2;" | Out-Null
-        Write-Host "En la PC standby use la opcion 1 para ver el retraso (debe ser 0)."
+        Paso "En la PC standby use la opcion 1 para ver el retraso (debe ser 0)."
     } else {
         Invoke-Sql "SET HEADING OFF`nSELECT 'Retraso ' || REPLACE(name, ' lag', '') || ': ' || NVL(value, '-') AS retraso FROM v`$dataguard_stats WHERE name IN ('transport lag', 'apply lag');" | Out-Null
         Invoke-Sql "SET HEADING OFF`nSELECT 'Proceso ' || process || ': ' || status || ' (secuencia ' || sequence# || ')' AS proceso FROM v`$managed_standby WHERE process IN ('MRP0', 'RFS') AND sequence# > 0;" | Out-Null
@@ -234,23 +281,23 @@ function Op-Sincronizar {
 function Op-Respaldo {
     Titulo "RESPALDO RMAN AHORA"
     $r = Get-Rol
-    if ($r.Rol -ne "PRIMARY") { Write-Host "El respaldo se saca en la PRINCIPAL. Esta base es $($r.Rol)." -ForegroundColor Yellow; return }
-    $nivel = if ($SinConfirmar) { "1" } else { Read-Host "Nivel (0 = completo, 1 = incremental) [1]" }
+    if ($r.Rol -ne "PRIMARY") { Aviso "El respaldo se saca en la PRINCIPAL. Esta base es $($r.Rol)."; return }
+    $nivel = if ($SinConfirmar) { "1" } else { Read-Host "  Nivel (0 = completo, 1 = incremental) [1]" }
     if ($nivel -ne "0") { $nivel = "1" }
     $dest = Get-Valor "SELECT SUBSTR(name, 1, INSTR(name, '/', -1) - 1) FROM (SELECT name FROM v`$archived_log WHERE dest_id = 1 AND name IS NOT NULL ORDER BY completion_time DESC) WHERE ROWNUM = 1;"
     if (-not $dest) { $dest = "/opt/oracle/oradata/CADENA/archive_logs" }
-    Write-Host "Respaldando (nivel $nivel). Tarda unos minutos..."
+    Paso "Respaldando (nivel $nivel). Tarda unos minutos..."
     docker exec -u root $script:Contenedor bash -c "mkdir -p /opt/oracle/backups /opt/oracle/logs && chown oracle:oinstall /opt/oracle/backups /opt/oracle/logs" | Out-Null
     $cmd = 'NIVEL_BACKUP=' + $nivel + ' bash 02_Traslado_Archivelogs_10min_y_Ondemand.sh backup ' + $dest + ' x /opt/oracle/backups /tmp/stby_bk 3 CADENA $ORACLE_HOME 10'
     Mostrar-Comando-SO "cd $ScriptsStandby && $cmd   (RMAN: 04_RMAN_Backup_Full_Incremental.rman)"
-    docker exec -u oracle -w $ScriptsStandby $script:Contenedor bash -c $cmd 2>&1 | Where-Object { $_ -match "\[OK\]|\[ERROR\]|RMAN:" } | ForEach-Object { Write-Host $_ }
-    Write-Host "Respaldos en el contenedor: /opt/oracle/backups"
+    docker exec -u oracle -w $ScriptsStandby $script:Contenedor bash -c $cmd 2>&1 | Where-Object { $_ -match "\[OK\]|\[ERROR\]|RMAN:" } | ForEach-Object { Escribir-Salida "$_" }
+    Paso "Respaldos en el contenedor: /opt/oracle/backups"
 }
 
 function Op-SoloLectura {
     Titulo "MOSTRAR DATOS EN LA STANDBY (solo lectura, sin parar la sincronizacion)"
     $r = Get-Rol
-    if ($r.Rol -ne "PHYSICAL STANDBY") { Write-Host "Esta opcion es para la STANDBY. Esta base es $($r.Rol)." -ForegroundColor Yellow; return }
+    if ($r.Rol -ne "PHYSICAL STANDBY") { Aviso "Esta opcion es para la STANDBY. Esta base es $($r.Rol)."; return }
     if ($r.Modo -notlike "READ ONLY*") {
         Invoke-Sql @"
 ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
@@ -262,41 +309,47 @@ ALTER DATABASE RECOVER MANAGED STANDBY DATABASE USING CURRENT LOGFILE DISCONNECT
     # Si el CDB ya estaba abierto pero el PDB quedo en MOUNTED (p.ej. tras reiniciar), abrirlo tambien
     Invoke-Sql "ALTER PLUGGABLE DATABASE ALL OPEN READ ONLY;" -Silencioso | Out-Null
     Invoke-Sql @"
-SELECT 'Modo: ' || open_mode AS modo FROM v`$database;
+SET HEADING OFF
+SELECT 'Modo: ' || open_mode FROM v`$database;
 ALTER SESSION SET CONTAINER = $Pdb;
 PROMPT === Ultimas facturas de venta replicadas ===
-COLUMN num_factura_fave FORMAT A28
-SELECT * FROM (SELECT id_factura_venta, num_factura_fave, fecha_fave, estado_fave FROM CADENA_NEG.VEN_FACTURA ORDER BY id_factura_venta DESC) WHERE ROWNUM <= 5;
-SELECT 'Personas en el padron: ' || COUNT(*) AS padron FROM CADENA_NEG.CAT_PADRON;
+SET HEADING ON
+COLUMN factura FORMAT A16
+COLUMN fecha FORMAT A10
+COLUMN estado FORMAT A6
+SELECT * FROM (SELECT id_factura_venta AS id, num_factura_fave AS factura, TO_CHAR(fecha_fave, 'YYYY-MM-DD') AS fecha,
+                      estado_fave AS estado FROM CADENA_NEG.VEN_FACTURA ORDER BY id_factura_venta DESC) WHERE ROWNUM <= 5;
+SET HEADING OFF
+SELECT 'Personas en el padron: ' || COUNT(*) FROM CADENA_NEG.CAT_PADRON;
 "@ | Out-Null
-    Write-Host "Para una consulta propia use la opcion 9."
+    Write-Host ""; Paso "Para una consulta propia use la opcion 9."
 }
 
 function Op-Switchover {
     Titulo "SWITCHOVER: PASAR EL ROL DE PRINCIPAL A LA OTRA PC"
     $r = Get-Rol
-    if ($r.Rol -ne "PRIMARY") { Write-Host "El switchover se inicia en la PRINCIPAL. Esta base es $($r.Rol)." -ForegroundColor Yellow; return }
+    if ($r.Rol -ne "PRIMARY") { Aviso "El switchover se inicia en la PRINCIPAL. Esta base es $($r.Rol)."; return }
     $destino = if ($r.Nombre -eq "CADENA") { "CADENA_STBY" } else { "CADENA" }
-    Write-Host "Verificando que $destino este lista..."
+    Paso "Verificando que $destino este lista..."
     $v = Invoke-Sql "ALTER DATABASE SWITCHOVER TO $destino VERIFY;"
-    if ($v -match "ORA-") { Write-Host "La verificacion fallo; no se hace el switchover." -ForegroundColor Red; return }
+    if ($v -match "ORA-") { Falla "La verificacion fallo; no se hace el switchover."; return }
     if (-not (Confirmar "Esta base ($($r.Nombre)) pasara a ser STANDBY y $destino sera la PRINCIPAL.")) { return }
     $s = Invoke-Sql "ALTER DATABASE SWITCHOVER TO $destino;" -Silencioso
     if ($s -match "ORA-01034|Database altered") {
-        Write-Host "Switchover hecho. (Si aparece ORA-01034 es normal: esta base se apaga para cambiar de rol.)" -ForegroundColor Green
+        Exito "Switchover hecho. (Si aparece ORA-01034 es normal: esta base se apaga para cambiar de rol.)"
     } else {
-        Write-Host $s
+        Escribir-Salida $s
     }
     Write-Host ""
-    Write-Host "Listo. Siga en este orden:" -ForegroundColor Green
-    Write-Host "  1. En la OTRA PC: opcion 7 (abrir como nueva principal)."
-    Write-Host "  2. En ESTA PC: opcion 2 (queda como standby; el contenedor se apaga y se vuelve a encender)."
+    Exito "Listo. Siga en este orden:"
+    Paso "1. En la OTRA PC: opcion 7 (abrir como nueva principal)."
+    Paso "2. En ESTA PC: opcion 2 (queda como standby; el contenedor se apaga y se vuelve a encender)."
 }
 
 function Op-AbrirPrincipal {
     Titulo "ABRIR COMO NUEVA PRINCIPAL"
     $r = Get-Rol
-    if ($r.Rol -ne "PRIMARY") { Write-Host "Esta base es $($r.Rol): primero hay que hacer el switchover (opcion 6 en la otra PC) o el failover (opcion 8)." -ForegroundColor Yellow; return }
+    if ($r.Rol -ne "PRIMARY") { Aviso "Esta base es $($r.Rol): primero hay que hacer el switchover (opcion 6 en la otra PC) o el failover (opcion 8)."; return }
     if ($r.Modo -ne "READ WRITE") {
         Invoke-Sql @"
 ALTER DATABASE OPEN;
@@ -310,7 +363,7 @@ ALTER PLUGGABLE DATABASE ALL SAVE STATE;
 function Op-Failover {
     Titulo "FAILOVER: TOMAR EL CONTROL PORQUE LA PRINCIPAL SE CAYO"
     $r = Get-Rol
-    if ($r.Rol -ne "PHYSICAL STANDBY") { Write-Host "El failover se hace en la STANDBY. Esta base es $($r.Rol)." -ForegroundColor Yellow; return }
+    if ($r.Rol -ne "PHYSICAL STANDBY") { Aviso "El failover se hace en la STANDBY. Esta base es $($r.Rol)."; return }
     if (-not (Confirmar "Use esto SOLO si la principal ya no funciona. Despues, la otra PC debe reconstruirse como standby (guia, seccion 7 paso 12).")) { return }
     Invoke-Sql @"
 ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
@@ -353,24 +406,24 @@ function Op-ConfigurarCorreos {
     Invoke-Sql @"
 SET HEADING OFF
 ALTER SESSION SET CONTAINER = $Pdb;
-PROMPT Valores actuales:
-SELECT '  ' || RPAD(codigo_para, 20) || valor_texto_para FROM CADENA_NEG.SEG_PARAMETRO
+PROMPT === Valores actuales ===
+SELECT RPAD(codigo_para, 20) || valor_texto_para FROM CADENA_NEG.SEG_PARAMETRO
  WHERE codigo_para IN ('CORREO_EMISOR', 'CORREO_COORDINADOR', 'CORREO_GERENTE', 'CORREO_DBA') ORDER BY codigo_para;
 "@ | Out-Null
     Write-Host ""
-    Write-Host "Puede escribir varios correos separados por coma."
-    $todos = Read-Host "Correo para TODAS las alertas (Enter = configurar uno por uno)"
+    Paso "Puede escribir varios correos separados por coma."
+    $todos = Read-Host "  Correo para TODAS las alertas (Enter = configurar uno por uno)"
     $valores = @{}
     if ($todos.Trim()) {
         $v = Validar-Correos $todos; if (-not $v) { return }
         foreach ($k in "CORREO_COORDINADOR", "CORREO_GERENTE", "CORREO_DBA") { $valores[$k] = $v }
     } else {
         foreach ($k in "CORREO_COORDINADOR", "CORREO_GERENTE", "CORREO_DBA") {
-            $t = Read-Host "  $k (Enter = no cambiar)"
+            $t = Read-Host "    $k (Enter = no cambiar)"
             if ($t.Trim()) { $v = Validar-Correos $t; if (-not $v) { return }; $valores[$k] = $v }
         }
     }
-    if ($valores.Count -eq 0) { Write-Host "No se cambio nada."; return }
+    if ($valores.Count -eq 0) { Aviso "No se cambio nada."; return }
 
     $desc = @{
         "CORREO_COORDINADOR" = @("Correo del coordinador", "Destinatario de alertas de mercadeo, clientes 85%, vencidos y cierres.")
@@ -382,21 +435,21 @@ SELECT '  ' || RPAD(codigo_para, 20) || valor_texto_para FROM CADENA_NEG.SEG_PAR
         $sql += "EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('$k', 'CORREO', '$($desc[$k][0])', '$($desc[$k][1])', 'N', '$($valores[$k])');`n"
     }
     # Los avisos individuales de "credito al 85%" van al correo de cada cliente (PER_CONTACTO)
-    $cli = Read-Host "Enviar tambien los avisos a CLIENTES a ese correo (demostracion)? (s/N)"
+    $cli = Read-Host "  Enviar tambien los avisos a CLIENTES a ese correo (demostracion)? (s/N)"
     if ($cli -match "^[sS]") {
         $correoCli = (@($valores.Values) | Select-Object -First 1).Split(",")[0].Trim()
         $sql += "UPDATE CADENA_NEG.PER_CONTACTO SET VALOR_CONT = '$correoCli' WHERE TIPO_CONT = 'E';`nCOMMIT;`n"
     }
     Invoke-Sql $sql -Silencioso | Out-Null
-    Write-Host "[OK] Correos guardados en SEG_PARAMETRO." -ForegroundColor Green
+    Exito "Correos guardados en SEG_PARAMETRO."
 
-    if ((Read-Host "Enviar un correo de prueba ahora? (S/n)") -notmatch "^[nN]") {
+    if ((Read-Host "  Enviar un correo de prueba ahora? (S/n)") -notmatch "^[nN]") {
         $dest = (@($valores.Values) | Select-Object -Unique) -join ", "
         Invoke-Sql @"
 ALTER SESSION SET CONTAINER = $Pdb;
 SET SERVEROUTPUT ON SIZE UNLIMITED
 EXEC CADENA_NEG.PKG_ADM_NOTIFICACION.PR_ENVIAR_CORREO('$dest', 'Prueba de notificaciones - Super Brunca', 'PRUEBA DE CORREO DESDE ORACLE' || CHR(10) || 'Este es un correo de prueba enviado directamente desde la base de datos.' || CHR(10) || 'Destinatarios : $dest');
-"@ -Silencioso | Where-Object { $_ } | ForEach-Object { $_ -split "`n" } | Where-Object { $_ -match "Estado SMTP" } | ForEach-Object { Write-Host $_ }
+"@ -Silencioso | Where-Object { $_ } | ForEach-Object { $_ -split "`n" } | Where-Object { $_ -match "Estado SMTP" } | ForEach-Object { Escribir-Salida $_ }
     }
 }
 
@@ -404,13 +457,13 @@ function Op-ClaveGmail {
     Titulo "CLAVE DE APLICACION DE GMAIL (correo que envia)"
     $r = Get-Rol
     if ($r.Rol -ne "PRIMARY" -or $r.Modo -ne "READ WRITE") { Write-Host "Esta opcion se usa en la PRINCIPAL (abierta). Esta base es $($r.Rol) / $($r.Modo)." -ForegroundColor Yellow; return }
-    Write-Host "Se usa una 'contrasena de aplicacion' de 16 letras (https://myaccount.google.com/apppasswords),"
-    Write-Host "no la contrasena normal de Gmail. Se guarda CIFRADA con AES-256 en SEG_PARAMETRO."
-    $emisor = Read-Host "Correo de Gmail que envia (Enter = no cambiar)"
-    $segura = Read-Host "Clave de aplicacion (no se muestra)" -AsSecureString
+    Paso "Se usa una 'contrasena de aplicacion' de 16 letras (https://myaccount.google.com/apppasswords),"
+    Paso "no la contrasena normal de Gmail. Se guarda CIFRADA con AES-256 en SEG_PARAMETRO."
+    $emisor = Read-Host "  Correo de Gmail que envia (Enter = no cambiar)"
+    $segura = Read-Host "  Clave de aplicacion (no se muestra)" -AsSecureString
     $clave = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($segura))
     $clave = ($clave -replace "\s", "")
-    if ($clave -notmatch "^[A-Za-z]{16}$") { Write-Host "La clave de aplicacion de Gmail son 16 letras. No se guardo nada." -ForegroundColor Red; return }
+    if ($clave -notmatch "^[A-Za-z]{16}$") { Falla "La clave de aplicacion de Gmail son 16 letras. No se guardo nada."; return }
     $sql = "ALTER SESSION SET CONTAINER = $Pdb;`n"
     if ($emisor.Trim()) {
         $v = Validar-Correos $emisor; if (-not $v) { return }
@@ -419,10 +472,10 @@ function Op-ClaveGmail {
     $sql += "EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('CLAVE_CORREO_EMISOR', 'CORREO', 'Clave cifrada del correo emisor', 'Contrasena de aplicacion SMTP cifrada con DBMS_CRYPTO AES-256.', 'S', '$clave');`n"
     Invoke-Sql $sql -Silencioso -SinEco | Out-Null   # lleva la clave: nunca se muestra
     $clave = $null
-    Write-Host "[OK] Clave guardada cifrada." -ForegroundColor Green
+    Exito "Clave guardada cifrada."
     # El wallet con los certificados de Gmail (se pierde el parametro al reinstalar el esquema)
-    docker exec -u oracle $script:Contenedor bash -c "test -f /opt/oracle/proyecto/sql/08_Wallet_SMTP_Gmail.sh && bash /opt/oracle/proyecto/sql/08_Wallet_SMTP_Gmail.sh | tail -1" 2>$null | ForEach-Object { Write-Host $_ }
-    Write-Host "Pruebe el envio con la opcion 11 (correo de prueba)."
+    docker exec -u oracle $script:Contenedor bash -c "test -f /opt/oracle/proyecto/sql/08_Wallet_SMTP_Gmail.sh && bash /opt/oracle/proyecto/sql/08_Wallet_SMTP_Gmail.sh | tail -1" 2>$null | ForEach-Object { Escribir-Salida "$_" }
+    Paso "Pruebe el envio con la opcion 11 (correo de prueba)."
 }
 
 function Op-EnviarNotificacion {
@@ -442,23 +495,23 @@ function Op-EnviarNotificacion {
         "9"  = @("Revision del standby (al DBA, solo si hay problemas)",                  "CADENA_NEG.PKG_ADM_STANDBY.PR_VERIFICAR_SINCRONIZACION;")
         "10" = @("Premiacion semestral: Top de clientes (coordinador; genera las ordenes)","CADENA_NEG.PKG_PRM_MERCADEO.PR_PREMIAR_MEJORES_CLIENTES;")
     }
-    foreach ($k in $opciones.Keys) { Write-Host ("  {0,2}. {1}" -f $k, $opciones[$k][0]) }
-    Write-Host "   0. Volver"
+    foreach ($k in $opciones.Keys) { Write-Host ("   {0,2}  {1}" -f $k, $opciones[$k][0]) }
+    Write-Host "    0  Volver" -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "Destino actual:" -ForegroundColor DarkGray
+    Write-Host "  Destino actual:" -ForegroundColor DarkGray
     Invoke-Sql @"
 SET HEADING OFF
 ALTER SESSION SET CONTAINER = $Pdb;
-SELECT '  ' || RPAD(codigo_para, 20) || valor_texto_para FROM CADENA_NEG.SEG_PARAMETRO
+SELECT RPAD(codigo_para, 20) || valor_texto_para FROM CADENA_NEG.SEG_PARAMETRO
  WHERE codigo_para IN ('CORREO_COORDINADOR', 'CORREO_GERENTE', 'CORREO_DBA') ORDER BY codigo_para;
-"@ | Out-Null
-    $o = Read-Host "`nCual notificacion"
+"@ -SinEco | Out-Null
+    $o = Read-Host "`n  Cual notificacion"
     if (-not $opciones.Contains($o)) { return }
     if ($o -eq "1" -or $o -eq "5") {
-        Write-Host "Nota: el aviso individual va al correo de cada cliente (PER_CONTACTO). Para recibirlos usted, use la opcion 11 y responda 's' a 'avisos a CLIENTES'." -ForegroundColor DarkGray
+        Paso "El aviso individual va al correo de cada cliente (PER_CONTACTO). Para recibirlos usted: opcion 11, responder 's' a 'avisos a CLIENTES'."
     }
     if ($o -eq "10" -and -not (Confirmar "La premiacion guarda las ordenes de compra del periodo actual en PRM_ORDEN_PREMIACION.")) { return }
-    Write-Host "Ejecutando: $($opciones[$o][0])..."
+    Paso "Ejecutando: $($opciones[$o][0])..."
     $salida = Invoke-Sql @"
 ALTER SESSION SET CONTAINER = $Pdb;
 SET SERVEROUTPUT ON SIZE UNLIMITED
@@ -469,37 +522,97 @@ END;
 /
 "@ -Silencioso
     $lineas = "$salida" -split "`n" | Where-Object { $_ -match "Para\s+:|Asunto\s+:|Estado SMTP|^No |^Ningun|\[OK\]|\[AVISO\]|ORA-" }
-    if (-not $lineas) { Write-Host "Termino sin nada que avisar (no se envio correo)." -ForegroundColor Yellow; return }
+    if (-not $lineas) { Aviso "Termino sin nada que avisar (no se envio correo)."; return }
     foreach ($l in $lineas) {
-        $l = $l.Trim()
-        $l = $l -replace "\s+:", " :"
-        if ($l -match "Asunto") { Write-Host ""; Write-Host "  $l" -ForegroundColor Cyan }
-        elseif ($l -match "entregada|\[OK\]") { Write-Host "  $l" -ForegroundColor Green }
-        elseif ($l -match "Fallo|ORA-") { Write-Host "  $l" -ForegroundColor Red }
-        else { Write-Host "  $l" }
+        $l = ($l.Trim() -replace "\s+:", ":")
+        if ($l -match "^Asunto") { Write-Host ""; Write-Host ("    " + $l) -ForegroundColor Cyan }
+        elseif ($l -match "entregada|\[OK\]") { Write-Host ("    " + $l) -ForegroundColor Green }
+        elseif ($l -match "Fallo|ORA-") { Write-Host ("    " + $l) -ForegroundColor Red }
+        else { Write-Host ("    " + $l) -ForegroundColor Gray }
     }
     $n = @($lineas | Where-Object { $_ -match "entregada" }).Count
     Write-Host ""
-    Write-Host "Correos enviados: $n" -ForegroundColor Green
+    if ($n -gt 0) { Exito "Correos enviados: $n" } else { Aviso "No se envio correo: no habia nada que avisar." }
+}
+
+# Estado para la barra superior: rol, modo y Data Guard en una sola consulta
+function Get-EstadoMenu {
+    $e = @{ Rol = "APAGADO"; Modo = "-"; Nombre = "-"; DG = "" }
+    if (-not (Contenedor-Encendido)) { return $e }
+    $salida = Invoke-Sql @"
+SET HEADING OFF
+SELECT 'ROL=' || database_role || '|' || open_mode || '|' || db_unique_name FROM v`$database;
+SELECT 'DST=' || status || '|' || NVL(gap_status, '-') FROM v`$archive_dest_status d, v`$database b
+ WHERE d.dest_id = 2 AND d.status <> 'INACTIVE' AND b.database_role = 'PRIMARY';
+SELECT 'LAG=' || NVL(value, '-') FROM v`$dataguard_stats WHERE name = 'apply lag';
+"@ -Silencioso -SinEco
+    $lineas = "$salida" -split "`n"
+    $rol = $lineas | Where-Object { $_ -match "^ROL=" } | Select-Object -First 1
+    if (-not $rol) { $e.Rol = "SIN BASE"; $e.Modo = "APAGADA"; return $e }
+    $p = $rol.Substring(4) -split "\|"
+    $e.Rol = $p[0].Trim(); $e.Modo = $p[1].Trim(); $e.Nombre = $p[2].Trim()
+    $dst = $lineas | Where-Object { $_ -match "^DST=" } | Select-Object -First 1
+    $lag = $lineas | Where-Object { $_ -match "^LAG=" } | Select-Object -First 1
+    if ($dst) { $d = $dst.Substring(4) -split "\|"; $e.DG = "envio a la standby " + $d[0].Trim() + ", huecos " + $d[1].Trim() }
+    elseif ($lag) { $e.DG = "retraso de aplicacion " + $lag.Substring(4).Trim() }
+    return $e
 }
 
 function Mostrar-Menu {
-    $r = if (Contenedor-Encendido) { Get-Rol } else { @{ Rol = "APAGADO"; Modo = "-"; Nombre = "-" } }
-    Titulo "PROYECTO SUPER BRUNCA  |  $($script:Contenedor)  |  $($r.Rol) / $($r.Modo)"
-    Write-Host "  1. Ver estado (base, Data Guard, proyecto)"
-    Write-Host "  2. Arrancar / reanudar la standby (despues de reiniciar)"
-    Write-Host "  3. Sincronizar ahora y ver retraso"
-    Write-Host "  4. Respaldo RMAN ahora                         (en la principal)"
-    Write-Host "  5. Mostrar datos en la standby (solo lectura)  (en la standby)"
-    Write-Host "  6. Switchover: pasar el rol a la otra PC       (en la principal)"
-    Write-Host "  7. Abrir como nueva principal                  (despues del 6 o del 8)"
-    Write-Host "  8. Failover: la principal se cayo              (en la standby)"
-    Write-Host "  9. Consola SQL del proyecto ($Pdb)"
-    Write-Host " 10. Consola SYSDBA (CDB)"
-    Write-Host " 11. Correos de destino de las notificaciones    (en la principal)"
-    Write-Host " 12. Clave de Gmail que envia los correos        (en la principal)"
-    Write-Host " 13. Enviar una notificacion ahora (correo)      (en la principal)"
-    Write-Host "  0. Salir"
+    Clear-Host
+    $e = Get-EstadoMenu
+    $w = Ancho
+    Write-Host ""
+    Write-Host "  SUPER BRUNCA" -ForegroundColor Green -NoNewline
+    Write-Host "   administracion de la base de datos" -ForegroundColor DarkGray
+    Write-Host ("  " + ($script:Linea * ($w - 4))) -ForegroundColor DarkGray
+    $colorRol = switch -Regex ($e.Rol) { "^PRIMARY" { "Green" } "STANDBY" { "Cyan" } default { "Red" } }
+    Write-Host ("  {0,-12}" -f "Contenedor") -ForegroundColor DarkGray -NoNewline; Write-Host ("{0,-22}" -f $script:Contenedor) -NoNewline
+    Write-Host ("{0,-8}" -f "Base") -ForegroundColor DarkGray -NoNewline; Write-Host $e.Nombre
+    Write-Host ("  {0,-12}" -f "Rol") -ForegroundColor DarkGray -NoNewline; Write-Host ("{0,-22}" -f $e.Rol) -ForegroundColor $colorRol -NoNewline
+    Write-Host ("{0,-8}" -f "Modo") -ForegroundColor DarkGray -NoNewline; Write-Host $e.Modo
+    if ($e.DG) {
+        $colorDG = if ($e.DG -cmatch "ERROR|RESOLVABLE") { "Red" } else { "Green" }
+        Write-Host ("  {0,-12}" -f "Data Guard") -ForegroundColor DarkGray -NoNewline; Write-Host $e.DG -ForegroundColor $colorDG
+    }
+    Write-Host ("  " + ($script:Linea * ($w - 4))) -ForegroundColor DarkGray
+
+    # Opciones que aplican a esta base (las demas se muestran en gris)
+    $principal = ($e.Rol -eq "PRIMARY" -and $e.Modo -eq "READ WRITE")
+    $standby   = ($e.Rol -eq "PHYSICAL STANDBY")
+    $abrir     = ($e.Rol -eq "PRIMARY" -and $e.Modo -ne "READ WRITE")
+    $apagada   = ($e.Rol -in @("APAGADO", "SIN BASE"))
+    $grupos = @(
+        @("Consultar", @(
+            @("1",  "Ver estado (base, Data Guard, proyecto)", (-not $apagada)),
+            @("5",  "Ver los datos replicados en la standby",  $standby),
+            @("9",  "Consola SQL del proyecto ($Pdb)",          (-not $apagada)),
+            @("10", "Consola SYSDBA (CDB)",                    (-not $apagada)))),
+        @("Standby (Data Guard)", @(
+            @("2",  "Arrancar / reanudar la standby",          ($standby -or $apagada)),
+            @("3",  "Sincronizar ahora y ver el retraso",      ($principal -or $standby)),
+            @("6",  "Switchover: pasar el rol a la otra PC",   $principal),
+            @("7",  "Abrir como nueva principal",              $abrir),
+            @("8",  "Failover: la principal se cayo",          $standby))),
+        @("Respaldo", @(
+            , @("4",  "Respaldo RMAN ahora (nivel 0 o 1)",     $principal))),   # la coma evita que PowerShell aplane la lista de un elemento
+        @("Correos", @(
+            @("11", "Correos de destino de los avisos",        $principal),
+            @("12", "Clave de Gmail que envia los correos",    $principal),
+            @("13", "Enviar un aviso ahora",                   $principal)))
+    )
+    foreach ($g in $grupos) {
+        Write-Host ""
+        Write-Host ("  " + $g[0]) -ForegroundColor Yellow
+        foreach ($op in $g[1]) {
+            $color = if ($op[2]) { "White" } else { "DarkGray" }
+            Write-Host ("   {0,3}  " -f $op[0]) -ForegroundColor Cyan -NoNewline
+            Write-Host $op[1] -ForegroundColor $color
+        }
+    }
+    Write-Host ""
+    Write-Host "     0  Salir" -ForegroundColor DarkGray
+    if ($script:SinComandos) { Write-Host "  (comandos ocultos: -SinComandos)" -ForegroundColor DarkGray }
 }
 
 function Ejecutar([string]$o) {
@@ -517,7 +630,7 @@ function Ejecutar([string]$o) {
         "11" { Op-ConfigurarCorreos }
         "12" { Op-ClaveGmail }
         "13" { Op-EnviarNotificacion }
-        default { Write-Host "Opcion no valida." -ForegroundColor Yellow }
+        default { Aviso "Opcion no valida." }
     }
 }
 
@@ -534,8 +647,11 @@ if ($Opcion) { Ejecutar $Opcion; exit 0 }
 
 while ($true) {
     Mostrar-Menu
-    $o = Read-Host "`nElija una opcion"
-    if ($o -eq "0") { break }
-    Ejecutar $o
-    Read-Host "`nPresione Enter para volver al menu" | Out-Null
+    $o = Read-Host "`n  Elija una opcion"
+    if ($null -eq $o -or $o -eq "0") { break }   # $null: se cerro la entrada del teclado
+    if (-not $o.Trim()) { continue }
+    Ejecutar $o.Trim()
+    Write-Host ""
+    Write-Host ("  " + ($script:Linea * ((Ancho) - 4))) -ForegroundColor DarkGray
+    Read-Host "  Enter para volver al menu" | Out-Null
 }
