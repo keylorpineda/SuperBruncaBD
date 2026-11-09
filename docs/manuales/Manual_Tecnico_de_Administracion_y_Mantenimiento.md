@@ -392,7 +392,7 @@ Todo el código fuente está comentado en español con la misma convención, par
 | Especificación de cada paquete | Una línea de comentario antes de cada procedimiento y función pública explicando qué hace | `CREATE OR REPLACE PACKAGE ...` de los archivos `02`, `03` y `07` |
 | Cuerpo de los procedimientos | Pasos numerados (`-- 1) Descargar el padrón`, `-- 2) Cargarlo`), el porqué de cada decisión (bloqueos `FOR UPDATE NOWAIT`, `SAVEPOINT`, transacciones autónomas) y los códigos de error que lanza | Cuerpos (`PACKAGE BODY`) y triggers |
 | Diccionario de datos | `COMMENT ON TABLE` y `COMMENT ON COLUMN` en las tablas del modelo | `SELECT table_name, comments FROM all_tab_comments WHERE owner = 'CADENA_NEG';` |
-| Modelo | Nota por tabla y por columna, tablas del Avance 2 marcadas con `[AVANCE 2]` y la justificación de cada desnormalización | `docs/modelo/modelo_relacional_avance2.dbml` y `docs/modelo/README.md` |
+| Modelo | Nota por tabla y por columna, tablas del Avance 2 marcadas con `[AVANCE 2]` y la justificación de cada desnormalización | Carpeta `Modelo_Relacional/`: `modelo_relacional_avance2.dbml` y el documento de desnormalizaciones |
 
 Para revisar en la base la descripción de cualquier objeto del modelo:
 ```sql

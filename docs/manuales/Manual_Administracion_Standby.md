@@ -355,7 +355,7 @@ Este es el procedimiento **recomendado y verificado** del proyecto. Se probó co
 | Archivos de red, spfile y claves | `/opt/oracle/oradata/dbconfig/CADENA/` | igual |
 | Archivelogs | `/opt/oracle/oradata/CADENA/archive_logs` | igual |
 
-`ORACLE_HOME` es `/opt/oracle/product/21c/dbhome_1`. Cómo levantar los contenedores: `sql/07_Standby_y_RMAN/docker/README.md` y sección 2 de `docs/GUIA_PASO_A_PASO.md`. En **dos PC** el procedimiento es el mismo: en `tnsnames.ora` se cambian `ora-principal` / `ora-standby` por las IP reales y se abre el puerto 1521 en el firewall.
+`ORACLE_HOME` es `/opt/oracle/product/21c/dbhome_1`. Cómo levantar los contenedores: `sql/07_Standby_y_RMAN/docker/README.md`. En **dos PC** el procedimiento es el mismo: en `tnsnames.ora` se cambian `ora-principal` / `ora-standby` por las IP reales y se abre el puerto 1521 en el firewall.
 
 Para entrar: `docker exec -it -u oracle <contenedor> sqlplus / as sysdba` (SQL) o `docker exec -it -u oracle <contenedor> bash` (terminal).
 
@@ -588,7 +588,7 @@ powershell -ExecutionPolicy Bypass -File .\menu.ps1
 | 13 | Enviar una notificación ahora (submenú con los 10 avisos que mandan los jobs; muestra el asunto y si se entregó) | Principal | Procedimientos de `PKG_ADM_NOTIFICACION`, `PKG_VEN_OPERACION`, `PKG_INV_GESTION`, `PKG_ADM_MONITOREO`, `PKG_ADM_STANDBY` y `PKG_PRM_MERCADEO` |
 | 14 | Comprobar que las dos PC están conectadas: `tnsping`, estado del envío (o procesos RFS/MRP0 en la standby) y una prueba real (cierra un archivo de cambios y espera a que la standby lo reciba). Termina con **CONECTADAS** o **NO CONECTADAS** y qué revisar | Las dos | Secciones 9.1 y 11.8 |
 
-Cada opción muestra en pantalla, antes de ejecutarlo, el comando SQL, RMAN o Docker real que envía (por ejemplo `SQL> ALTER DATABASE SWITCHOVER TO CADENA_STBY;`), para que se vea que la operación ocurre de verdad. `-SinComandos` los oculta. La lista de pruebas para ensayar con las dos PC está en `docs/PRUEBAS_STANDBY.md`.
+Cada opción muestra en pantalla, antes de ejecutarlo, el comando SQL, RMAN o Docker real que envía (por ejemplo `SQL> ALTER DATABASE SWITCHOVER TO CADENA_STBY;`), para que se vea que la operación ocurre de verdad. `-SinComandos` los oculta.
 
 ### 13.2 Qué hacer ante cada incidente
 

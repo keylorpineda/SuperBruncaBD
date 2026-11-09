@@ -22,7 +22,7 @@ no guardan datos) ni las vistas.
 ## Desnormalizaciones del Avance 2
 
 El modelo del Entregable 1 está en quinta forma normal (5FN) con **dos desnormalizaciones
-declaradas** (sección 6 de `docs/entregable1/Documentacion_Tecnica.pdf`):
+declaradas** (sección 6 de la Documentación Técnica del Entregable 1):
 
 1. El tipo de persona copiado en cada subtipo (`TIPO_PERS` / `ES_JURIDICA_PERS`), que permite la
    llave foránea compuesta que garantiza que un proveedor sea siempre persona jurídica.

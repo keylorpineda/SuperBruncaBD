@@ -43,7 +43,7 @@ El presente manual describe paso a paso el procedimiento oficial para la instala
 
 ## 2. Catálogo de Archivos Entregables
 
-La solución se entrega organizada en scripts modulares e independientes, gobernados por un instalador maestro automatizado. Las rutas son relativas a la raíz del repositorio:
+La solución se entrega organizada en scripts modulares e independientes, gobernados por un instalador maestro automatizado. Las rutas son relativas a la carpeta raíz de la entrega (en el repositorio, los manuales y el modelo están en `docs/manuales/` y `docs/modelo/`):
 
 | ARCHIVO | TIPO | PROPÓSITO |
 | :--- | :--- | :--- |
@@ -63,10 +63,8 @@ La solución se entrega organizada en scripts modulares e independientes, gobern
 | `sql/08_Wallet_SMTP_Gmail.sh` | Script SO | Crea el Oracle Wallet auto-login con los certificados raíz de Gmail para `UTL_SMTP` y registra `SMTP_WALLET_PATH` (Paso 8). |
 | `datos/padron/Descargar_Padron_TSE.ps1` / `.sh` | Script SO | Descarga `padron_completo.zip` del TSE y deja `PADRON_COMPLETO.txt` y `DISTELEC.txt` en `DIR_PADRON`. |
 | `datos/padron/padron_muestra.csv` | Datos externos | Archivo CSV muestra del padrón electoral para prueba de UTL_FILE. |
-| `docs/manuales/` | Documentación | Los 3 manuales oficiales (`.md` y `.pdf`) y `generar_manuales_pdf.py`, que regenera los PDF. |
-| `docs/entregable1/` | Documentación | Diccionario de datos, documentación técnica y modelo relacional del Entregable #1. |
-| `docs/modelo/` | Documentación | Modelo relacional del Avance 2: diagrama en PDF (`modelo_relacional_avance_2.pdf`), formato DBML (dbdiagram.io) y la justificación de sus desnormalizaciones. |
-| `docs/` (guías) | Documentación | `GUIA_PASO_A_PASO.md`, `GUIA_COMPANERO_PC_STANDBY.md`, `GUIA_PADRON_TSE.md`, `GUIA_DEFENSA.md` y `RESUMEN_DEFENSA.md`. |
+| `Manuales/` | Documentación | Los 3 manuales en PDF: instalación y despliegue, administración del standby, y técnico de administración y mantenimiento. |
+| `Modelo_Relacional/` | Documentación | Modelo relacional del Avance 2: diagrama en PDF, el modelo en formato DBML (dbdiagram.io) y el documento con sus desnormalizaciones. |
 
 ---
 

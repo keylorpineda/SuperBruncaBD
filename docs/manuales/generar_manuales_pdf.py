@@ -407,6 +407,11 @@ if __name__ == "__main__":
             "Manual_Tecnico_de_Administracion_y_Mantenimiento.md",
             "Manual_Tecnico_de_Administracion_y_Mantenimiento.pdf",
             "Manual Técnico de Administración y Mantenimiento"
+        ),
+        (
+            "../modelo/README.md",
+            "../modelo/Modelo_Relacional_Avance2.pdf",
+            "Modelo Relacional del Avance 2"
         )
     ]
     
