@@ -42,11 +42,11 @@ El sistema opera sobre una arquitectura modular de tres capas de almacenamiento 
 |  | (Ventas, Compras, Stock)  |  | (IX_CUCO_EST_VENC)        |  | Inmutable / Errores |  |
 |  +---------------------------+  +---------------------------+  +---------------------+  |
 |                                                                                         |
-|  • Seguridad Criptográfica: Cifrado simétrico AES-256 (DBMS_CRYPTO) en SEG_PARAMETRO.    |
-|  • Automatización: 11 Jobs DBMS_SCHEDULER (negocio, padrón TSE y Standby/RMAN).        |
+|  • Seguridad Criptográfica: Cifrado simétrico AES-256 (DBMS_CRYPTO) en SEG_PARAMETRO.   |
+|  • Automatización: 11 Jobs DBMS_SCHEDULER (negocio, padrón TSE y Standby/RMAN).         |
 |  • Notificaciones Directas: UTL_SMTP sin VPN hacia keylorpineda729@gmail.com.           |
 |  • Vistas Materializadas: MV_VENTAS_MENSUALES y MV_INVENTARIO_CONSOLIDADO.              |
-|  • Disparadores Autónomos: Validación estricta de crédito, stock y kardex en tiempo real|
+|  • Disparadores Autónomos: Validación de crédito, stock y kardex en tiempo real         |
 +-----------------------------------------------------------------------------------------+
                                              │
                      Rotación 5 min / 50 MB  │  Respaldo Diario RMAN
@@ -65,9 +65,9 @@ El diseño físico distribuye las cargas de lectura y escritura entre tablespace
 
 | TABLESPACE | ARCHIVO FÍSICO | PROPÓSITO TÉCNICO |
 | :--- | :--- | :--- |
-| `TBS_DATOS` | `tbs_datos01.dbf` | Contiene 56 tablas de negocio (catálogos, transacciones operativas, parámetros y cierres) más los 2 contenedores de las vistas materializadas (`MV_VENTAS_MENSUALES`, `MV_INVENTARIO_CONSOLIDADO`). Con las 5 tablas de `TBS_AUDITORIA` y las 2 tablas externas del padrón TSE, el diccionario muestra 65 tablas en `CADENA_NEG`. Segmentos con `EXTENT MANAGEMENT LOCAL AUTOALLOCATE`. |
-| `TBS_INDICES` | `tbs_indices01.dbf` | Aloja los 225 índices del esquema (claves primarias, foráneas, únicos y compuestos de afinamiento). Evita contención con las escrituras en tablas de datos. |
-| `TBS_AUDITORIA` | `tbs_auditoria01.dbf` | Aloja exclusivamente las tablas inmutables de auditoría (`AUD_REGISTRO_CAMBIO`, `AUD_ERROR_SISTEMA`, `AUD_MONITOREO_BD`, `AUD_BITACORA` y `PRO_PRECIO_HIST`). Diseñado para alta frecuencia de escritura secuencial. |
+| `TBS_DATOS` | <code style="white-space:nowrap">tbs_datos01.dbf</code> | Contiene 56 tablas de negocio (catálogos, transacciones operativas, parámetros y cierres) más los 2 contenedores de las vistas materializadas (`MV_VENTAS_MENSUALES`, `MV_INVENTARIO_CONSOLIDADO`). Con las 5 tablas de `TBS_AUDITORIA` y las 2 tablas externas del padrón TSE, el diccionario muestra 65 tablas en `CADENA_NEG`. Segmentos con `EXTENT MANAGEMENT LOCAL AUTOALLOCATE`. |
+| `TBS_INDICES` | <code style="white-space:nowrap">tbs_indices01.dbf</code> | Aloja los 225 índices del esquema (claves primarias, foráneas, únicos y compuestos de afinamiento). Evita contención con las escrituras en tablas de datos. |
+| `TBS_AUDITORIA` | <code style="white-space:nowrap">tbs_auditoria01.dbf</code> | Aloja exclusivamente las tablas inmutables de auditoría (`AUD_REGISTRO_CAMBIO`, `AUD_ERROR_SISTEMA`, `AUD_MONITOREO_BD`, `AUD_BITACORA` y `PRO_PRECIO_HIST`). Diseñado para alta frecuencia de escritura secuencial. |
 
 ### 2.1 Principio de Aislamiento del Esquema `CADENA_NEG`
 * El usuario `CADENA_NEG` posee cuota ilimitada sobre los tres tablespaces del proyecto (`TBS_DATOS`, `TBS_INDICES`, `TBS_AUDITORIA`).
@@ -96,7 +96,7 @@ El sistema implementa dos perfiles basados en el estándar CIS Oracle Database B
 El paquete `PKG_SEG_SEGURIDAD` implementa el algoritmo **AES-256** en modo encadenado de bloques (CBC) con relleno PKCS#5:
 * **Constante del Algoritmo:** `DBMS_CRYPTO.ENCRYPT_AES256 + DBMS_CRYPTO.CHAIN_CBC + DBMS_CRYPTO.PAD_PKCS5`.
 * **Llave Criptográfica Maestra:** Cadena binaria de 256 bits (32 bytes) administrada internamente por el paquete.
-* **Limitación conocida (versión académica):** la llave es una constante escrita en el código fuente (`PKG_SEG_SEGURIDAD.c_llave_aes` y el bloque de datos semilla de `01_Estructuras_Avance2.sql`), por lo que todas las instalaciones comparten la misma llave y quien lea el código puede descifrar `SEG_PARAMETRO`. Se mantiene así para que cualquier compañero instale y pruebe el proyecto sin pasos extra y para no invalidar los valores ya cifrados. En producción debe sustituirse por una llave propia de cada instalación guardada fuera del código (Oracle Wallet o un administrador de secretos): se genera la llave nueva, se descifran los valores de `SEG_PARAMETRO` con la llave actual, se vuelven a cifrar con la nueva (`PR_GUARDAR_PARAMETRO`) y se recompila el paquete.
+* **Limitación conocida (versión académica):** la llave es una constante escrita en el código fuente (`PKG_SEG_SEGURIDAD.c_llave_aes` y el bloque de datos semilla de `01_Estructuras_Avance2.sql`), por lo que todas las instalaciones comparten la misma llave y quien lea el código puede descifrar `SEG_PARAMETRO`. Se mantiene así para que cualquier persona pueda instalar y probar el proyecto sin pasos adicionales y para no invalidar los valores ya cifrados. En producción debe sustituirse por una llave propia de cada instalación guardada fuera del código (Oracle Wallet o un administrador de secretos): se genera la llave nueva, se descifran los valores de `SEG_PARAMETRO` con la llave actual, se vuelven a cifrar con la nueva (`PR_GUARDAR_PARAMETRO`) y se recompila el paquete.
 * **Almacenamiento Seguro:** Los datos confidenciales (contraseñas de aplicación SMTP y claves de roles de base de datos) se almacenan en la columna `VALOR_RAW_PARA RAW(2000)` de la tabla `SEG_PARAMETRO`, marcados con `ES_CIFRADO_PARA = 'S'`.
 
 ### 3.3 Roles Protegidos con Contraseña Cifrada
@@ -115,7 +115,7 @@ El procedimiento lee la clave cifrada de `SEG_PARAMETRO`, la descifra en memoria
 ### 3.4 Matriz de Mínimos Privilegios de Objeto
 Ningún rol recibe privilegios `DELETE` sobre catálogos ni permisos de modificación estructural `DDL`:
 
-| OBJETO / ACCIÓN | `ROL_DIGITADOR` | `ROL_JEFE_PROVEEDURIA` | `ROL_JEFE_DEPARTAMENTO` | `ROL_GERENTE` |
+| OBJETO / ACCIÓN (roles `ROL_...`) | `DIGITADOR` | `JEFE_PROVEEDURIA` | `JEFE_DEPARTAMENTO` | `GERENTE` |
 | :--- | :---: | :---: | :---: | :---: |
 | Facturación Ventas (`VEN_FACTURA`, `DET`) | SELECT, INSERT | SELECT | SELECT | SELECT |
 | Cobros y Abonos (`VEN_ABONO_COBRAR`, `CxC`) | SELECT, INSERT | SELECT | SELECT | SELECT |

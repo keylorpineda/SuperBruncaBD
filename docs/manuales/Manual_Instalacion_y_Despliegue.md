@@ -69,7 +69,7 @@ La solución se entrega organizada en scripts modulares e independientes, gobern
 
 ## 3. Procedimiento Oficial de Instalación Automatizada
 
-Todos los scripts han sido desarrollados con **idempotencia estricta**. Esto garantiza que el instalador maestro puede ejecutarse repetidamente sobre una base de datos limpia o en operación, detectando el PDB abierto, eliminando estructuras obsoletas de corridas previas y recreando el ambiente con **cero errores y cero objetos inválidos**.
+Los scripts están pensados para poder ejecutarse más de una vez. El instalador maestro detecta el PDB abierto, elimina las estructuras de corridas previas y recrea el ambiente; al terminar, la validación final debe mostrar **0 objetos inválidos** y todos los puntos en `[OK]`.
 
 ### Opción A: Despliegue en Contenedor Docker (Recomendado)
 Si la base de datos se ejecuta en el contenedor Docker de la principal, `ora_principal` (cómo crearlo: `sql/07_Standby_y_RMAN/docker/README.md`):
@@ -210,7 +210,7 @@ Compila 21 disparadores en estado `ENABLED`:
    EXEC CADENA_NEG.PKG_ADM_STANDBY.PR_REGISTRAR_CREDENCIAL_OS('usuario_windows', 'clave_windows');
    ```
 
-En Docker el usuario es `oracle`, que en la imagen no tiene clave: asígnele una con `docker exec -it -u root ora_principal passwd oracle` antes de registrarla. (Pendiente de verificar en Docker; mientras tanto los mismos trabajos se ejecutan a mano con el orquestador `02_Traslado_Archivelogs_10min_y_Ondemand.sh`.)
+En Docker el usuario es `oracle`, que en la imagen no tiene clave: asígnele una con `docker exec -it -u root ora_principal passwd oracle` antes de registrarla. Con la credencial registrada, los jobs externos se habilitan y se ejecutan solos (verificado en Docker). Si no se registra, los mismos trabajos se pueden ejecutar a mano con el orquestador `02_Traslado_Archivelogs_10min_y_Ondemand.sh`.
 
 La configuración de la segunda computadora (standby con Data Guard) se detalla en la sección 11 del **Manual de Administración del Standby**.
 
