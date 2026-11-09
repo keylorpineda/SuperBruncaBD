@@ -401,56 +401,85 @@ function Validar-Correos([string]$texto) {
 }
 
 function Op-ConfigurarCorreos {
-    Titulo "CORREOS DE DESTINO DE LAS NOTIFICACIONES"
+    Titulo "Correos que reciben los avisos"
     $r = Get-Rol
-    if ($r.Rol -ne "PRIMARY" -or $r.Modo -ne "READ WRITE") { Write-Host "Esta opcion se usa en la PRINCIPAL (abierta). Esta base es $($r.Rol) / $($r.Modo)." -ForegroundColor Yellow; return }
-    Invoke-Sql @"
+    if ($r.Rol -ne "PRIMARY" -or $r.Modo -ne "READ WRITE") { Aviso "Esta opcion se usa en la PRINCIPAL (abierta). Esta base es $($r.Rol) / $($r.Modo)."; return }
+
+    # Valores actuales en una sola consulta
+    $salida = Invoke-Sql @"
 SET HEADING OFF
 ALTER SESSION SET CONTAINER = $Pdb;
-PROMPT === Valores actuales ===
-SELECT RPAD(codigo_para, 20) || valor_texto_para FROM CADENA_NEG.SEG_PARAMETRO
- WHERE codigo_para IN ('CORREO_EMISOR', 'CORREO_COORDINADOR', 'CORREO_GERENTE', 'CORREO_DBA') ORDER BY codigo_para;
-"@ | Out-Null
-    Write-Host ""
-    Paso "Puede escribir varios correos separados por coma."
-    $todos = Read-Host "  Correo para TODAS las alertas (Enter = configurar uno por uno)"
-    $valores = @{}
-    if ($todos.Trim()) {
-        $v = Validar-Correos $todos; if (-not $v) { return }
-        foreach ($k in "CORREO_COORDINADOR", "CORREO_GERENTE", "CORREO_DBA") { $valores[$k] = $v }
-    } else {
-        foreach ($k in "CORREO_COORDINADOR", "CORREO_GERENTE", "CORREO_DBA") {
-            $t = Read-Host "    $k (Enter = no cambiar)"
-            if ($t.Trim()) { $v = Validar-Correos $t; if (-not $v) { return }; $valores[$k] = $v }
-        }
-    }
-    if ($valores.Count -eq 0) { Aviso "No se cambio nada."; return }
+SELECT 'P=' || codigo_para || '=' || valor_texto_para FROM CADENA_NEG.SEG_PARAMETRO
+ WHERE codigo_para IN ('CORREO_EMISOR', 'CORREO_COORDINADOR', 'CORREO_GERENTE', 'CORREO_DBA');
+"@ -Silencioso -SinEco
+    $actual = @{}
+    foreach ($l in ("$salida" -split "`n" | Where-Object { $_ -match "^P=" })) { $x = $l.Substring(2) -split "=", 2; $actual[$x[0].Trim()] = $x[1].Trim() }
 
-    $desc = @{
-        "CORREO_COORDINADOR" = @("Correo del coordinador", "Destinatario de alertas de mercadeo, clientes 85%, vencidos y cierres.")
-        "CORREO_GERENTE"     = @("Correo del gerente", "Destinatario de alertas de proveedores 70%, morosidad y cierres diarios.")
-        "CORREO_DBA"         = @("Correo del administrador BD", "Destinatario de alertas de tablespaces, objetos invalidos e indices danados.")
+    $roles = [ordered]@{
+        "CORREO_COORDINADOR" = @("Coordinador", "clientes al 85%, productos vencidos, mercadeo, premiacion y cierre diario")
+        "CORREO_GERENTE"     = @("Gerente",     "proveedores al 70%, clientes morosos y cierre diario")
+        "CORREO_DBA"         = @("DBA",         "alertas de la base de datos y del standby")
     }
+    Write-Host ""
+    Write-Host "  Hoy los avisos llegan asi:" -ForegroundColor Yellow
+    # Correo en su propia linea y lo que recibe debajo: se lee bien aunque el correo sea largo
+    foreach ($k in $roles.Keys) {
+        Write-Host ("    {0,-12}" -f $roles[$k][0]) -ForegroundColor Cyan -NoNewline
+        Write-Host $actual[$k]
+        Write-Host ("    {0,-12}{1}" -f "", "recibe: " + $roles[$k][1]) -ForegroundColor DarkGray
+    }
+    Write-Host ("    {0,-12}" -f "Remitente") -ForegroundColor Cyan -NoNewline
+    Write-Host $actual["CORREO_EMISOR"]
+    Write-Host ("    {0,-12}{1}" -f "", "la cuenta de Gmail que envia (se cambia en la opcion 12)") -ForegroundColor DarkGray
+
+    Write-Host ""
+    Write-Host "  Que desea hacer?" -ForegroundColor Yellow
+    Write-Host "     1  Un solo correo para todos los avisos (recomendado para la defensa)"
+    Write-Host "     2  Un correo distinto para cada responsable"
+    Write-Host "     0  Volver sin cambiar nada" -ForegroundColor DarkGray
+    $modo = Read-Host "`n  Opcion"
+    $valores = [ordered]@{}
+    if ($modo -eq "1") {
+        $t = Read-Host "  Correo que recibira todo (puede poner varios separados por coma)"
+        $v = Validar-Correos $t; if (-not $v) { return }
+        foreach ($k in $roles.Keys) { $valores[$k] = $v }
+    } elseif ($modo -eq "2") {
+        Paso "Escriba el correo de cada uno (Enter = dejar el actual)."
+        foreach ($k in $roles.Keys) {
+            $t = Read-Host ("  {0} (hoy: {1})" -f $roles[$k][0], $actual[$k])
+            if ($null -ne $t -and $t.Trim()) { $v = Validar-Correos $t; if (-not $v) { return }; $valores[$k] = $v }
+        }
+        if ($valores.Count -eq 0) { Aviso "No se cambio nada."; return }
+    } else { return }
+
+    # Avisos individuales a clientes (credito al 85%): normalmente van al correo de cada cliente
+    $primero = (@($valores.Values) | Select-Object -First 1).Split(",")[0].Trim()
+    Write-Host ""
+    Paso "El aviso de 'credito al 85%' tambien se manda a cada CLIENTE, a su propio correo."
+    $cli = Read-Host "  Quiere que esos avisos de clientes tambien le lleguen a $primero, para verlos en la defensa? (s/N)"
+
+    Write-Host ""
+    Write-Host "  Se va a guardar:" -ForegroundColor Yellow
+    foreach ($k in $valores.Keys) { Write-Host ("    {0,-12}{1}" -f $roles[$k][0], $valores[$k]) }
+    if ($cli -match "^[sS]") { Write-Host ("    {0,-12}{1}" -f "Clientes", $primero) }
+    if ((Read-Host "`n  Guardar? (S/n)") -match "^[nN]") { Aviso "No se guardo nada."; return }
+
     $sql = "ALTER SESSION SET CONTAINER = $Pdb;`n"
     foreach ($k in $valores.Keys) {
-        $sql += "EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('$k', 'CORREO', '$($desc[$k][0])', '$($desc[$k][1])', 'N', '$($valores[$k])');`n"
+        $sql += "EXEC CADENA_NEG.PKG_SEG_SEGURIDAD.PR_GUARDAR_PARAMETRO('$k', 'CORREO', 'Correo del $($roles[$k][0].ToLower())', 'Recibe: $($roles[$k][1]).', 'N', '$($valores[$k])');`n"
     }
-    # Los avisos individuales de "credito al 85%" van al correo de cada cliente (PER_CONTACTO)
-    $cli = Read-Host "  Enviar tambien los avisos a CLIENTES a ese correo (demostracion)? (s/N)"
-    if ($cli -match "^[sS]") {
-        $correoCli = (@($valores.Values) | Select-Object -First 1).Split(",")[0].Trim()
-        $sql += "UPDATE CADENA_NEG.PER_CONTACTO SET VALOR_CONT = '$correoCli' WHERE TIPO_CONT = 'E';`nCOMMIT;`n"
-    }
+    if ($cli -match "^[sS]") { $sql += "UPDATE CADENA_NEG.PER_CONTACTO SET VALOR_CONT = '$primero' WHERE TIPO_CONT = 'E';`nCOMMIT;`n" }
     Invoke-Sql $sql -Silencioso | Out-Null
-    Exito "Correos guardados en SEG_PARAMETRO."
+    Exito "Correos guardados (tabla SEG_PARAMETRO)."
 
-    if ((Read-Host "  Enviar un correo de prueba ahora? (S/n)") -notmatch "^[nN]") {
-        $dest = (@($valores.Values) | Select-Object -Unique) -join ", "
+    $dest = (@($valores.Values) | Select-Object -Unique) -join ", "
+    if ((Read-Host "`n  Mandar un correo de prueba a $dest ahora? (S/n)") -notmatch "^[nN]") {
         Invoke-Sql @"
 ALTER SESSION SET CONTAINER = $Pdb;
 SET SERVEROUTPUT ON SIZE UNLIMITED
-EXEC CADENA_NEG.PKG_ADM_NOTIFICACION.PR_ENVIAR_CORREO('$dest', 'Prueba de notificaciones - Super Brunca', 'PRUEBA DE CORREO DESDE ORACLE' || CHR(10) || 'Este es un correo de prueba enviado directamente desde la base de datos.' || CHR(10) || 'Destinatarios : $dest');
+EXEC CADENA_NEG.PKG_ADM_NOTIFICACION.PR_ENVIAR_CORREO('$dest', 'Prueba de notificaciones - Super Brunca', 'PRUEBA DE CORREO DESDE ORACLE' || CHR(10) || 'Este correo confirma que los avisos del sistema llegan a esta direccion.' || CHR(10) || 'Destinatarios: $dest');
 "@ -Silencioso | Where-Object { $_ } | ForEach-Object { $_ -split "`n" } | Where-Object { $_ -match "Estado SMTP" } | ForEach-Object { Escribir-Salida $_ }
+        Paso "Revise la bandeja de entrada (y la carpeta Spam) de $dest."
     }
 }
 
@@ -536,6 +565,84 @@ END;
     if ($n -gt 0) { Exito "Correos enviados: $n" } else { Aviso "No se envio correo: no habia nada que avisar." }
 }
 
+# Prueba real de que las dos PC estan conectadas y termina con un veredicto claro
+function Op-Conexion {
+    Titulo "Comprobar que las dos PC esten conectadas"
+    $r = Get-Rol
+    $c = $script:Contenedor
+    if ($r.Rol -eq "PRIMARY") {
+        $tns = "STANDBY_TNS"; $otra = "la standby (CADENA_STBY)"
+        if ($r.Nombre -eq "CADENA_STBY") { $tns = "PRIMARIA_TNS"; $otra = "la otra PC (CADENA)" }
+    } elseif ($r.Rol -eq "PHYSICAL STANDBY") {
+        $tns = "PRIMARIA_TNS"; $otra = "la principal (CADENA)"
+        if ($r.Nombre -eq "CADENA") { $tns = "STANDBY_TNS"; $otra = "la otra PC (CADENA_STBY)" }
+    } else { Aviso "La base de esta PC esta $($r.Modo). Enciendala primero (opcion 2 en la standby)."; return }
+    $problemas = @()
+
+    # 1) Red: Oracle Net llega a la otra base
+    Write-Host ""
+    Paso "1/3  Red: esta PC intenta llegar a $otra"
+    Mostrar-Comando-SO "tnsping $tns"
+    $ping = docker exec -u oracle $c bash -c "tnsping $tns 2>&1 | tail -1" 2>$null
+    if ("$ping" -match "^OK") { Escribir-Salida ("Respuesta: " + "$ping".Trim()) }
+    else { Escribir-Salida ("ERROR: " + "$ping".Trim()); $problemas += "La red no llega a la otra PC: revise que este encendida, la IP en tnsnames.ora, el ping y el puerto 1521 en el firewall." }
+
+    if ($r.Rol -eq "PRIMARY") {
+        # 2) Estado del envio
+        Paso "2/3  Data Guard: estado del envio a la standby"
+        $d = Invoke-Sql "SET HEADING OFF`nSELECT 'DST=' || status || '|' || NVL(gap_status, '-') || '|' || error FROM v`$archive_dest_status WHERE dest_id = 2;" -Silencioso
+        $d = ("$d" -split "`n" | Where-Object { $_ -match "^DST=" } | Select-Object -First 1)
+        if ($d) {
+            $p = $d.Substring(4) -split "\|", 3
+            Escribir-Salida ("Destino 2: " + $p[0] + "   huecos: " + $p[1] + $(if ($p[2]) { "   " + $p[2] } else { "" }))
+            if ($p[0] -ne "VALID") { $problemas += "El envio esta en $($p[0]). Encienda la standby (opcion 2 en esa PC) y luego use la opcion 3 aqui." }
+        }
+        # 3) Prueba real: cerrar el archivo de cambios y esperar a que la standby lo reciba
+        Paso "3/3  Prueba real: se cierra el archivo de cambios y se espera a que la standby lo reciba"
+        $seq = Get-Valor "ALTER SYSTEM ARCHIVE LOG CURRENT;`nSELECT MAX(sequence#) FROM v`$archived_log WHERE dest_id = 1 AND resetlogs_change# = (SELECT resetlogs_change# FROM v`$database_incarnation WHERE status = 'CURRENT');"
+        Mostrar-Comandos "ALTER SYSTEM ARCHIVE LOG CURRENT;"
+        $recibido = $false
+        for ($i = 0; $i -lt 15 -and $seq; $i++) {
+            $n = Get-Valor "SELECT COUNT(*) FROM v`$archived_log WHERE dest_id = 2 AND sequence# = $seq AND resetlogs_change# = (SELECT resetlogs_change# FROM v`$database_incarnation WHERE status = 'CURRENT');"
+            if ($n -match "^[1-9]") { $recibido = $true; break }
+            Start-Sleep -Seconds 2
+        }
+        $tiempo = if ($i -eq 0) { "en menos de 2 segundos" } else { "en unos $($i * 2) segundos" }
+        if ($recibido) { Escribir-Salida "La standby recibio el archivo $seq $tiempo [OK]" }
+        else { Escribir-Salida "ERROR: la standby no confirmo el archivo $seq en 30 segundos"; $problemas += "La standby no recibio el cambio de prueba." }
+    } else {
+        # 2) Procesos que reciben (RFS) y aplican (MRP0) los cambios
+        Paso "2/3  Data Guard: procesos que reciben (RFS) y aplican (MRP0) los cambios"
+        $m = Invoke-Sql "SET HEADING OFF`nSELECT 'PRC=' || process || '|' || status || '|' || sequence# FROM v`$managed_standby WHERE process IN ('RFS', 'MRP0');" -Silencioso
+        $prc = @("$m" -split "`n" | Where-Object { $_ -match "^PRC=" })
+        $rfs = $prc | Where-Object { $_ -match "^PRC=RFS" -and $_ -notmatch "\|0$" }
+        $mrp = $prc | Where-Object { $_ -match "^PRC=MRP0" }
+        foreach ($x in ($prc | Where-Object { $_ -notmatch "\|0$" })) { $p = $x.Substring(4) -split "\|"; Escribir-Salida ("Proceso " + $p[0] + ": " + $p[1] + " (archivo " + $p[2] + ")") }
+        if (-not $rfs) { $problemas += "No hay proceso RFS: la principal no le esta enviando cambios a esta PC. En la principal use la opcion 3." }
+        if (-not $mrp) { $problemas += "No hay proceso MRP0: los cambios no se aplican. Use la opcion 2 en esta PC." }
+        # 3) Retraso
+        Paso "3/3  Retraso: cuanto le falta a esta PC para estar igual a la principal"
+        $g = Invoke-Sql "SET HEADING OFF`nSELECT 'LAG=' || name || '|' || NVL(value, '-') FROM v`$dataguard_stats WHERE name IN ('transport lag', 'apply lag');" -Silencioso
+        foreach ($x in @("$g" -split "`n" | Where-Object { $_ -match "^LAG=" })) {
+            $p = $x.Substring(4) -split "\|"
+            Escribir-Salida ("Retraso de " + $(if ($p[0] -match "transport") { "recepcion" } else { "aplicacion" }) + ": " + $p[1])
+            if ($p[1] -match "^\+00 00:0[5-9]|^\+00 00:[1-5]|^\+00 0[1-9]|^\+0[1-9]") { $problemas += "El retraso de $($p[0]) es alto ($($p[1]))." }
+        }
+    }
+
+    Write-Host ""
+    if ($problemas.Count -eq 0) {
+        Write-Host "  ======================================================" -ForegroundColor Green
+        Write-Host "    CONECTADAS: las dos PC estan sincronizadas." -ForegroundColor Green
+        Write-Host "  ======================================================" -ForegroundColor Green
+    } else {
+        Write-Host "  ======================================================" -ForegroundColor Red
+        Write-Host "    NO CONECTADAS (o con problemas). Que revisar:" -ForegroundColor Red
+        Write-Host "  ======================================================" -ForegroundColor Red
+        foreach ($p in ($problemas | Select-Object -Unique)) { Falla $p }
+    }
+}
+
 # Estado para la barra superior: rol, modo y Data Guard en una sola consulta
 function Get-EstadoMenu {
     $e = @{ Rol = "APAGADO"; Modo = "-"; Nombre = "-"; DG = "" }
@@ -590,6 +697,7 @@ function Mostrar-Menu {
             @("9",  "Consola SQL del proyecto ($Pdb)",          (-not $apagada)),
             @("10", "Consola SYSDBA (CDB)",                    (-not $apagada)))),
         @("Standby (Data Guard)", @(
+            @("14", "Comprobar que las dos PC esten conectadas", ($principal -or $standby)),
             @("2",  "Arrancar / reanudar la standby",          ($standby -or $apagada)),
             @("3",  "Sincronizar ahora y ver el retraso",      ($principal -or $standby)),
             @("6",  "Switchover: pasar el rol a la otra PC",   $principal),
@@ -598,7 +706,7 @@ function Mostrar-Menu {
         @("Respaldo", @(
             , @("4",  "Respaldo RMAN ahora (nivel 0 o 1)",     $principal))),   # la coma evita que PowerShell aplane la lista de un elemento
         @("Correos", @(
-            @("11", "Correos de destino de los avisos",        $principal),
+            @("11", "A que correos llegan los avisos",         $principal),
             @("12", "Clave de Gmail que envia los correos",    $principal),
             @("13", "Enviar un aviso ahora",                   $principal)))
     )
@@ -631,6 +739,7 @@ function Ejecutar([string]$o) {
         "11" { Op-ConfigurarCorreos }
         "12" { Op-ClaveGmail }
         "13" { Op-EnviarNotificacion }
+        "14" { Op-Conexion }
         default { Aviso "Opcion no valida." }
     }
 }

@@ -645,7 +645,7 @@ BEGIN
         p_id_lote        => v_id_lote,
         p_cantidad       => :NEW.CANTIDAD_DVVD,
         p_es_entrada     => 'S',
-        p_tipo_movi      => 'DEV_VENTA',
+        p_tipo_movi      => 'DEVOL_CLI',    -- valores de CK_MOVI_TIPO
         p_id_usuario     => v_id_usu,
         p_documento_ref  => 'DEV-VTA-' || :NEW.ID_DEVOLUCION_VENTA,
         p_registrar_kard => 'S'
@@ -680,7 +680,7 @@ BEGIN
         p_id_lote        => v_id_lote,
         p_cantidad       => :NEW.CANTIDAD_DVCD,
         p_es_entrada     => 'N',
-        p_tipo_movi      => 'DEV_COMPRA',
+        p_tipo_movi      => 'DEVOL_PROV',   -- valores de CK_MOVI_TIPO
         p_id_usuario     => v_id_usu,
         p_documento_ref  => 'DEV-COM-' || :NEW.ID_DEVOLUCION_COMPRA,
         p_registrar_kard => 'S'

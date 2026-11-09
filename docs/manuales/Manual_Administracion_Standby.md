@@ -586,6 +586,7 @@ powershell -ExecutionPolicy Bypass -File .\menu.ps1
 | 11 | Correos de destino de las notificaciones (el correo externo de la defensa) | Principal | `PR_GUARDAR_PARAMETRO` de `CORREO_*` |
 | 12 | Clave de aplicación de Gmail (cifrada) y wallet SSL | Principal | Pasos 8 y 9 del Manual de Instalación |
 | 13 | Enviar una notificación ahora (submenú con los 10 avisos que mandan los jobs; muestra el asunto y si se entregó) | Principal | Procedimientos de `PKG_ADM_NOTIFICACION`, `PKG_VEN_OPERACION`, `PKG_INV_GESTION`, `PKG_ADM_MONITOREO`, `PKG_ADM_STANDBY` y `PKG_PRM_MERCADEO` |
+| 14 | Comprobar que las dos PC están conectadas: `tnsping`, estado del envío (o procesos RFS/MRP0 en la standby) y una prueba real (cierra un archivo de cambios y espera a que la standby lo reciba). Termina con **CONECTADAS** o **NO CONECTADAS** y qué revisar | Las dos | Secciones 9.1 y 11.8 |
 
 Cada opción muestra en pantalla, antes de ejecutarlo, el comando SQL, RMAN o Docker real que envía (por ejemplo `SQL> ALTER DATABASE SWITCHOVER TO CADENA_STBY;`), para que se vea que la operación ocurre de verdad. `-SinComandos` los oculta. La lista de pruebas para ensayar con las dos PC está en `docs/PRUEBAS_STANDBY.md`.
 

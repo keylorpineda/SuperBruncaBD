@@ -119,6 +119,8 @@ Todos los archivos están en `sql/07_Standby_y_RMAN/`. Detalle en el [Manual de 
 
 ## 2. Guion de demostración (unos 15 minutos)
 
+> Si el profesor pide algo puntual ("registre un cliente", "haga una devolución", "entre como digitador"), use [PRUEBAS_EN_VIVO.md](PRUEBAS_EN_VIVO.md): 15 pruebas listas para pegar, probadas en la base real y con lo que debe salir.
+
 Tenga abiertas dos ventanas: SQL*Plus en la PC 1 (con la sesión preparada al inicio de esta guía) y SQL*Plus como SYSDBA en la PC 2 (`docker exec -it -u oracle ora_standby sqlplus / as sysdba`). Tenga abierto también el correo de destino.
 
 ### Minuto 0–1: estado general
@@ -137,7 +139,7 @@ Muestra 0 objetos inválidos y los 11 jobs.
 ```sql
 VARIABLE fac NUMBER
 SELECT SALDO_ACTUAL_CLI FROM PER_CLIENTE WHERE ID_CLIENTE = 3;
-SELECT CANTIDAD_EXIS FROM INV_EXISTENCIA WHERE ID_PRODUCTO = 1 AND ID_BODEGA = 1;
+SELECT CANTIDAD_EXIS FROM INV_EXISTENCIA WHERE ID_PRODUCTO = 1 AND ID_BODEGA = 2;   -- la sucursal 1 vende desde su bodega principal, la 2
 
 BEGIN
     PKG_VEN_OPERACION.PR_CREAR_FACTURA_VENTA(
@@ -152,7 +154,7 @@ END;
 /
 
 SELECT SALDO_ACTUAL_CLI FROM PER_CLIENTE WHERE ID_CLIENTE = 3;                          -- subió 22 600
-SELECT CANTIDAD_EXIS FROM INV_EXISTENCIA WHERE ID_PRODUCTO = 1 AND ID_BODEGA = 1;       -- bajó 5
+SELECT CANTIDAD_EXIS FROM INV_EXISTENCIA WHERE ID_PRODUCTO = 1 AND ID_BODEGA = 2;       -- bajó 5
 SELECT ESTADO_FAVE FROM VEN_FACTURA WHERE ID_FACTURA_VENTA = :fac;                      -- P
 SELECT SALDO_CUCO, ESTADO_CUCO FROM VEN_CUENTA_COBRAR WHERE ID_FACTURA_VENTA = :fac;    -- cuenta por cobrar creada
 SELECT PKG_PRM_MERCADEO.FN_CALCULAR_ACCIONES_FACTURA(:fac) AS acciones FROM dual;
@@ -172,11 +174,11 @@ SELECT SALDO_CUCO FROM VEN_CUENTA_COBRAR WHERE ID_FACTURA_VENTA = :fac;         
 
 ```sql
 INSERT INTO VEN_DEVOLUCION (ID_FACTURA_VENTA, ID_BODEGA, ID_USUARIO, CONSECUTIVO_DEVV, MOTIVO_DEVV)
-VALUES (:fac, 1, 1, 'DEV-DEMO-001', 'Demostracion');
+VALUES (:fac, 2, 1, 'DEV-DEMO-001', 'Demostracion');
 INSERT INTO VEN_DEVOLUCION_DET (ID_DEVOLUCION_VENTA, ID_FACTURA_VENTA_DET, CANTIDAD_DVVD)
 SELECT SEQ_VEN_DEVOLUCION.CURRVAL, ID_FACTURA_VENTA_DET, 1 FROM VEN_FACTURA_DET WHERE ID_FACTURA_VENTA = :fac;
 COMMIT;
-SELECT CANTIDAD_EXIS FROM INV_EXISTENCIA WHERE ID_PRODUCTO = 1 AND ID_BODEGA = 1;       -- subió 1
+SELECT CANTIDAD_EXIS FROM INV_EXISTENCIA WHERE ID_PRODUCTO = 1 AND ID_BODEGA = 2;       -- subió 1
 ```
 
 **Bloque D: cambio de costo, historial y bitácora.**

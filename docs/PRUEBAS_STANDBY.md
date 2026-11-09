@@ -24,6 +24,7 @@ síntoma en la sección 13.2 del [Manual del Standby](manuales/Manual_Administra
 - [ ] **Docker encendido en las dos** y los contenedores arriba: `docker ps` muestra `(healthy)`.
 - [ ] **PC 2: opción 2** (arranca la standby y la deja en solo lectura aplicando cambios).
 - [ ] **PC 1: opción 11** con el correo que indique el profesor (y correo de prueba).
+- [ ] **Las dos: opción 14** (comprobar conexión): debe terminar en **CONECTADAS**.
 - [ ] **Las dos: opción 1.** Debe salir en la PC 1 `Envio a la otra PC (destino 2): VALID huecos: NO GAP`
   y en la PC 2 `Retraso transport: +00 00:00:00` y `Retraso apply: +00 00:00:00` (o pocos segundos).
 

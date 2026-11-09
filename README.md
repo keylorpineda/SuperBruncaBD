@@ -64,6 +64,7 @@ El menú detecta solo si en esa PC está `ora_principal` u `ora_standby` y qué 
 | 11 | Correos de destino de las notificaciones (el correo externo de la defensa), con correo de prueba | Principal |
 | 12 | Clave de aplicación de Gmail (se guarda cifrada) y wallet SSL | Principal |
 | 13 | Enviar una notificación ahora: clientes 85 %, proveedores 70 %, morosos, vencidos, cierre, mercadeo, salud de la base, standby o premiación | Principal |
+| 14 | Comprobar que las dos PC están conectadas: prueba real y veredicto CONECTADAS / NO CONECTADAS con qué revisar | Cualquiera |
 
 Las opciones 6 y 8 piden escribir `SI` y se niegan si se eligen en la PC equivocada.
 **Switchover con el menú:** principal → 6; la otra PC → 7; la que era principal → 2.
@@ -74,6 +75,7 @@ Probado en Oracle 21c EE: estado, sincronización, respaldo, solo lectura, switc
 1. [Guía paso a paso](docs/GUIA_PASO_A_PASO.md): instalar todo desde cero en las dos computadoras.
    - **¿Usted pone la segunda PC (standby)?** Siga [la guía del compañero](docs/GUIA_COMPANERO_PC_STANDBY.md): desde instalar Docker hasta la defensa, paso a paso.
 2. [Pruebas del standby](docs/PRUEBAS_STANDBY.md): las 12 pruebas para ensayar con las dos PC y repetir en la defensa.
+   - [Pruebas en vivo](docs/PRUEBAS_EN_VIVO.md): si el profesor pide "registre un cliente", "haga una venta", "una devolución"... comandos listos y probados.
 3. [Guía del padrón del TSE](docs/GUIA_PADRON_TSE.md): dónde va el archivo del padrón y cómo cargarlo.
 4. [Resumen para la defensa](docs/RESUMEN_DEFENSA.md): cada requerimiento, cómo se hizo y las preguntas probables.
 5. [Guía de la defensa](docs/GUIA_DEFENSA.md): qué archivo cumple cada requisito y qué ejecutar en vivo.
