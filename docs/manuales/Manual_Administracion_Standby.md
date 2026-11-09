@@ -71,10 +71,10 @@ Todos los archivos de esta tabla están en la carpeta `sql/07_Standby_y_RMAN/` d
 | :--- | :--- | :--- |
 | Dos servidores distintos | PC 1 principal (`CADENA`) y PC 2 standby (`CADENA_STBY`) | Secciones 2, 4 y 11 |
 | Archivo de actualización cada 5 min o 50 MB (parametrizado) | Redo logs de 50 MB y `ARCHIVE_LAG_TARGET = 300`; valores en `STANDBY_SWITCH_MIN` y `STANDBY_SWITCH_MB` | `01_Configuracion_Primaria_Redo_Archive.sql` |
-| Traslado cada 10 min (parametrizado) y bajo demanda | `JOB_STANDBY_TRASLADO_ARCHIVELOG` con `STANDBY_SYNC_MIN`; `PR_SINCRONIZAR_AHORA` | `07_Paquete_Jobs_Standby_RMAN.sql`, `02_Traslado_...ps1/.sh` |
+| Traslado cada 10 min (parametrizado) y bajo demanda | `JOB_STANDBY_TRASLADO_ARCHIVELOG` con `STANDBY_SYNC_MIN`; `PR_SINCRONIZAR_AHORA` | `07_Paquete_Jobs_Standby_RMAN.sql`, `02_Traslado_Archivelogs_10min_y_Ondemand.ps1` / `.sh` |
 | Eliminar lo trasladado y lo aplicado con rango de 3 días (parametrizado) | `JOB_STANDBY_PURGA_ARCHIVELOG` y tarea `CADENA_Standby_Purga`; `STANDBY_PURGE_DIAS` | `03_Purga_Archivelogs_3Dias.rman`, `03_Purga_Archivelogs_Standby.rman` |
 | Respaldo diario automático, trasladado al standby y a petición | `JOB_RMAN_BACKUP_DIARIO`; `PR_RESPALDAR_AHORA` | `04_RMAN_Backup_Full_Incremental.rman` |
-| Backup full, incremental, restore y recovery | Nivel 0 los domingos, nivel 1 el resto; restauración completa y a un punto en el tiempo | `04_...rman`, `05_RMAN_Restore_Recovery_PointInTime.rman` |
+| Backup full, incremental, restore y recovery | Nivel 0 los domingos, nivel 1 el resto; restauración completa y a un punto en el tiempo | `04_RMAN_Backup_Full_Incremental.rman`, `05_RMAN_Restore_Recovery_PointInTime.rman` |
 | Failover, switchover, recuperación y sincronización | Procedimientos para modo manual y Data Guard | `06_Standby_Switchover_y_Failover.sql` |
 | Replicar todas las acciones y manual ante inconvenientes | `FORCE LOGGING`, `STANDBY_FILE_MANAGEMENT=AUTO` y guía de incidentes | Sección 10 |
 | Procesos automáticos con DBMS_SCHEDULER | 4 jobs administrados por `PKG_ADM_STANDBY` | Sección 5 |
@@ -525,7 +525,7 @@ Resultado: `PRIMARY` / `READ WRITE` con la última venta (0 pérdida, gracias a 
 
 * **Purga:** con Data Guard borra solo lo aplicado en la standby **y** respaldado. Lo demás lo conserva con el aviso `RMAN-08120` (no aplicado) o `RMAN-08138` (falta respaldo). Verificado con 0 días de retención, de prueba (sección 7).
 * **Replicación:** reinstalar todo el esquema con Data Guard activo (`DROP USER`, borrar y crear tablespaces) se replicó a la standby con lag 0, gracias a `STANDBY_FILE_MANAGEMENT=AUTO` y `FORCE LOGGING`.
-* **Pendiente de verificar:** los jobs `EXECUTABLE` con credencial del sistema operativo (en Docker el usuario `oracle` no tiene clave); sus trabajos se probaron ejecutando el orquestador a mano.
+* **Jobs `EXECUTABLE` con credencial del sistema operativo:** verificados en Docker. Se asignó clave al usuario `oracle` del contenedor, se registró la credencial con `PR_REGISTRAR_CREDENCIAL_OS` y `JOB_RMAN_BACKUP_DIARIO` y `JOB_STANDBY_TRASLADO_ARCHIVELOG` terminaron con estado `SUCCEEDED` (ver 11.14).
 
 ---
 

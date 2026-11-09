@@ -225,6 +225,8 @@ ALTER PLUGGABLE DATABASE ALL OPEN READ ONLY;
 ALTER DATABASE RECOVER MANAGED STANDBY DATABASE USING CURRENT LOGFILE DISCONNECT FROM SESSION;
 "@ -Silencioso | Out-Null
     }
+    # Si el CDB ya estaba abierto pero el PDB quedo en MOUNTED (p.ej. tras reiniciar), abrirlo tambien
+    Invoke-Sql "ALTER PLUGGABLE DATABASE ALL OPEN READ ONLY;" -Silencioso | Out-Null
     Invoke-Sql @"
 SELECT 'Modo: ' || open_mode AS modo FROM v`$database;
 ALTER SESSION SET CONTAINER = $Pdb;
