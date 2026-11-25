@@ -399,7 +399,7 @@ BEGIN
 
     -- Creacion automatica de cliente a partir de padron TSE
     PKG_PER_PADRON.PR_CREAR_CLIENTE_DESDE_PADRON(
-        p_cedula            => '110230458',
+        p_cedula            => '100000003',
         p_codigo_cli        => 'CLI-TSE-001',
         p_es_preferencial   => 'S',
         p_monto_max_credito => 300000,
