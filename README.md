@@ -1,18 +1,33 @@
-# Super Brunca · Base de datos Oracle con alta disponibilidad
+<p align="center">
+  <a href="docs/manuales/Manual_Instalacion_y_Despliegue.md"><img src="docs/assets/readme/tab-instalar.svg" alt="Manual de instalación"></a>
+  <a href="docs/manuales/Manual_Administracion_Standby.md"><img src="docs/assets/readme/tab-standby.svg" alt="Manual del standby"></a>
+  <a href="docs/manuales/Manual_Tecnico_de_Administracion_y_Mantenimiento.md"><img src="docs/assets/readme/tab-tecnico.svg" alt="Manual técnico"></a>
+  <a href="docs/modelo/README.md"><img src="docs/assets/readme/tab-modelo.svg" alt="Modelo relacional"></a>
+</p>
 
-![Oracle](https://img.shields.io/badge/Oracle-21c_Enterprise-F80000?logo=oracle&logoColor=white)
-![PL/SQL](https://img.shields.io/badge/PL%2FSQL-paquetes_·_triggers_·_jobs-1f6feb)
-![Data Guard](https://img.shields.io/badge/Data_Guard-standby_físico-2ea043)
-![RMAN](https://img.shields.io/badge/RMAN-respaldo_y_recuperación-8250df)
-![Docker](https://img.shields.io/badge/Docker-2_contenedores-2496ED?logo=docker&logoColor=white)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/card-dark.svg">
+  <img src="docs/assets/readme/card-light.svg" width="100%" alt="Super Brunca, base de datos Oracle 21c con Data Guard y RMAN para una cadena de supermercados. Todo el contenido de esta tarjeta está como texto en la sección de abajo.">
+</picture>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Oracle-21c_Enterprise-B83A26?style=flat-square" alt="Oracle 21c Enterprise">
+  <img src="https://img.shields.io/badge/PL%2FSQL-paquetes_·_triggers_·_jobs-B83A26?style=flat-square" alt="PL/SQL">
+  <img src="https://img.shields.io/badge/Data_Guard-standby_físico-B83A26?style=flat-square" alt="Data Guard">
+  <img src="https://img.shields.io/badge/RMAN-respaldo_y_recuperación-B83A26?style=flat-square" alt="RMAN">
+  <img src="https://img.shields.io/badge/Docker-2_contenedores-B83A26?style=flat-square" alt="Docker">
+</p>
+
+<details>
+<summary><b>Leer esta página como texto</b></summary>
+
+## Super Brunca
 
 Base de datos completa para una cadena de supermercados, construida en **Oracle Database 21c Enterprise Edition**. Toda la lógica del negocio vive dentro de la base (paquetes PL/SQL, triggers y jobs programados), y la base principal se replica en tiempo real a un **servidor standby en otra computadora con Oracle Data Guard**, con respaldos diarios con **RMAN**, purga automática, switchover y failover probados.
 
 Proyecto del curso *Administración de Bases de Datos*, Universidad Nacional de Costa Rica, Sede Regional Brunca (2026).
 
----
-
-## Lo más destacado
+### Lo más destacado
 
 - **Alta disponibilidad real entre dos computadoras.** Data Guard envía cada cambio por la red (puerto 1521) y la standby lo aplica en tiempo real. En la prueba de failover, con la principal apagada de golpe, la standby tomó el control **sin perder la última venta**.
 - **Respaldo y recuperación con RMAN.** Hay un respaldo diario automático (nivel 0 los domingos, nivel 1 el resto de días) que se valida y se envía a la standby por la red de Oracle. También hay una política de borrado que nunca elimina un archivelog que la standby no haya aplicado, y recuperación completa, a un punto en el tiempo o de un solo PDB.
@@ -21,7 +36,7 @@ Proyecto del curso *Administración de Bases de Datos*, Universidad Nacional de 
 - **Seguridad.** Hay perfiles de contraseña, roles con privilegios mínimos protegidos con clave, claves cifradas con AES-256 (`DBMS_CRYPTO`) y auditoría completa con transacciones autónomas.
 - **Operación automatizada.** Hay 11 jobs de `DBMS_SCHEDULER`, notificaciones por correo desde Oracle (`UTL_SMTP` con SSL) y un monitoreo diario de la salud de la base.
 
-## Arquitectura
+### Arquitectura
 
 ```mermaid
 flowchart LR
@@ -39,7 +54,7 @@ flowchart LR
 
 Cada base corre en su propio contenedor Docker con la imagen oficial `container-registry.oracle.com/database/enterprise:21.3.0.0`. El proyecto vive en el PDB `PDBCADENA`.
 
-## Qué incluye
+### Qué incluye
 
 | Área | Implementación |
 | :--- | :--- |
@@ -54,7 +69,7 @@ Cada base corre en su propio contenedor Docker con la imagen oficial `container-
 | **RMAN** | Incremental nivel 0 y nivel 1 comprimido, controlfile de standby, `RESTORE VALIDATE`, retención de 14 días y purga a los 3 días solo de lo ya aplicado y respaldado. |
 | **Parametrización** | Porcentajes, destinatarios, horarios y retenciones en la tabla `SEG_PARAMETRO`: se cambian sin tocar el código. |
 
-## Resultados verificados
+### Resultados verificados
 
 Todo se probó en Oracle 21c Enterprise Edition con dos contenedores:
 
@@ -65,7 +80,7 @@ Todo se probó en Oracle 21c Enterprise Edition con dos contenedores:
 - **Recuperación de un PDB** con RMAN (nivel 0 + nivel 1 + archivelogs).
 - **Replicación** de la reinstalación completa del esquema a la standby con retraso 0.
 
-## Estructura del repositorio
+### Estructura del repositorio
 
 ```
 sql/
@@ -88,7 +103,7 @@ docs/
 menu.ps1                              menú de operación (estado, respaldo, switchover, failover...)
 ```
 
-## Cómo ejecutarlo
+### Cómo ejecutarlo
 
 **Requisitos:** Docker Desktop, una cuenta en el [Oracle Container Registry](https://container-registry.oracle.com) con la licencia de la imagen `database/enterprise` aceptada, y unos 3 GB de memoria por contenedor.
 
@@ -107,17 +122,19 @@ menu.ps1                              menú de operación (estado, respaldo, swi
 
 La guía completa, desde cero en las dos computadoras, está en [docs/GUIA_PASO_A_PASO.md](docs/GUIA_PASO_A_PASO.md).
 
-## Documentación
+### Documentación
 
 - [Manual de Instalación y Despliegue](docs/manuales/Manual_Instalacion_y_Despliegue.md)
 - [Manual de Administración del Standby](docs/manuales/Manual_Administracion_Standby.md)
 - [Manual Técnico de Administración y Mantenimiento](docs/manuales/Manual_Tecnico_de_Administracion_y_Mantenimiento.md)
 - [Modelo relacional y diccionario de datos](docs/modelo/README.md)
 
-## Nota sobre credenciales
+### Nota sobre credenciales
 
 Las contraseñas de los usuarios de ejemplo y la llave AES que aparecen en los scripts son **valores de demostración** para que el proyecto se pueda instalar y probar sin pasos extra. En un entorno real se reemplazan y la llave se guarda en un Oracle Wallet o en un gestor de secretos (ver el Manual Técnico). La clave de la base (`oracle_ee.env`) y la clave de Gmail no se versionan.
 
-## Autores
+### Autores
 
 **Keylor Pineda Alvarez** · **Diego Bonilla Mora**
+
+</details>
