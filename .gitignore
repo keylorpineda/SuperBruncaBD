@@ -3,3 +3,6 @@ sql/07_Standby_y_RMAN/docker/oracle_ee.env
 
 # Zip de la entrega (se genera, no se versiona)
 Proyecto_Entregable2_*.zip
+
+# Configuracion local de Claude Code (no forma parte del proyecto)
+.claude/
